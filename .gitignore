@@ -1,0 +1,31 @@
+# Python Virtual Environments
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Rust / Tauri
+target/
+src-tauri/target/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# DBs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# OS files
+*.swp
+*.swo

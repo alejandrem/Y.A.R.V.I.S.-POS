@@ -1,0 +1,11 @@
+/* aqui pondremos el maquillaje del pos lo dejaremos al final cuando terminemos toda la logica principal 
+y la interfaz principal*/
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Añade aquí estilos globales si es necesario en el futuro */
+body {
+  @apply bg-neutral-50 text-neutral-900;
+}

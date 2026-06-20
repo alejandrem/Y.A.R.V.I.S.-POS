@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+prophet
+pandas
+numpy
+llama-cpp-python
+requests
+python-multipart
+sentence-transformers
+# scikit-learn
