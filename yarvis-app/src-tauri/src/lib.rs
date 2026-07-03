@@ -65,6 +65,7 @@ pub fn run() {
             commands::inventory::update_inventory_item,
             commands::inventory::delete_inventory_item,
             commands::inventory::importar_catalogo,
+            commands::inventory::buscar_producto_similar,
             // Parser
             commands::parser::leer_archivo_raw,
             commands::parser::parsear_catalogo,

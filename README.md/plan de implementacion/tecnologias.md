@@ -104,5 +104,4 @@ Nota: A diferencia de Qwen, el pequeño modelo de embeddings de 40MB (`all-MiniL
 ### Herramientas de Desarrollo
 - Control de Versiones: Git.
 - Gestores de Paquetes: Cargo (Rust), Pip/Poetry (Python), npm/bun (JS/TS).
-
-
+- para los embeddings usaremos de txt -> embeddings usaremos el modelo phi-3.5-embeddings

@@ -52,3 +52,42 @@ pub struct AdminProfile {
     pub ubicacion: Option<String>,
     pub cp: Option<String>,
 }
+
+// ============================================================
+// MODELOS PARA LA API DE EMBEDDINGS (Python ↔ Rust)
+// ============================================================
+
+#[derive(Serialize)]
+pub struct EmbeddingRequest {
+    pub texto: String,
+}
+
+#[derive(Deserialize)]
+pub struct EmbeddingResponse {
+    pub status: String,
+    pub dimensions: usize,
+    pub blob_b64: String,
+}
+
+#[derive(Serialize)]
+pub struct SimilarSearchRequest {
+    pub query: String,
+    pub db_path: String,
+    pub top_k: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub categoria: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Serialize)]
+pub struct SimilarResult {
+    pub id: i64,
+    pub contenido: String,
+    pub categoria: String,
+    pub score: f64,
+}
+
+#[derive(Deserialize)]
+pub struct SimilarSearchResponse {
+    pub status: String,
+    pub results: Vec<SimilarResult>,
+}

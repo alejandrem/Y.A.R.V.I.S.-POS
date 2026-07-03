@@ -1,5 +1,35 @@
 use sqlx::SqlitePool;
+use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use rand::thread_rng;
 use crate::models::{AdminData, AdminProfile};
+
+// ============================================================
+// HASHING DE CONTRASEÑAS CON ARGON2ID (OWASP)
+// ============================================================
+
+fn hash_password(pass: &str) -> String {
+    let salt = SaltString::generate(&mut thread_rng());
+    let hash = Argon2::default()
+        .hash_password(pass.as_bytes(), &salt)
+        .expect("Error al hashear contraseña con Argon2");
+    hash.to_string()
+}
+
+/// Verifica una contraseña contra su hash PHC de Argon2.
+/// Si el hash no es válido (datos viejos en texto plano), compara directamente
+/// para no bloquear al usuario existente.
+fn verify_password(pass: &str, stored: &str) -> bool {
+    match argon2::password_hash::PasswordHash::new(stored) {
+        Ok(parsed) => Argon2::default()
+            .verify_password(pass.as_bytes(), &parsed)
+            .is_ok(),
+        Err(_) => pass == stored,
+    }
+}
+
+// ============================================================
+// COMMANDS
+// ============================================================
 
 #[tauri::command]
 pub async fn check_setup_done(state: tauri::State<'_, SqlitePool>) -> Result<bool, String> {
@@ -13,12 +43,12 @@ pub async fn check_setup_done(state: tauri::State<'_, SqlitePool>) -> Result<boo
 
 #[tauri::command]
 pub async fn guardar_admin(state: tauri::State<'_, SqlitePool>, data: AdminData) -> Result<String, String> {
-    let _hashed_pass = hash_password_placeholder(&data.pass);
+    let hashed = hash_password(&data.pass);
 
     sqlx::query("INSERT INTO usuarios (nombre, tienda, password, rol) VALUES (?, ?, ?, ?)")
         .bind(&data.name)
         .bind(&data.store)
-        .bind(&data.pass)
+        .bind(&hashed)
         .bind("admin")
         .execute(&*state)
         .await
@@ -35,7 +65,7 @@ pub async fn validar_login_admin(state: tauri::State<'_, SqlitePool>, pass: Stri
         .map_err(|e| e.to_string())?;
 
     if let Some(row) = result {
-        Ok(row.0 == pass)
+        Ok(verify_password(&pass, &row.0))
     } else {
         Ok(false)
     }
@@ -72,12 +102,12 @@ pub async fn update_admin_data(
     ubicacion: String,
     cp: String
 ) -> Result<String, String> {
-    let _hashed_pass = hash_password_placeholder(&pass);
+    let hashed = hash_password(&pass);
 
     sqlx::query("UPDATE usuarios SET nombre = ?, tienda = ?, password = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'")
         .bind(&nombre)
         .bind(&tienda)
-        .bind(&pass)
+        .bind(&hashed)
         .bind(&ubicacion)
         .bind(&cp)
         .execute(&*state)
@@ -89,11 +119,11 @@ pub async fn update_admin_data(
 
 #[tauri::command]
 pub async fn guardar_empleado(state: tauri::State<'_, SqlitePool>, name: String, pass: String) -> Result<String, String> {
-    let _hashed_pass = hash_password_placeholder(&pass);
+    let hashed = hash_password(&pass);
 
     sqlx::query("INSERT INTO usuarios (nombre, password, rol) VALUES (?, ?, ?)")
         .bind(&name)
-        .bind(&pass)
+        .bind(&hashed)
         .bind("empleado")
         .execute(&*state)
         .await
@@ -104,25 +134,16 @@ pub async fn guardar_empleado(state: tauri::State<'_, SqlitePool>, name: String,
 
 #[tauri::command]
 pub async fn validar_login_empleado(state: tauri::State<'_, SqlitePool>, pass: String) -> Result<Option<String>, String> {
-    let result = sqlx::query_as::<_, (String,)>("SELECT nombre FROM usuarios WHERE password = ? AND rol = 'empleado' LIMIT 1")
-        .bind(&pass)
-        .fetch_optional(&*state)
+    let rows = sqlx::query_as::<_, (String, String)>("SELECT nombre, password FROM usuarios WHERE rol = 'empleado'")
+        .fetch_all(&*state)
         .await
         .map_err(|e| e.to_string())?;
 
-    if let Some(row) = result {
-        Ok(Some(row.0))
-    } else {
-        Ok(None)
+    for (nombre, hash) in rows {
+        if verify_password(&pass, &hash) {
+            return Ok(Some(nombre));
+        }
     }
-}
 
-// ============================================================
-// PLACEHOLDER PARA HASHING DE CONTRASEN~AS
-// ============================================================
-
-// TODO: Reemplazar con argon2::hash_default(password.as_bytes())
-// Dependencia a agregar: argon2 = "0.5"
-fn hash_password_placeholder(pass: &str) -> String {
-    pass.to_string()
+    Ok(None)
 }
