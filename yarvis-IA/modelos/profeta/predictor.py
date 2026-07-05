@@ -47,6 +47,7 @@ def run_prediction(db_path, days=30):
         return {"error": str(e)}
 
 if __name__ == "__main__":
-    # Prueba rápida (ajustar ruta según entorno)
-    db_test = "../../yarvis-app/yarvis.db"
+    # Prueba rapida
+    import os
+    db_test = os.path.join(os.path.expanduser("~"), ".local", "share", "com.yarvis.app", "yarvis.db")
     print(run_prediction(db_test))

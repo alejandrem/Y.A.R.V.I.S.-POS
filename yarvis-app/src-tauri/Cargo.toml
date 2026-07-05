@@ -26,8 +26,6 @@ tokio = { version = "1.38", features = ["full"] }
 tauri-plugin-dialog = "2"
 # HTTP client para el health check del sidecar Python
 reqwest = { version = "0.12", features = ["json"] }
-# Detección de RAM libre para selección adaptativa del LLM (Paso 4.1)
-sysinfo = "0.30"
 # Hashing seguro de contraseñas (Primera Ola - Seguridad)
 argon2 = "0.5"
 rand = "0.8"

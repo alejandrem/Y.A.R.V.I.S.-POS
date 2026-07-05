@@ -1,11 +1,142 @@
-/* aqui pondremos el maquillaje del pos lo dejaremos al final cuando terminemos toda la logica principal 
-y la interfaz principal*/
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Añade aquí estilos globales si es necesario en el futuro */
-body {
-  @apply bg-neutral-50 text-neutral-900;
+/* ============================================================
+   CSS CUSTOM PROPERTIES — MODO CLARO (por defecto)
+   ============================================================ */
+
+:root {
+  /* Superficies */
+  --bg-primary: #fafafa;        /* neutral-50 */
+  --bg-secondary: #ffffff;      /* white */
+  --bg-card: #ffffff;           /* white */
+  --bg-sidebar: #fafafa;        /* neutral-50 */
+  --bg-input: #f5f5f5;          /* neutral-100 */
+  --bg-hover: #f5f5f5;          /* neutral-100 */
+
+  /* Texto */
+  --text-primary: #171717;      /* neutral-900 */
+  --text-secondary: #525252;    /* neutral-600 */
+  --text-muted: #a3a3a3;        /* neutral-400 */
+  --text-faint: #d4d4d4;        /* neutral-300 */
+
+  /* Bordes */
+  --border-primary: #e5e5e5;    /* neutral-200 */
+  --border-secondary: #f5f5f5;  /* neutral-100 */
+
+  /* Acentos (se mantienen iguales en ambos modos) */
+  --accent: #171717;            /* neutral-900 */
+  --accent-hover: #262626;      /* neutral-800 */
+
+  /* Sombras */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
 }
+
+/* ============================================================
+   CSS CUSTOM PROPERTIES — MODO OSCURO
+   ============================================================ */
+
+.dark {
+  /* Superficies */
+  --bg-primary: #0a0a0a;        /* neutral-950 */
+  --bg-secondary: #171717;      /* neutral-900 */
+  --bg-card: #1a1a1a;           /* ligeramente más claro que bg-secondary */
+  --bg-sidebar: #111111;
+  --bg-input: #262626;          /* neutral-800 */
+  --bg-hover: #262626;          /* neutral-800 */
+
+  /* Texto */
+  --text-primary: #f5f5f5;      /* neutral-100 */
+  --text-secondary: #a3a3a3;    /* neutral-400 */
+  --text-muted: #525252;        /* neutral-600 */
+  --text-faint: #404040;        /* neutral-700 */
+
+  /* Bordes */
+  --border-primary: #262626;    /* neutral-800 */
+  --border-secondary: #1f1f1f;  /* neutral-850 */
+
+  /* Acentos */
+  --accent: #f5f5f5;
+  --accent-hover: #d4d4d4;
+
+  /* Sombras más sutiles en dark */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
+}
+
+/* ============================================================
+   MAPEO: Las clases de Tailwind usan las variables CSS
+   ============================================================ */
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Override de clases comunes de Tailwind para que respeten el dark mode */
+.dark .bg-white { background-color: var(--bg-card) !important; }
+.dark .bg-neutral-50 { background-color: var(--bg-sidebar) !important; }
+.dark .bg-neutral-900 { background-color: #f5f5f5 !important; color: #0a0a0a !important; }
+.dark .text-neutral-900 { color: var(--text-primary) !important; }
+.dark .text-neutral-800 { color: var(--text-primary) !important; }
+.dark .text-neutral-700 { color: var(--text-secondary) !important; }
+.dark .text-neutral-600 { color: var(--text-secondary) !important; }
+.dark .text-neutral-500 { color: var(--text-muted) !important; }
+.dark .text-neutral-400 { color: var(--text-faint) !important; }
+.dark .border-neutral-100 { border-color: var(--border-primary) !important; }
+.dark .border-neutral-200 { border-color: var(--border-primary) !important; }
+.dark .divide-neutral-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-primary) !important; }
+.dark .divide-neutral-50 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-secondary) !important; }
+.dark .shadow-neutral-200 { --tw-shadow-color: rgba(0,0,0,0.3); }
+.dark .hover\:bg-neutral-50:hover { background-color: var(--bg-hover) !important; }
+.dark .hover\:bg-neutral-100:hover { background-color: var(--bg-hover) !important; }
+.dark .ring-neutral-900\/5 { --tw-ring-color: rgba(245,245,245,0.05); }
+.dark .focus\:border-neutral-900:focus { border-color: var(--accent) !important; }
+.dark .text-white { color: #0a0a0a !important; }
+.dark .bg-white\/5 { background-color: rgba(255,255,255,0.05) !important; }
+.dark .bg-white\/10 { background-color: rgba(255,255,255,0.08) !important; }
+.dark .border-white\/10 { border-color: rgba(255,255,255,0.1) !important; }
+.dark .text-neutral-500 { color: #a3a3a3 !important; }
+.dark .placeholder\:text-white\/20::placeholder { color: rgba(255,255,255,0.2) !important; }
+
+/* Scrollbar personalizada */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--text-faint);
+  border-radius: 3px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #333;
+}
+
+/* Botón activo de tema: en dark mode invertir colores */
+.dark .bg-neutral-900.text-white { background-color: #f5f5f5 !important; color: #0a0a0a !important; }
+
+/* Sección de seguridad (fondo oscuro) - en dark mode hacer más claro */
+.dark .bg-neutral-900.p-8 { background-color: #1a1a1a !important; border: 1px solid #333 !important; }
+
+/* Botón "Guardar Cambios" que es bg-white sobre fondo oscuro */
+.dark .bg-white.text-neutral-900 { background-color: #171717 !important; color: #f5f5f5 !important; }
+
+/* Inputs en dark mode */
+.dark input[type="text"],
+.dark input[type="password"],
+.dark input[type="date"] {
+  background-color: var(--bg-input) !important;
+  border-color: var(--border-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Tablas en dark mode */
+.dark table thead { background-color: var(--bg-sidebar) !important; }
+.dark table th { color: var(--text-faint) !important; }
+.dark table td { color: var(--text-primary) !important; }

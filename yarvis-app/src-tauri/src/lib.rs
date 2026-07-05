@@ -7,6 +7,7 @@ mod commands;
 mod db;
 mod models;
 pub mod sidecar;
+pub mod parser_rs;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -24,8 +25,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             // ── 1. Inicializar SQLite ──────────────────────────────
-            let pool = db::initialize_db(app.handle());
+            let (pool, db_path_str) = db::initialize_db(app.handle());
             app.manage(pool);
+            app.manage(db::DbPath(db_path_str));
 
             // ── 2. Registrar el AiSidecar como estado global ───────
             // Esto permite que los commands de Tauri lo accedan via State<>
@@ -66,10 +68,23 @@ pub fn run() {
             commands::inventory::delete_inventory_item,
             commands::inventory::importar_catalogo,
             commands::inventory::buscar_producto_similar,
-            // Parser
-            commands::parser::leer_archivo_raw,
-            commands::parser::parsear_catalogo,
-            commands::parser::parsear_ticket,
+            // Parser (nueva estructura)
+            parser_rs::leer_archivo_raw,
+            parser_rs::leer_archivo_bytes,
+            parser_rs::parsear_catalogo,
+            parser_rs::parsear_catalogo_csv,
+            parser_rs::parsear_catalogo_visual,
+            parser_rs::parsear_excel,
+            parser_rs::parsear_ticket,
+            parser_rs::analizar_ticket_llm,
+            parser_rs::analizar_ticket_con_ia,
+            parser_rs::parsear_con_mapeo,
+            parser_rs::parsear_carpeta,
+            parser_rs::parsear_carpeta_stream,
+            commands::parser::vincular_inventario,
+            commands::parser::guardar_vinculacion,
+            commands::parser::get_db_path,
+            commands::parser::descargar_modelos,
             // Tickets
             commands::tickets::get_tickets,
             commands::tickets::get_cortes,

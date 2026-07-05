@@ -3,13 +3,17 @@ use std::fs;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use tauri::Manager;
 
-pub fn initialize_db(app: &tauri::AppHandle) -> SqlitePool {
+/// Estado simple para exponer la ruta de la DB al frontend.
+pub struct DbPath(pub String);
+
+pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
     let app_dir = app.path().app_data_dir().expect("No se pudo obtener el directorio de datos");
     if !app_dir.exists() {
         fs::create_dir_all(&app_dir).expect("No se pudo crear el directorio de datos");
     }
 
     let db_path = app_dir.join("yarvis.db");
+    let db_path_str = db_path.to_string_lossy().to_string();
 
     tauri::async_runtime::block_on(async move {
         let options = SqliteConnectOptions::new()
@@ -172,7 +176,7 @@ pub fn initialize_db(app: &tauri::AppHandle) -> SqlitePool {
             creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
         )").execute(&pool).await.expect("Fallo al crear tabla knowledge_base");
 
-        pool
+        (pool, db_path_str)
     })
 }
 

@@ -30,6 +30,8 @@ pub struct AiSidecar {
     pub port_llm: Mutex<Option<u16>>,
     pub process: Mutex<Option<Child>>,
     pub status: Mutex<AiStatus>,
+    /// Cliente HTTP compartido (reutiliza pool de conexiones)
+    pub http_client: reqwest::Client,
 }
 
 impl AiSidecar {
@@ -39,6 +41,11 @@ impl AiSidecar {
             port_llm: Mutex::new(None),
             process: Mutex::new(None),
             status: Mutex::new(AiStatus::NotRunning),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .pool_max_idle_per_host(4)
+                .build()
+                .expect("Error creando HTTP client compartido"),
         }
     }
 
@@ -57,6 +64,27 @@ impl AiSidecar {
     /// Retorna la URL base del motor de IA (ej: http://127.0.0.1:54321)
     pub fn base_url(&self) -> Option<String> {
         self.get_port().map(|p| format!("http://127.0.0.1:{}", p))
+    }
+
+    /// Verifica si el proceso Python sigue vivo. Si murió, limpia el estado.
+    pub fn check_process_alive(&self) {
+        if let Ok(mut guard) = self.process.lock() {
+            if let Some(ref mut proc) = *guard {
+                match proc.try_wait() {
+                    Ok(Some(_status)) => {
+                        // Proceso terminó
+                        println!("[YARVIS-SIDECAR] Proceso Python terminó, limpiando estado...");
+                        *guard = None;
+                        *self.port.lock().unwrap() = None;
+                        *self.status.lock().unwrap() = AiStatus::Error("Proceso Python terminó".to_string());
+                    }
+                    Ok(None) => { /* Proceso sigue vivo */ }
+                    Err(e) => {
+                        println!("[YARVIS-SIDECAR] Error verificando proceso: {}", e);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -154,12 +182,47 @@ pub fn start_python(port: u16) -> Result<Child, String> {
         port, script_path, python_exe
     );
 
-    let result = Command::new(&python_exe)
-        .arg(&script_path)
+    // Buscar libs CUDA de LM Studio para LD_LIBRARY_PATH
+    let cuda_lib_paths = [
+        // LM Studio CUDA 12 vendor libs
+        "/home/alesito/.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1",
+        "../../.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1",
+        "../../../.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1",
+        // nvidia pip package paths (cu12)
+        "../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cublas/lib",
+        "../../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cublas/lib",
+        "../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cuda_runtime/lib",
+        "../../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cuda_runtime/lib",
+    ];
+
+    let mut extra_libs = Vec::new();
+    for candidate in &cuda_lib_paths {
+        let path = std::path::Path::new(candidate);
+        if path.exists() {
+            extra_libs.push(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()));
+        }
+    }
+
+    let mut cmd = Command::new(&python_exe);
+    cmd.arg(&script_path)
         .arg(port.to_string())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+        .stderr(std::process::Stdio::null());
+
+    // Agregar rutas CUDA a LD_LIBRARY_PATH
+    if !extra_libs.is_empty() {
+        let existing = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+        let new_paths: Vec<String> = extra_libs.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        let mut all_paths = new_paths;
+        if !existing.is_empty() {
+            all_paths.push(existing);
+        }
+        let ld_path = all_paths.join(":");
+        println!("[YARVIS-SIDECAR] LD_LIBRARY_PATH (CUDA): {}", ld_path);
+        cmd.env("LD_LIBRARY_PATH", ld_path);
+    }
+
+    let result = cmd.spawn();
 
     match result {
         Ok(child) => {
@@ -182,7 +245,10 @@ pub fn start_python(port: u16) -> Result<Child, String> {
 
 pub async fn wait_health_check(port: u16, timeout_secs: u64) -> bool {
     let url = format!("http://127.0.0.1:{}/", port);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("Error creando client para health check");
     let total_attempts = timeout_secs * 2;
 
     println!(

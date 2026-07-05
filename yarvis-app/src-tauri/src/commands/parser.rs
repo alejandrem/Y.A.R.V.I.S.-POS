@@ -1,106 +1,118 @@
-use std::fs;
-use crate::models::{TicketItem, InventoryItem};
+use crate::sidecar::AiSidecar;
+use crate::db::DbPath;
+use std::sync::Arc;
 
+/// Retorna la ruta absoluta de la base de datos SQLite.
 #[tauri::command]
-pub fn leer_archivo_raw(path: String) -> Result<String, String> {
-    fs::read_to_string(path).map_err(|e| e.to_string())
+pub fn get_db_path(db_path: tauri::State<'_, DbPath>) -> Result<String, String> {
+    Ok(db_path.0.clone())
 }
 
-// FIX Bug 4: Parser que respeta campos entre comillas en CSVs
-fn split_csv_line(line: &str) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-
-    for ch in line.chars() {
-        if ch == '"' {
-            in_quotes = !in_quotes;
-        } else if (ch == ',' || ch == ';' || ch == '\t') && !in_quotes {
-            if !current.trim().is_empty() || !fields.is_empty() {
-                fields.push(current.trim().to_string());
-            }
-            current.clear();
-        } else {
-            current.push(ch);
-        }
-    }
-
-    if !current.is_empty() {
-        fields.push(current.trim().to_string());
-    }
-
-    fields
-}
+// ============================================================
+// Comandos que siguen en commands/parser (no movidos a parser_rs)
+// ============================================================
 
 #[tauri::command]
-pub fn parsear_catalogo(path: String) -> Result<Vec<InventoryItem>, String> {
-    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let mut items = Vec::new();
+pub async fn vincular_inventario(
+    sidecar: tauri::State<'_, Arc<AiSidecar>>,
+    productos: serde_json::Value,
+    db_path: String,
+    umbral: f64,
+) -> Result<serde_json::Value, String> {
+    let base_url = sidecar.base_url()
+        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
 
-    for line in content.lines() {
-        let line_trimmed = line.trim();
-        if line_trimmed.is_empty() {
-            continue;
-        }
+    let body = serde_json::json!({
+        "productos": productos,
+        "db_path": db_path,
+        "umbral": umbral,
+    });
 
-        let parts = split_csv_line(line_trimmed);
-        if parts.len() >= 3 {
-            let nombre = parts[0].to_uppercase();
-            let costo = parts[1].parse::<f64>().unwrap_or(0.0);
-            let venta = parts[2].parse::<f64>().unwrap_or(0.0);
-            let stock = if parts.len() > 3 {
-                parts[3].parse::<f64>().unwrap_or(0.0)
-            } else {
-                0.0
-            };
+    let resp = sidecar.http_client
+        .post(format!("{}/vincular_inventario", base_url))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
 
-            if !nombre.is_empty() && venta > 0.0 {
-                items.push(InventoryItem {
-                    id: None,
-                    nombre,
-                    descripcion: None,
-                    precio_costo: costo,
-                    precio_venta: venta,
-                    stock,
-                    stock_minimo: 5.0,
-                    codigo_barras: None,
-                    categoria: None,
-                });
-            }
-        }
+    let status = resp.status();
+    let resultado: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
+
+    if status.is_success() {
+        Ok(resultado)
+    } else {
+        let msg = resultado.get("detail")
+            .and_then(|d| d.as_str())
+            .unwrap_or("Error desconocido del motor de IA");
+        Err(msg.to_string())
     }
-    Ok(items)
 }
 
 #[tauri::command]
-pub fn parsear_ticket(path: String) -> Result<Vec<TicketItem>, String> {
-    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let mut items = Vec::new();
+pub async fn guardar_vinculacion(
+    sidecar: tauri::State<'_, Arc<AiSidecar>>,
+    vinculaciones: serde_json::Value,
+    db_path: String,
+) -> Result<serde_json::Value, String> {
+    let base_url = sidecar.base_url()
+        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
 
-    for line in content.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 4 {
-            if let Ok(cantidad) = parts[0].parse::<f64>() {
-                if cantidad > 0.0 {
-                    let total_str = parts.last().unwrap().replace('$', "").replace(',', "");
-                    let precio_str = parts[parts.len()-2].replace('$', "").replace(',', "");
+    let body = serde_json::json!({
+        "vinculaciones": vinculaciones,
+        "db_path": db_path,
+    });
 
-                    let total = total_str.parse::<f64>().unwrap_or(0.0);
-                    let precio = precio_str.parse::<f64>().unwrap_or(0.0);
+    let resp = sidecar.http_client
+        .post(format!("{}/guardar_vinculacion", base_url))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
 
-                    let producto = parts[1..parts.len()-2].join(" ");
+    let status = resp.status();
+    let resultado: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
 
-                    if !producto.is_empty() && total > 0.0 {
-                        items.push(TicketItem {
-                            producto: producto.to_uppercase(),
-                            cantidad,
-                            precio,
-                            total
-                        });
-                    }
-                }
-            }
-        }
+    if status.is_success() {
+        Ok(resultado)
+    } else {
+        let msg = resultado.get("detail")
+            .and_then(|d| d.as_str())
+            .unwrap_or("Error desconocido del motor de IA");
+        Err(msg.to_string())
     }
-    Ok(items)
+}
+
+#[tauri::command]
+pub async fn descargar_modelos(
+    sidecar: tauri::State<'_, Arc<AiSidecar>>,
+) -> Result<serde_json::Value, String> {
+    let base_url = sidecar.base_url()
+        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
+
+    let resp = sidecar.http_client
+        .post(format!("{}/unload_llm", base_url))
+        .send()
+        .await
+        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
+
+    let status = resp.status();
+    let resultado: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
+
+    if status.is_success() {
+        Ok(resultado)
+    } else {
+        let msg = resultado.get("detail")
+            .and_then(|d| d.as_str())
+            .unwrap_or("Error desconocido del motor de IA");
+        Err(msg.to_string())
+    }
 }

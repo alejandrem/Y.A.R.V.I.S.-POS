@@ -1,7 +1,8 @@
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use crate::models::InventoryItem;
-use crate::sidecar::AiSidecar;
+use crate::sidecar::{AiSidecar, AiStatus};
+use crate::db::DbPath;
 
 /// Texto descriptivo del producto para generar embedding.
 /// Combina nombre + descripción + categoría en un solo string.
@@ -26,20 +27,24 @@ async fn generate_and_store_embedding(
     pool: &SqlitePool,
     sidecar: &Arc<AiSidecar>,
     item: &InventoryItem,
-    _producto_id: i32,
 ) {
+    // Verificar que el sidecar esté listo antes de intentar
+    sidecar.check_process_alive();
+    if sidecar.get_status() != AiStatus::Ready {
+        return;
+    }
+
     let base_url = match sidecar.base_url() {
         Some(url) => url,
-        None => return, // Motor de IA no disponible, skip
+        None => return,
     };
 
     let texto = build_embedding_text(item);
 
     // Llamar a Python: POST /generar_embedding
-    let client = reqwest::Client::new();
     let payload = serde_json::json!({ "texto": texto });
 
-    let response = match client
+    let response = match sidecar.http_client
         .post(format!("{}/generar_embedding", base_url))
         .json(&payload)
         .timeout(std::time::Duration::from_secs(10))
@@ -48,16 +53,22 @@ async fn generate_and_store_embedding(
     {
         Ok(r) => r,
         Err(e) => {
-            println!("[YARVIS-INVENTORY] Error llamando a /generar_embedding: {}", e);
+            static EMBEDDING_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !EMBEDDING_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                println!("[YARVIS-INVENTORY] Embeddings no disponibles (sidecar no listo). El sistema funciona sin embeddings.");
+            }
             return;
         }
     };
 
     if !response.status().is_success() {
-        println!(
-            "[YARVIS-INVENTORY] Python retornó error en /generar_embedding: {}",
-            response.status()
-        );
+        static EMBEDDING_ERR_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !EMBEDDING_ERR_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            println!(
+                "[YARVIS-INVENTORY] Python retornó error en /generar_embedding: {}",
+                response.status()
+            );
+        }
         return;
     }
 
@@ -156,7 +167,7 @@ pub async fn add_inventory_item(
     let sidecar_arc = (*sidecar).clone();
     let item_clone = item.clone();
     tokio::spawn(async move {
-        generate_and_store_embedding(&pool, &sidecar_arc, &item_clone, producto_id).await;
+        generate_and_store_embedding(&pool, &sidecar_arc, &item_clone).await;
     });
 
     Ok(producto_id)
@@ -188,7 +199,7 @@ pub async fn update_inventory_item(
         let sidecar_arc = (*sidecar).clone();
         let item_clone = item.clone();
         tokio::spawn(async move {
-            generate_and_store_embedding(&pool, &sidecar_arc, &item_clone, id).await;
+            generate_and_store_embedding(&pool, &sidecar_arc, &item_clone).await;
         });
 
         Ok(())
@@ -227,14 +238,13 @@ pub async fn importar_catalogo(
             .execute(&*state)
             .await;
 
-        if let Ok(r) = result {
-            let producto_id = r.last_insert_rowid() as i32;
+        if let Ok(_r) = result {
             // Generar embedding en background
             let pool = (*state).clone();
             let sidecar_arc = (*sidecar).clone();
             let item_clone = item.clone();
             tokio::spawn(async move {
-                generate_and_store_embedding(&pool, &sidecar_arc, &item_clone, producto_id).await;
+                generate_and_store_embedding(&pool, &sidecar_arc, &item_clone).await;
             });
             count += 1;
         }
@@ -248,27 +258,28 @@ pub async fn importar_catalogo(
 
 #[tauri::command]
 pub async fn buscar_producto_similar(
-    state: tauri::State<'_, SqlitePool>,
     sidecar: tauri::State<'_, Arc<AiSidecar>>,
+    db_path_state: tauri::State<'_, DbPath>,
     query: String,
     top_k: Option<u32>,
     categoria: Option<String>,
 ) -> Result<Vec<crate::models::SimilarResult>, String> {
+    sidecar.check_process_alive();
+    if sidecar.get_status() != AiStatus::Ready {
+        return Err("Motor de IA no está listo".to_string());
+    }
+
     let base_url = sidecar.base_url()
         .ok_or("Motor de IA no disponible".to_string())?;
 
-    // Obtener la ruta de la DB
-    let db_path = get_db_path(&state).await?;
-
     let payload = crate::models::SimilarSearchRequest {
         query,
-        db_path,
+        db_path: db_path_state.0.clone(),
         top_k: top_k.unwrap_or(5),
         categoria,
     };
 
-    let client = reqwest::Client::new();
-    let response = client
+    let response = sidecar.http_client
         .post(format!("{}/buscar_similar", base_url))
         .json(&payload)
         .timeout(std::time::Duration::from_secs(10))
@@ -284,14 +295,4 @@ pub async fn buscar_producto_similar(
         .map_err(|e| format!("Error decodificando respuesta: {}", e))?;
 
     Ok(resp.results)
-}
-
-/// Helper para obtener la ruta de la DB desde el pool
-async fn get_db_path(pool: &SqlitePool) -> Result<String, String> {
-    let row: (String,) = sqlx::query_as::<_, (String,)>("SELECT file FROM pragma_database_list WHERE name='main'")
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("No se pudo obtener la ruta de la DB".to_string())?;
-    Ok(row.0)
 }

@@ -57,13 +57,9 @@ pub struct AdminProfile {
 // MODELOS PARA LA API DE EMBEDDINGS (Python ↔ Rust)
 // ============================================================
 
-#[derive(Serialize)]
-pub struct EmbeddingRequest {
-    pub texto: String,
-}
-
 #[derive(Deserialize)]
 pub struct EmbeddingResponse {
+    #[allow(dead_code)] // used by serde deserialization
     pub status: String,
     pub dimensions: usize,
     pub blob_b64: String,
@@ -88,6 +84,7 @@ pub struct SimilarResult {
 
 #[derive(Deserialize)]
 pub struct SimilarSearchResponse {
+    #[allow(dead_code)] // used by serde deserialization
     pub status: String,
     pub results: Vec<SimilarResult>,
 }
