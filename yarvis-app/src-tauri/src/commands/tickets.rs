@@ -72,7 +72,7 @@ pub async fn guardar_ticket_parseado(
             .map_err(|e| e.to_string())?;
 
         // Actualizar stock en productos (decrementar por la cantidad vendida)
-        let _ = sqlx::query("UPDATE productos SET stock = MAX(0, stock - ?) WHERE LOWER(nombre) = LOWER(?)")
+        let _ = sqlx::query("UPDATE productos SET stock = stock - ? WHERE LOWER(nombre) = LOWER(?)")
             .bind(item.cantidad)
             .bind(&item.producto)
             .execute(&*state)

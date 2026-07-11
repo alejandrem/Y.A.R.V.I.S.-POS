@@ -64,7 +64,7 @@ def _insertar_venta(conn: sqlite3.Connection, items: list[dict], cajero: str, ar
 
         # Actualizar stock y vendido en productos (case-insensitive)
         conn.execute("""
-            UPDATE productos SET stock = MAX(0, stock - ?) WHERE LOWER(nombre) = LOWER(?)
+            UPDATE productos SET stock = stock - ? WHERE LOWER(nombre) = LOWER(?)
         """, (cant, item["producto"]))
         conn.execute("""
             UPDATE productos SET vendido = vendido + ? WHERE LOWER(nombre) = LOWER(?)

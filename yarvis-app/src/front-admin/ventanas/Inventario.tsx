@@ -208,9 +208,11 @@ const Inventario = ({ activeTab }: InventarioProps) => {
                       />
                     ) : (
                       <div className="flex flex-col items-center">
-                        <span className={`text-xs font-black ${item.stock <= item.stock_minimo ? 'text-red-500' : 'text-neutral-900'}`}>{item.stock}</span>
+                        <span className={`text-xs font-black ${item.stock < 0 ? 'text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-200' : item.stock <= item.stock_minimo ? 'text-red-500' : 'text-neutral-900'}`}>
+                          {item.stock < 0 ? `-${Math.abs(item.stock)}` : item.stock}
+                        </span>
                         <div className="h-1 w-8 bg-neutral-100 rounded-full mt-1 overflow-hidden">
-                          <div className={`h-full rounded-full ${item.stock <= item.stock_minimo ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${Math.min(100, (item.stock / 50) * 100)}%` }}></div>
+                          <div className={`h-full rounded-full ${item.stock < 0 ? 'bg-red-600' : item.stock <= item.stock_minimo ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${Math.min(100, Math.max(0, (item.stock / 50) * 100))}%` }}></div>
                         </div>
                       </div>
                     )}
@@ -317,7 +319,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
                     <span className="text-[11px] font-bold text-neutral-700 uppercase">{item.nombre}</span>
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] font-black text-red-500 uppercase">Quedan: {item.stock}</p>
+                    <p className={`text-[10px] font-black uppercase ${item.stock < 0 ? 'text-red-600' : 'text-red-500'}`}>{item.stock < 0 ? `FALTANTE: -${Math.abs(item.stock)}` : `Quedan: ${item.stock}`}</p>
                     <p className="text-[8px] text-neutral-400 font-bold uppercase">Min: {item.stock_minimo}</p>
                   </div>
                 </div>
