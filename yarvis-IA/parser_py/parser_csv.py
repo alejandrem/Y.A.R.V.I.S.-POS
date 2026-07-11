@@ -22,8 +22,8 @@ def parsear_csv(texto: str) -> list[dict]:
     Parsea un catálogo en formato CSV.
     
     Formatos soportados:
-        nombre,costo,venta,categoria
-        nombre;costo;venta;categoria
+        nombre,costo,venta,categoria,stock
+        nombre;costo;venta;categoria;stock
         nombre,venta,costo  (detecta automáticamente el orden)
     """
     lineas = texto.strip().splitlines()
@@ -37,7 +37,26 @@ def parsear_csv(texto: str) -> list[dict]:
     
     # Detectar si la primera línea es header
     primera_linea = lineas[0].lower()
-    tiene_header = any(p in primera_linea for p in ['nombre', 'producto', 'precio', 'costo', 'venta', 'categoria'])
+    tiene_header = any(p in primera_linea for p in ['nombre', 'producto', 'precio', 'costo', 'venta', 'categoria', 'stock', 'cantidad', 'existencia'])
+    
+    # Detectar headers si existen
+    headers = []
+    if tiene_header:
+        headers = [h.strip().lower() for h in lineas[0].split(separador)]
+    
+    # Buscar índice de columna de stock/cantidad
+    col_stock = None
+    for i, h in enumerate(headers):
+        if any(k in h for k in ['stock', 'existencia', 'cantidad', 'inventario', 'qty', 'quantity']):
+            col_stock = i
+            break
+    
+    # Buscar índice de columna de categoría
+    col_categoria = None
+    for i, h in enumerate(headers):
+        if any(k in h for k in ['categoría', 'categoria', 'tipo', 'seccion', 'sección', 'departamento', 'category', 'type']):
+            col_categoria = i
+            break
     
     productos = []
     
@@ -61,6 +80,7 @@ def parsear_csv(texto: str) -> list[dict]:
         precio_venta = None
         precio_costo = None
         categoria = None
+        stock = 0
         
         # Buscar columnas numéricas
         numeric_cols = []
@@ -118,15 +138,27 @@ def parsear_csv(texto: str) -> list[dict]:
             precio_venta = val
             precio_costo = 0
         
+        # Obtener stock de la columna detectada
+        if col_stock is not None and col_stock < len(partes):
+            stock_str = partes[col_stock].replace(',', '').strip()
+            try:
+                stock = int(float(stock_str))
+            except (ValueError, TypeError):
+                stock = 0
+        
+        # Obtener categoría de la columna detectada
+        if col_categoria is not None and col_categoria < len(partes) and partes[col_categoria]:
+            categoria = partes[col_categoria].strip().upper()
+        
         # Si no hay categoría aún, buscar en columnas de texto que no sean el nombre
-        if categoria == "SIN CATEGORÍA":
+        if categoria == "SIN CATEGORÍA" or categoria is None:
             for j, p in text_cols:
                 if p != nombre and len(p) < 30:
                     categoria = p.upper()
                     break
         
         # Si solo hay 2 columnas de texto, la primera puede ser categoría
-        if categoria == "SIN CATEGORÍA" and len(text_cols) == 2:
+        if (categoria == "SIN CATEGORÍA" or categoria is None) and len(text_cols) == 2:
             first_text = text_cols[0][1]
             second_text = text_cols[1][1]
             if first_text != nombre:
@@ -139,7 +171,7 @@ def parsear_csv(texto: str) -> list[dict]:
                 "nombre": limpiar_producto(nombre),
                 "precio_costo": round(precio_costo or 0, 2),
                 "precio_venta": round(precio_venta, 2),
-                "stock": 0,
+                "stock": stock,
                 "categoria": categoria or "SIN CATEGORÍA",
             })
         elif nombre:
@@ -148,7 +180,7 @@ def parsear_csv(texto: str) -> list[dict]:
                 "nombre": limpiar_producto(nombre),
                 "precio_costo": 0,
                 "precio_venta": 0,
-                "stock": 0,
+                "stock": stock,
                 "categoria": categoria or "SIN CATEGORÍA",
             })
     

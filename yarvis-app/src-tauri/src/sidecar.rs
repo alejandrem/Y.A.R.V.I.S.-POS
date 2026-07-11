@@ -27,7 +27,6 @@ pub struct AiSidecar {
     /// Puerto principal del motor de IA (embeddings + Prophet + chat)
     pub port: Mutex<Option<u16>>,
     /// Puerto reservado para el LLM futuro (Qwen)
-    pub port_llm: Mutex<Option<u16>>,
     pub process: Mutex<Option<Child>>,
     pub status: Mutex<AiStatus>,
     /// Cliente HTTP compartido (reutiliza pool de conexiones)
@@ -38,27 +37,22 @@ impl AiSidecar {
     pub fn new() -> Self {
         AiSidecar {
             port: Mutex::new(None),
-            port_llm: Mutex::new(None),
             process: Mutex::new(None),
             status: Mutex::new(AiStatus::NotRunning),
             http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(std::time::Duration::from_secs(900))
                 .pool_max_idle_per_host(4)
                 .build()
                 .expect("Error creando HTTP client compartido"),
         }
     }
-
+    
     pub fn get_status(&self) -> AiStatus {
         self.status.lock().unwrap().clone()
     }
 
     pub fn get_port(&self) -> Option<u16> {
         *self.port.lock().unwrap()
-    }
-
-    pub fn get_port_llm(&self) -> Option<u16> {
-        *self.port_llm.lock().unwrap()
     }
 
     /// Retorna la URL base del motor de IA (ej: http://127.0.0.1:54321)
@@ -89,21 +83,8 @@ impl AiSidecar {
 }
 
 // ============================================================
-// 1. BUSCAR PUERTOS TCP LIBRES
-// Retorna dos puertos: uno para el motor principal, otro reservado para LLM.
+// 1. BUSCAR PUERTO TCP LIBRE
 // ============================================================
-
-pub fn find_two_free_ports() -> Result<(u16, u16), String> {
-    let port1 = find_free_port()?;
-
-    // Buscar un segundo puerto que no sea adyacente al primero
-    let mut port2 = find_free_port()?;
-    while port2 == port1 || port2.abs_diff(port1) <= 1 {
-        port2 = find_free_port()?;
-    }
-
-    Ok((port1, port2))
-}
 
 pub fn find_free_port() -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -290,18 +271,17 @@ pub async fn wait_health_check(port: u16, timeout_secs: u64) -> bool {
 pub async fn launch_ai_engine(sidecar: std::sync::Arc<AiSidecar>) {
     *sidecar.status.lock().unwrap() = AiStatus::Starting;
 
-    // 1. Buscar 2 puertos libres
-    let (port, port_llm) = match find_two_free_ports() {
+    // 1. Buscar un puerto libre
+    let port = match find_free_port() {
         Ok(p) => p,
         Err(e) => {
-            println!("[YARVIS-SIDECAR] Error buscando puertos: {}", e);
+            println!("[YARVIS-SIDECAR] Error buscando puerto: {}", e);
             *sidecar.status.lock().unwrap() = AiStatus::Error(e);
             return;
         }
     };
-    println!("[YARVIS-SIDECAR] Puertos seleccionados: IA={}, LLM={}", port, port_llm);
+    println!("[YARVIS-SIDECAR] Puerto seleccionado: IA={}", port);
     *sidecar.port.lock().unwrap() = Some(port);
-    *sidecar.port_llm.lock().unwrap() = Some(port_llm);
 
     // 2. Lanzar Python
     let child = match start_python(port) {
@@ -332,7 +312,6 @@ pub async fn launch_ai_engine(sidecar: std::sync::Arc<AiSidecar>) {
 // ============================================================
 // 6. CLEANUP: Matar Python al cerrar la app
 // ============================================================
-
 pub fn shutdown_ai_engine(sidecar: &AiSidecar) {
     if let Ok(mut guard) = sidecar.process.lock() {
         if let Some(mut proc) = guard.take() {

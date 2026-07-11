@@ -59,6 +59,7 @@ pub async fn guardar_ticket_parseado(
     let venta_id = result.last_insert_rowid();
 
     for item in items {
+        // Insertar en detalle_ventas
         sqlx::query("INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(venta_id)
             .bind(None::<i32>)
@@ -69,6 +70,20 @@ pub async fn guardar_ticket_parseado(
             .execute(&*state)
             .await
             .map_err(|e| e.to_string())?;
+
+        // Actualizar stock en productos (decrementar por la cantidad vendida)
+        let _ = sqlx::query("UPDATE productos SET stock = MAX(0, stock - ?) WHERE LOWER(nombre) = LOWER(?)")
+            .bind(item.cantidad)
+            .bind(&item.producto)
+            .execute(&*state)
+            .await;
+
+        // Actualizar vendido en productos (incrementar por la cantidad vendida)
+        let _ = sqlx::query("UPDATE productos SET vendido = vendido + ? WHERE LOWER(nombre) = LOWER(?)")
+            .bind(item.cantidad)
+            .bind(&item.producto)
+            .execute(&*state)
+            .await;
     }
 
     Ok("Ticket importado correctamente".into())

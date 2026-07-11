@@ -2,9 +2,10 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useThemeContext } from "../../hooks/ThemeContext";
+import { useParserContext } from "../../hooks/ParserContext";
 import ColumnMapper from "./ColumnMapper";
 import BatchProcessor from "./BatchProcessor";
-import type { LLMAnalysis } from "../types";
+import CatalogosParseados from "./CatalogosParseados";
 
 interface ConfiguracionProps {
   adminName: string;
@@ -27,20 +28,24 @@ const Configuracion = ({
   const [location, setLocation] = useState(initialLocation);
   const [cp, setCp] = useState(initialCp);
   const { theme, setTheme } = useThemeContext();
-  const [parserMode, setParserMode] = useState<"catalogo" | "entrenar IA" | "insertar">("entrenar IA");
-  const [selectedPath, setSelectedPath] = useState("");
-  const [fileContent, setFileContent] = useState("");
-  const [parsedItems, setParsedItems] = useState<any[]>([]);
-  const [llmAnalysis, setLlmAnalysis] = useState<LLMAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [showColumnMapper, setShowColumnMapper] = useState(false);
   const [showBatchProcessor, setShowBatchProcessor] = useState(false);
-  const [catalogParsed, setCatalogParsed] = useState(false);
-  const [iaTrained, setIaTrained] = useState(false);
-  const [ticketsParsed, setTicketsParsed] = useState(false);
-  const [ticketsCount, setTicketsCount] = useState(0);
-  const [lastCatalogPath, setLastCatalogPath] = useState("");
-  const [lastCatalogItems, setLastCatalogItems] = useState<any[]>([]);
+
+  const {
+    parsedItems, setParsedItems,
+    fileContent, setFileContent,
+    selectedPath, setSelectedPath,
+    parserMode, setParserMode,
+    showColumnMapper, setShowColumnMapper,
+    llmAnalysis, setLlmAnalysis,
+    lastCatalogPath, setLastCatalogPath,
+    lastCatalogItems, setLastCatalogItems,
+    catalogParsed, setCatalogParsed,
+    iaTrained, setIaTrained,
+    ticketsParsed, setTicketsParsed,
+    ticketsCount, setTicketsCount,
+    ticketsGuardados, setTicketsGuardados,
+  } = useParserContext();
 
   const handleUpdate = async () => {
     try {
@@ -75,11 +80,9 @@ const Configuracion = ({
         setLlmAnalysis(null);
 
         if (parserMode !== 'insertar') {
-          // Detectar tipo de archivo por extensión
           const ext = path.split('.').pop()?.toLowerCase() || '';
           
           if (ext === 'xlsx' || ext === 'xls') {
-            // Excel: enviar bytes directamente al endpoint
             const bytes = await invoke("leer_archivo_bytes", { path }) as number[];
             const result = await invoke("parsear_excel", { archivo: bytes }) as any;
             if (result.productos && result.productos.length > 0) {
@@ -89,21 +92,19 @@ const Configuracion = ({
               setFileContent('No se encontraron productos en el Excel');
             }
           } else {
-            // TXT o CSV: leer como texto
             const raw = await invoke("leer_archivo_raw", { path });
             setFileContent(raw as string);
 
             if (parserMode === 'entrenar IA') {
               setShowColumnMapper(true);
-            } else             if (parserMode === 'catalogo') {
+            } else if (parserMode === 'catalogo') {
               const result = await invoke("parsear_catalogo_visual", { path }) as any;
               if (result.productos && result.productos.length > 0) {
                 setParsedItems(result.productos);
                 setLastCatalogPath(path);
                 setLastCatalogItems(result.productos);
               } else {
-                // Fallback a parser CSV si el visual no encuentra productos
-                const items = await invoke("parsear_catalogo", { path });
+                const items = await invoke("parsear_catalogo_csv", { path });
                 setParsedItems(items as any[]);
                 setLastCatalogPath(path);
                 setLastCatalogItems(items as any[]);
@@ -132,6 +133,7 @@ const Configuracion = ({
         setIaTrained(true);
         setTicketsParsed(true);
         setTicketsCount((c) => c + items.length);
+        setTicketsGuardados((c) => c + 1);
         alert("¡Ticket guardado en el historial histórico!");
       }
       setParsedItems([]);
@@ -155,9 +157,9 @@ const Configuracion = ({
         setIaTrained(true);
         setTicketsParsed(true);
         setTicketsCount((c) => c + parsedItems.length);
+        setTicketsGuardados((c) => c + 1);
         alert("¡IA Entrenada! Ticket guardado en el historial histórico.");
       } else if (parserMode === 'catalogo') {
-        // Transformar formato del parser visual a InventoryItem
         const items = parsedItems.map((item: any) => ({
           id: null,
           nombre: item.nombre || item.producto || "",
@@ -165,15 +167,22 @@ const Configuracion = ({
           precio_costo: item.precio_costo || 0,
           precio_venta: item.precio_venta || item.precio_venta || 0,
           stock: item.stock || 0,
+          vendido: 0,
           stock_minimo: 5,
           codigo_barras: null,
           categoria: item.categoria || null,
         }));
-        await invoke("importar_catalogo", { items });
+
+        const result = await invoke("importar_catalogo", { 
+          items,
+          rutaArchivo: selectedPath,
+          contenidoArchivo: fileContent
+        }) as string;
+        
         setCatalogParsed(true);
         setLastCatalogPath(selectedPath);
         setLastCatalogItems(parsedItems);
-        alert("¡Catálogo importado con éxito al inventario!");
+        alert(result || "¡Catálogo importado con éxito al inventario!");
       } else {
         alert("Modo no soportado aún, patrón.");
       }
@@ -183,7 +192,12 @@ const Configuracion = ({
       setLlmAnalysis(null);
     } catch (error) {
       console.error("Error al entrenar IA:", error);
-      alert("Fallo al importar los datos a la base de datos.");
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes("ya fue importado") || errorMsg.includes("duplicados")) {
+        alert(errorMsg);
+      } else {
+        alert("Fallo al importar los datos a la base de datos.");
+      }
     }
   };
 
@@ -194,16 +208,9 @@ const Configuracion = ({
         <div className="h-1.5 w-12 bg-neutral-900 rounded-full"></div>
       </header>
 
-      {/* MODO BATCH PROCESSOR (solo insertar) */}
-      {showBatchProcessor && parserMode === 'insertar' && (
-        <BatchProcessor onVolver={() => setShowBatchProcessor(false)} />
-      )}
-
-      {/* RESTO DEL FORMULARIO */}
       {(
         <>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* SECCIÓN: PERFIL Y TIENDA */}
         <div className="bg-neutral-50 p-8 rounded-[2.5rem] border border-neutral-100 space-y-6 shadow-sm">
           <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.4em] mb-4">Datos de Identidad</h3>
 
@@ -253,7 +260,6 @@ const Configuracion = ({
           </div>
         </div>
 
-        {/* SECCIÓN: SEGURIDAD Y TEMA */}
         <div className="space-y-6">
           <div className="bg-neutral-900 p-8 rounded-[2.5rem] shadow-2xl text-white space-y-6 relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-16 translate-x-16 blur-3xl group-hover:bg-white/10 transition-all"></div>
@@ -294,7 +300,6 @@ const Configuracion = ({
         </div>
       </div>
 
-      {/* SECCIÓN: PARSEADOR DE TICKETS (EL CEREBRO) */}
       <div className="bg-white rounded-[2.5rem] border border-neutral-100 shadow-xl overflow-hidden mt-8 border-t-4 border-t-neutral-900">
         <div className="p-8 border-b border-neutral-50 flex justify-between items-center bg-neutral-50/30">
           <div>
@@ -329,7 +334,6 @@ const Configuracion = ({
           </div>
         </div>
 
-        {/* STATUS INDICATOR */}
         {(() => {
           let label: string;
           let colorClass: string;
@@ -347,7 +351,9 @@ const Configuracion = ({
             colorClass = "bg-yellow-50 text-yellow-600";
             dotClass = "bg-yellow-400";
           } else {
-            label = `${ticketsCount} ticket${ticketsCount !== 1 ? 's' : ''} parseado${ticketsCount !== 1 ? 's' : ''} con éxito`;
+            const ticketLabel = ticketsGuardados === 1 ? "1 ticket" : `${ticketsGuardados} tickets`;
+            const productoLabel = ticketsCount === 1 ? "1 producto" : `${ticketsCount} productos`;
+            label = `${ticketLabel} · ${productoLabel} parseados`;
             colorClass = "bg-green-50 text-green-600";
             dotClass = "bg-green-500";
           }
@@ -359,15 +365,22 @@ const Configuracion = ({
           );
         })()}
 
+        {showBatchProcessor && parserMode === 'insertar' && (
+          <div className="px-8 pb-8">
+            <BatchProcessor onVolver={() => setShowBatchProcessor(false)} initialFolder={selectedPath} />
+          </div>
+        )}
+
+        {!showBatchProcessor && (
         <div className="p-10 grid grid-cols-1 lg:grid-cols-12 gap-10">
           <div className="lg:col-span-12 space-y-8">
-                {/* VISUALIZADOR RAW (ARRIBA) */}
                 <div className="space-y-3">
                   <div className="flex justify-between items-center px-2">
                     <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full bg-neutral-900"></div>
-                      Visualizador de Datos Raw
+                      {showBatchProcessor && parserMode === 'insertar' ? 'Procesamiento Masivo Activo' : 'Visualizador de Datos Raw'}
                     </span>
+                    {!showBatchProcessor && (
                     <button
                       onClick={handleFileSelect}
                       disabled={isAnalyzing}
@@ -379,7 +392,9 @@ const Configuracion = ({
                     >
                       {isAnalyzing ? 'Analizando con IA...' : parserMode === 'insertar' ? 'Seleccionar Carpeta' : 'Cargar Archivo (.txt, .csv, .xlsx)'}
                     </button>
+                    )}
                   </div>
+                  {!showBatchProcessor && (
                   <div className="w-full h-48 bg-neutral-900 rounded-3xl p-6 font-mono text-[11px] text-neutral-400 overflow-auto border border-neutral-800 shadow-inner custom-scrollbar">
                     {selectedPath ? (
                       <pre className="animate-in fade-in duration-700">{fileContent || "// Archivo vacío o sin datos legibles"}</pre>
@@ -390,9 +405,10 @@ const Configuracion = ({
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
 
-                {/* TABLA DE PREVISUALIZACIÓN (ARRIBA) */}
+                {!(showBatchProcessor && parserMode === 'insertar') && (
                 <div className="space-y-3">
                   <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest px-2 flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
@@ -415,7 +431,7 @@ const Configuracion = ({
                               <th className="px-6 py-4 font-black text-neutral-400 uppercase tracking-widest">Nombre</th>
                               <th className="px-6 py-4 font-black text-neutral-400 uppercase tracking-widest text-right">Costo</th>
                               <th className="px-6 py-4 font-black text-neutral-400 uppercase tracking-widest text-right">Venta</th>
-                              <th className="px-6 py-4 font-black text-neutral-400 uppercase tracking-widest text-center">Categoría</th>
+                              <th className="px-6 py-4 font-black text-neutral-400 uppercase tracking-widest text-center">Cantidad</th>
                             </>
                           ) : (
                             <>
@@ -434,7 +450,7 @@ const Configuracion = ({
                                 <td className="px-6 py-3 font-bold text-neutral-900">{item.nombre}</td>
                                 <td className="px-6 py-3 text-right font-bold">${item.precio_costo.toFixed(2)}</td>
                                 <td className="px-6 py-3 text-right font-bold text-neutral-900 group-hover:text-green-600 transition-colors">${item.precio_venta.toFixed(2)}</td>
-                                <td className="px-6 py-3 text-center font-black text-neutral-400 text-[9px]">{item.categoria || '-'}</td>
+                                <td className="px-6 py-3 text-center font-black text-neutral-400 text-[9px]">{item.stock || 0}</td>
                               </tr>
                             ))
                           ) : parserMode === 'entrenar IA' ? (
@@ -465,8 +481,8 @@ const Configuracion = ({
                     </table>
                   </div>
                 </div>
+                )}
 
-                {/* COLUMN MAPPER INLINE (solo en modo entrenar IA, después de cargar archivo) */}
                 {parserMode === 'entrenar IA' && showColumnMapper && fileContent && (
                   <ColumnMapper
                     onGuardarTicket={handleGuardarTicket}
@@ -476,7 +492,6 @@ const Configuracion = ({
                   />
                 )}
 
-                {/* PANEL DE ANÁLISIS LLM (solo en modo entrenar IA) */}
                 {parserMode === 'entrenar IA' && llmAnalysis && (
                   <div className="space-y-3 animate-in fade-in duration-500">
                     <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest px-2 flex items-center gap-2">
@@ -533,7 +548,10 @@ const Configuracion = ({
                   </div>
                 )}
 
-                {/* BOTÓN DE ACCIÓN DINÁMICO */}
+                {parserMode === 'catalogo' && (
+                  <CatalogosParseados />
+                )}
+
                 {parserMode !== 'entrenar IA' && (
                 <div className="flex justify-center pt-2">
                   <button
@@ -552,6 +570,7 @@ const Configuracion = ({
                 )}
           </div>
         </div>
+        )}
       </div>
         </>
       )}

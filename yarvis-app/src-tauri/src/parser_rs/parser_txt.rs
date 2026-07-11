@@ -1,10 +1,81 @@
 // Parser TXT/Visual en Rust (envía al sidecar Python).
 // Incluye parsing de tickets y catálogos visuales.
 use std::fs;
+use std::path;
 use crate::models::TicketItem;
 use crate::sidecar::AiSidecar;
 use std::sync::Arc;
 use super::utils::sanitize_path;
+use tauri::Emitter;
+use futures_util::StreamExt;
+
+#[derive(serde::Serialize)]
+pub struct ArchivoCarpeta {
+    pub nombre: String,
+    pub ruta: String,
+    pub tamano: u64,
+    pub preview: String,
+}
+
+#[tauri::command]
+pub fn listar_archivos_carpeta(carpeta: String) -> Result<Vec<ArchivoCarpeta>, String> {
+    let dir = path::Path::new(&carpeta);
+    if !dir.is_dir() {
+        return Err(format!("La ruta no es una carpeta: {}", carpeta));
+    }
+
+    let mut archivos = Vec::new();
+    let entries = fs::read_dir(dir).map_err(|e| format!("Error leyendo carpeta: {}", e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Error leyendo entrada: {}", e))?;
+        let file_path = entry.path();
+
+        if !file_path.is_file() {
+            continue;
+        }
+
+        let ext = file_path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        if ext != "txt" {
+            continue;
+        }
+
+        let nombre = file_path.file_name()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        let ruta = file_path.to_string_lossy().to_string();
+
+        let tamano = fs::metadata(&file_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        // Leer primeras 5 lineas para preview
+        let preview = fs::read_to_string(&file_path)
+            .map(|content| {
+                content.lines()
+                    .take(5)
+                    .collect::<Vec<&str>>()
+                    .join("\n")
+            })
+            .unwrap_or_else(|_| "Error al leer archivo".to_string());
+
+        archivos.push(ArchivoCarpeta {
+            nombre,
+            ruta,
+            tamano,
+            preview,
+        });
+    }
+
+    archivos.sort_by(|a, b| a.nombre.cmp(&b.nombre));
+    Ok(archivos)
+}
 
 #[tauri::command]
 pub fn leer_archivo_raw(path: String) -> Result<String, String> {
@@ -253,6 +324,7 @@ pub async fn parsear_carpeta(
 
 #[tauri::command]
 pub async fn parsear_carpeta_stream(
+    app_handle: tauri::AppHandle,
     sidecar: tauri::State<'_, Arc<AiSidecar>>,
     carpeta: String,
     mapeo: serde_json::Value,
@@ -274,15 +346,44 @@ pub async fn parsear_carpeta_stream(
         .await
         .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
 
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
-
-    if status.is_success() {
-        Ok(text)
-    } else {
-        Err(format!("Error del motor de IA: {}", text))
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Error del motor de IA: {}", text));
     }
+
+    // Leer la respuesta SSE como stream de bytes y emitir eventos en tiempo real
+    let mut stream = resp.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Error leyendo stream: {}", e))?;
+        let text = String::from_utf8_lossy(&chunk);
+        buffer.push_str(&text);
+
+        // Procesar líneas completas del buffer SSE
+        while let Some(pos) = buffer.find("\n\n") {
+            let line = buffer[..pos].to_string();
+            buffer = buffer[pos + 2..].to_string();
+
+            if let Some(data) = line.strip_prefix("data: ") {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    let _ = app_handle.emit("batch-progress", json);
+                }
+            }
+        }
+    }
+
+    // Procesar cualquier dato restante en el buffer
+    if !buffer.is_empty() {
+        for line in buffer.lines() {
+            if let Some(data) = line.strip_prefix("data: ") {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    let _ = app_handle.emit("batch-progress", json);
+                }
+            }
+        }
+    }
+
+    Ok("ok".to_string())
 }
+

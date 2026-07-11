@@ -1,9 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
 interface BatchProcessorProps {
   onVolver: () => void;
+  initialFolder?: string;
+}
+
+interface ArchivoCarpeta {
+  nombre: string;
+  ruta: string;
+  tamano: number;
+  preview: string;
 }
 
 interface ProgressData {
@@ -32,8 +41,11 @@ interface VinculacionResult {
   };
 }
 
-const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
-  const [selectedFolder, setSelectedFolder] = useState("");
+const BatchProcessor = ({ onVolver, initialFolder }: BatchProcessorProps) => {
+  const [selectedFolder, setSelectedFolder] = useState(initialFolder || "");
+  const [archivos, setArchivos] = useState<ArchivoCarpeta[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [selectedFilePreview, setSelectedFilePreview] = useState<ArchivoCarpeta | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState<ProgressData | null>(null);
   const [isComplete, setIsComplete] = useState(false);
@@ -41,16 +53,43 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
   const [vinculacionResult, setVinculacionResult] = useState<VinculacionResult | null>(null);
   const [isVinculando, setIsVinculando] = useState(false);
   const [dbPath, setDbPath] = useState("");
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const unlistenRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (initialFolder) {
+      setSelectedFolder(initialFolder);
+    }
+  }, [initialFolder]);
 
   useEffect(() => {
     invoke<string>("get_db_path").then(setDbPath).catch(() => {});
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+      if (unlistenRef.current) {
+        unlistenRef.current();
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedFolder) {
+      setArchivos([]);
+      setSelectedFilePreview(null);
+      return;
+    }
+
+    setIsLoadingFiles(true);
+    setError("");
+    invoke<ArchivoCarpeta[]>("listar_archivos_carpeta", { carpeta: selectedFolder })
+      .then((files) => {
+        setArchivos(files);
+        setSelectedFilePreview(files.length > 0 ? files[0] : null);
+      })
+      .catch((err) => {
+        setError(err || "Error al listar archivos");
+        setArchivos([]);
+      })
+      .finally(() => setIsLoadingFiles(false));
+  }, [selectedFolder]);
 
   const handleSelectFolder = async () => {
     try {
@@ -75,30 +114,32 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
     setError("");
 
     try {
-      const sseText = await invoke<string>("parsear_carpeta_stream", {
+      const unlisten = await listen<ProgressData>("batch-progress", (event) => {
+        const data = event.payload;
+        setProgress(data);
+
+        if (data.type === "complete") {
+          setIsComplete(true);
+          setIsProcessing(false);
+        }
+      });
+      unlistenRef.current = unlisten;
+
+      await invoke("parsear_carpeta_stream", {
         carpeta: selectedFolder,
-        mapeo: { cantidad: 0, producto: [1], precio_unitario: 2, total: 3 },
+        mapeo: { cantidad: -3, producto: [0, -4], precio_unitario: -2, total: -1 },
         dbPath: dbPath,
       });
 
-      const lines = sseText.split("\n").filter((l) => l.startsWith("data: "));
-
-      for (const line of lines) {
-        try {
-          const data = JSON.parse(line.slice(6)) as ProgressData;
-          setProgress(data);
-
-          if (data.type === "complete") {
-            setIsComplete(true);
-            setIsProcessing(false);
-          }
-        } catch (e) {
-          console.error("Error parsing SSE:", e);
-        }
-      }
+      unlisten();
+      unlistenRef.current = null;
     } catch (err: any) {
-      setError(err.message || "Error desconocido");
+      setError(err.message || err || "Error desconocido");
       setIsProcessing(false);
+      if (unlistenRef.current) {
+        unlistenRef.current();
+        unlistenRef.current = null;
+      }
     }
   }, [selectedFolder, dbPath]);
 
@@ -128,6 +169,12 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
     }
   };
 
+  const formatTamano = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center gap-4 mb-6">
@@ -145,7 +192,6 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
         </div>
       </div>
 
-      {/* SELECTOR DE CARPETA */}
       {!isProcessing && !isComplete && (
         <div className="bg-neutral-50 p-8 rounded-[2.5rem] border border-neutral-100 space-y-6">
           <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.4em]">Seleccionar Carpeta de Tickets</h4>
@@ -164,18 +210,80 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
             </button>
           </div>
 
-          {selectedFolder && (
+          {isLoadingFiles && (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-neutral-300 border-t-neutral-900 rounded-full animate-spin" />
+              <span className="ml-3 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Escaneando archivos...</span>
+            </div>
+          )}
+
+          {!isLoadingFiles && archivos.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.4em]">
+                  {archivos.length} archivo{archivos.length !== 1 ? "s" : ""} .txt encontrado{archivos.length !== 1 ? "s" : ""}
+                </h4>
+                <span className="text-[9px] font-bold text-neutral-400">
+                  {formatTamano(archivos.reduce((acc, a) => acc + a.tamano, 0))} total
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-2xl border border-neutral-100 max-h-72 overflow-y-auto">
+                  {archivos.map((archivo, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedFilePreview(archivo)}
+                      className={`w-full text-left px-4 py-3 border-b border-neutral-50 hover:bg-neutral-50 transition-colors ${
+                        selectedFilePreview?.ruta === archivo.ruta ? "bg-neutral-100 border-l-2 border-l-neutral-900" : ""
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-neutral-900 truncate">{archivo.nombre}</span>
+                        <span className="text-[8px] font-bold text-neutral-400 ml-2 shrink-0">{formatTamano(archivo.tamano)}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-neutral-100 p-4">
+                  {selectedFilePreview ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
+                        <span className="text-[10px] font-black text-neutral-900">{selectedFilePreview.nombre}</span>
+                        <span className="text-[8px] font-bold text-neutral-400">{formatTamano(selectedFilePreview.tamano)}</span>
+                      </div>
+                      <pre className="text-[9px] font-mono text-neutral-700 whitespace-pre-wrap leading-relaxed bg-neutral-50 rounded-xl p-3 max-h-52 overflow-y-auto">
+                        {selectedFilePreview.preview || "Sin preview disponible"}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-32">
+                      <span className="text-[9px] font-bold text-neutral-300 uppercase">Selecciona un archivo para previsualizar</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isLoadingFiles && selectedFolder && archivos.length === 0 && !error && (
+            <div className="text-center py-6">
+              <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">No se encontraron archivos .txt en esta carpeta</p>
+            </div>
+          )}
+
+          {selectedFolder && archivos.length > 0 && (
             <button
               onClick={handleStartProcessing}
               className="w-full bg-neutral-900 text-white py-5 rounded-2xl text-[11px] font-black uppercase tracking-[0.3em] hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
             >
-              Iniciar Procesamiento
+              Iniciar Procesamiento ({archivos.length} archivos)
             </button>
           )}
         </div>
       )}
 
-      {/* BARRA DE PROGRESO */}
       {(isProcessing || isComplete) && progress && (
         <div className="bg-white rounded-[2.5rem] border border-neutral-100 shadow-xl overflow-hidden border-t-4 border-t-neutral-900">
           <div className="p-8 border-b border-neutral-50 bg-neutral-50/30">
@@ -188,7 +296,6 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
               </span>
             </div>
 
-            {/* BARRA DE PROGRESO */}
             <div className="relative h-4 bg-neutral-100 rounded-full overflow-hidden">
               <div
                 className={`absolute left-0 top-0 h-full rounded-full transition-all duration-300 ${isComplete ? 'bg-green-500' : 'bg-neutral-900'}`}
@@ -202,64 +309,20 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
             </div>
           </div>
 
-          {/* ESTADÍSTICAS */}
           <div className="p-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard
-              label="Procesados"
-              value={progress.procesados}
-              total={progress.total}
-              icon="📁"
-              color="neutral"
-            />
-            <StatCard
-              label="Exitosos"
-              value={progress.exitosos}
-              icon="✅"
-              color="green"
-            />
-            <StatCard
-              label="Errores"
-              value={progress.errores}
-              icon="⚠️"
-              color={progress.errores > 0 ? "red" : "neutral"}
-            />
-            <StatCard
-              label="Ventas Creadas"
-              value={progress.ventas_creadas || 0}
-              icon="💰"
-              color="blue"
-            />
+            <StatCard label="Procesados" value={progress.procesados} total={progress.total} icon="📁" color="neutral" />
+            <StatCard label="Exitosos" value={progress.exitosos} icon="✅" color="green" />
+            <StatCard label="Errores" value={progress.errores} icon="⚠️" color={progress.errores > 0 ? "red" : "neutral"} />
+            <StatCard label="Ventas Creadas" value={progress.ventas_creadas || 0} icon="💰" color="blue" />
           </div>
 
-          {/* MÁS ESTADÍSTICAS */}
           <div className="px-8 pb-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard
-              label="Items Insertados"
-              value={progress.items_insertados || 0}
-              icon="📦"
-              color="purple"
-            />
-            <StatCard
-              label="Productos Nuevos"
-              value={progress.productos_nuevos || 0}
-              icon="🆕"
-              color="amber"
-            />
-            <StatCard
-              label="Productos Existentes"
-              value={progress.productos_existentes || 0}
-              icon="🔄"
-              color="neutral"
-            />
-            <StatCard
-              label="Duplicados"
-              value={progress.duplicados_detectados || 0}
-              icon="👯"
-              color={progress.duplicados_detectados ? "yellow" : "neutral"}
-            />
+            <StatCard label="Items Insertados" value={progress.items_insertados || 0} icon="📦" color="purple" />
+            <StatCard label="Productos Nuevos" value={progress.productos_nuevos || 0} icon="🆕" color="amber" />
+            <StatCard label="Productos Existentes" value={progress.productos_existentes || 0} icon="🔄" color="neutral" />
+            <StatCard label="Duplicados" value={progress.duplicados_detectados || 0} icon="👯" color={progress.duplicados_detectados ? "yellow" : "neutral"} />
           </div>
 
-          {/* PRODUCTOS NUEVOS ENCONTRADOS */}
           {isComplete && progress.productos_nuevos_lista && progress.productos_nuevos_lista.length > 0 && (
             <div className="px-8 pb-8">
               <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100">
@@ -274,15 +337,14 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
                   ))}
                   {progress.productos_nuevos_lista.length > 50 && (
                     <span className="text-[9px] font-bold px-3 py-1.5 text-amber-600">
-                      +{progress.productos_nuevos_lista.length - 50} más...
+                      +{progress.productos_nuevos_lista.length - 50} mas...
                     </span>
                   )}
                 </div>
                 <p className="text-[9px] text-amber-600 mt-3 font-bold">
-                  Estos productos fueron insertados en la tabla de ventas. Puedes vincularlos al inventario desde la sección de Inventario.
+                  Estos productos fueron insertados en la tabla de ventas. Puedes vincularlos al inventario desde la seccion de Inventario.
                 </p>
 
-                {/* BOTÓN VINCULAR */}
                 {!vinculacionResult && (
                   <button
                     onClick={handleVincular}
@@ -296,12 +358,11 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
             </div>
           )}
 
-          {/* RESULTADOS DE VINCULACIÓN */}
           {vinculacionResult && (
             <div className="px-8 pb-8 space-y-4">
               <div className="bg-blue-50 rounded-2xl p-6 border border-blue-100">
                 <h5 className="text-[10px] font-black text-blue-700 uppercase tracking-[0.3em] mb-4">
-                  Resultado de Vinculación
+                  Resultado de Vinculacion
                 </h5>
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div className="text-center">
@@ -318,11 +379,10 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
                   </div>
                 </div>
 
-                {/* Productos sin vincular */}
                 {vinculacionResult.sin_vincular.length > 0 && (
                   <div className="mt-4">
                     <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-2">
-                      Requieren revisión manual ({vinculacionResult.sin_vincular.length})
+                      Requieren revision manual ({vinculacionResult.sin_vincular.length})
                     </p>
                     <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
                       {vinculacionResult.sin_vincular.slice(0, 30).map((item, i) => (
@@ -337,7 +397,6 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
             </div>
           )}
 
-          {/* BOTÓN VOLVER */}
           {isComplete && (
             <div className="px-8 pb-8">
               <button
@@ -345,6 +404,8 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
                   setIsComplete(false);
                   setProgress(null);
                   setSelectedFolder("");
+                  setArchivos([]);
+                  setSelectedFilePreview(null);
                 }}
                 className="w-full bg-neutral-900 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:scale-[1.02] active:scale-95 transition-all"
               >
@@ -355,7 +416,6 @@ const BatchProcessor = ({ onVolver }: BatchProcessorProps) => {
         </div>
       )}
 
-      {/* ERROR */}
       {error && (
         <div className="bg-red-50 p-6 rounded-2xl border border-red-100">
           <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Error</p>

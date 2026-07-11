@@ -4,6 +4,7 @@ Importa las funciones desde los nuevos módulos parser_py.
 """
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+import re
 
 from parser_py.parser_excel import parsear_excel
 from parser_py.parser_txt import parsear_catalogo_visual
@@ -79,16 +80,33 @@ def _es_linea_util(linea: str) -> bool:
         "fecha", "hora", "caja", "cajero", "turno",
         "subtotal", "iva", "total a pagar", "cambio",
         "metodo de pago", "forma de pago",
-        "nombre", "direccion", "telefono", "correo",
+        "nombre", "direccion", "telefono", "tel:", "correo",
         "gracias", "vuelva", "auxiliar", "copias",
         "articulo", "producto", "descripcion", "cant", "precio",
         "empresa", "razon social", "regimen",
+        # Encabezados de ticket de tienda
+        "miscelánea", "miscelanea", "av.", "av ", "calle",
+        "colonia", "ciudad", "estado", "cp:", "rfc:",
+        "tel ", "tel.", "pagina", "www", "ticket #",
+        # Línea de total
+        "total", "pago:", "efectivo", "tarjeta",
     ]
     for patron in patrones_skip:
         if patron in linea_lower:
             return False
 
+    # Si la línea termina con un número de 4+ dígitos (ticket number)
+    if re.search(r'#?\d{4,}$', linea_lower):
+        return False
+
     return True
+
+
+def _preprocesar_linea(linea: str) -> str:
+    """Une '$' con el número siguiente para evitar columnas separadas."""
+    # Reemplazar "$ NUMERO" con "$NUMERO"
+    linea = re.sub(r'\$\s+(\d)', r'$\1', linea)
+    return linea
 
 
 def _parsear_linea(linea: str, mapeo: MapeoColumnas, total_cols: int) -> dict | None:
@@ -100,25 +118,31 @@ def _parsear_linea(linea: str, mapeo: MapeoColumnas, total_cols: int) -> dict | 
     if not _es_linea_util(linea):
         return None
 
+    # Preprocessing: unir $ con el número siguiente
+    linea = _preprocesar_linea(linea)
+
     cols = linea.split()
     if len(cols) < 2:
         return None
 
-    idx_cant = _resolver_indice(mapeo.cantidad, total_cols)
-    idx_precio = _resolver_indice(mapeo.precio_unitario, total_cols)
-    idx_total = _resolver_indice(mapeo.total, total_cols)
-    idx_desc = _resolver_indice(mapeo.descuento, total_cols)
+    # Usar el largo real de la línea para índices negativos
+    line_cols = len(cols)
+
+    idx_cant = _resolver_indice(mapeo.cantidad, line_cols)
+    idx_precio = _resolver_indice(mapeo.precio_unitario, line_cols)
+    idx_total = _resolver_indice(mapeo.total, line_cols)
+    idx_desc = _resolver_indice(mapeo.descuento, line_cols)
 
     producto = ""
     if mapeo.producto and len(mapeo.producto) >= 2:
-        ini = _resolver_indice(mapeo.producto[0], total_cols)
-        fin = _resolver_indice(mapeo.producto[-1], total_cols)
+        ini = _resolver_indice(mapeo.producto[0], line_cols)
+        fin = _resolver_indice(mapeo.producto[-1], line_cols)
         if ini is not None and fin is not None:
             start = max(0, min(ini, fin))
             end = min(len(cols) - 1, max(ini, fin))
             producto = " ".join(cols[start:end + 1])
     elif mapeo.producto and len(mapeo.producto) == 1:
-        idx = _resolver_indice(mapeo.producto[0], total_cols)
+        idx = _resolver_indice(mapeo.producto[0], line_cols)
         if idx is not None and 0 <= idx < len(cols):
             producto = cols[idx]
 

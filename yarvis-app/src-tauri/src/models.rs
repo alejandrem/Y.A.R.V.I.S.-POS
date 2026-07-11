@@ -11,6 +11,7 @@ pub struct AdminData {
 pub struct TicketItem {
     pub producto: String,
     pub cantidad: f64,
+    #[serde(alias = "precio_unitario")]
     pub precio: f64,
     pub total: f64,
 }
@@ -40,6 +41,7 @@ pub struct InventoryItem {
     pub precio_venta: f64,
     pub stock: f64,
     pub stock_minimo: f64,
+    pub vendido: f64,
     pub codigo_barras: Option<String>,
     pub categoria: Option<String>,
 }

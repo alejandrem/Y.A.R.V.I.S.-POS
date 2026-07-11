@@ -67,6 +67,7 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
         let _ = sqlx::query("ALTER TABLE productos ADD COLUMN categoria TEXT").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE productos ADD COLUMN codigo_barras TEXT").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE productos ADD COLUMN stock_minimo REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE productos ADD COLUMN vendido REAL DEFAULT 0").execute(&pool).await;
 
         // ========================
         // TABLA: clientes
@@ -175,6 +176,17 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             embedding BLOB,
             creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
         )").execute(&pool).await.expect("Fallo al crear tabla knowledge_base");
+
+        // ========================
+        // TABLA: catalogos_importados (control de duplicados)
+        // ========================
+        sqlx::query("CREATE TABLE IF NOT EXISTS catalogos_importados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hash TEXT UNIQUE NOT NULL,
+            ruta_archivo TEXT,
+            fecha_importacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+            total_productos INTEGER DEFAULT 0
+        )").execute(&pool).await.expect("Fallo al crear tabla catalogos_importados");
 
         (pool, db_path_str)
     })

@@ -1,6 +1,7 @@
 """
 Parser de tickets mediante LLM (Qwen).
-Carga primero el 0.5B; si la confianza es < 0.8, reintenta con el 1.7B.
+Carga primero el 0.5B; si la confianza es < 0.8, reintenta con el 0.8B.
+Si la confianza sigue siendo < 0.8, reintenta con el 1.7B.
 GPU: llama-cpp-python detecta CUDA/Metal automáticamente. Si no hay GPU, usa CPU.
 """
 
@@ -9,9 +10,10 @@ import json
 import re
 from llama_cpp import Llama
 
-from modelos.qwen.rutas import qwen0_5, qwen1_7
+from modelos.qwen.rutas import qwen0_5, qwen0_8, qwen1_7
 
 _llm_0_5 = None
+_llm_0_8 = None
 _llm_1_7 = None
 
 SYSTEM_PROMPT = """Eres un experto en parseo de tickets de punto de venta mexicano.
@@ -73,6 +75,21 @@ def _cargar_modelo_0_5() -> Llama:
     return _llm_0_5
 
 
+def _cargar_modelo_0_8() -> Llama:
+    global _llm_0_8
+    if _llm_0_8 is None:
+        print("[YARVIS-IA] Cargando Qwen 3.5 0.8B para parseo de tickets (confianza media)...")
+        _llm_0_8 = Llama(
+            model_path=qwen0_8,
+            n_ctx=4096,
+            n_gpu_layers=-1,
+            n_threads=4,
+            verbose=False
+        )
+        print("[YARVIS-IA] Qwen 3.5 0.8B listo.")
+    return _llm_0_8
+
+
 def _cargar_modelo_1_7() -> Llama:
     global _llm_1_7
     if _llm_1_7 is None:
@@ -89,11 +106,15 @@ def _cargar_modelo_1_7() -> Llama:
 
 
 def descargar_modelos():
-    global _llm_0_5, _llm_1_7
+    global _llm_0_5, _llm_0_8, _llm_1_7
     count = 0
     if _llm_0_5 is not None:
         del _llm_0_5
         _llm_0_5 = None
+        count += 1
+    if _llm_0_8 is not None:
+        del _llm_0_8
+        _llm_0_8 = None
         count += 1
     if _llm_1_7 is not None:
         del _llm_1_7
@@ -144,7 +165,8 @@ def analizar_ticket(texto_ticket: str) -> dict:
     """
     Analiza un ticket TXT.
     1. Intenta con Qwen 2.5 0.5B.
-    2. Si confianza < 0.8, reintenta con Qwen 3 1.7B.
+    2. Si confianza < 0.8, reintenta con Qwen 3.5 0.8B.
+    3. Si confianza sigue < 0.8, reintenta con Qwen 3 1.7B.
     Retorna: { "status": "ok", "mapeo": {...}, "confianza": 0.95 }
     """
     if not texto_ticket or not texto_ticket.strip():
@@ -159,9 +181,21 @@ def analizar_ticket(texto_ticket: str) -> dict:
             confianza = float(resultado.get("confianza", 0))
             resultado["confianza"] = confianza
 
-            # Intento 2: Si confianza < 0.8, usar 1.7B
+            # Intento 2: Si confianza < 0.8, usar 0.8B
             if confianza < 0.8:
-                print(f"[YARVIS-IA] Confianza baja ({confianza}), reintentando con Qwen 3 1.7B...")
+                print(f"[YARVIS-IA] Confianza baja ({confianza}), reintentando con Qwen 3.5 0.8B...")
+                model_0_8 = _cargar_modelo_0_8()
+                resultado_0_8 = _ejecutar_analisis(model_0_8, texto_ticket)
+
+                if resultado_0_8 and "mapeo" in resultado_0_8:
+                    confianza_0_8 = float(resultado_0_8.get("confianza", 0))
+                    if confianza_0_8 > confianza:
+                        resultado_0_8["confianza"] = confianza_0_8
+                        resultado_0_8["reintentado_con"] = "qwen3_5_0_8b"
+                        return {"status": "ok", **resultado_0_8}
+
+                # Intento 3: Si confianza sigue < 0.8, usar 1.7B
+                print(f"[YARVIS-IA] Confianza aún baja ({confianza}), reintentando con Qwen 3 1.7B...")
                 model_1_7 = _cargar_modelo_1_7()
                 resultado_1_7 = _ejecutar_analisis(model_1_7, texto_ticket)
 
@@ -175,8 +209,19 @@ def analizar_ticket(texto_ticket: str) -> dict:
             resultado["reintentado_con"] = None
             return {"status": "ok", **resultado}
 
-        # Si el 0.5B no devolvió JSON válido, intentar directo con 1.7B
-        print("[YARVIS-IA] Qwen 0.5B no pudo analizar, usando Qwen 3 1.7B directamente...")
+        # Si el 0.5B no devolvió JSON válido, intentar directo con 0.8B
+        print("[YARVIS-IA] Qwen 0.5B no pudo analizar, usando Qwen 3.5 0.8B directamente...")
+        model_0_8 = _cargar_modelo_0_8()
+        resultado_0_8 = _ejecutar_analisis(model_0_8, texto_ticket)
+
+        if resultado_0_8 and "mapeo" in resultado_0_8:
+            confianza_0_8 = float(resultado_0_8.get("confianza", 0))
+            resultado_0_8["confianza"] = confianza_0_8
+            resultado_0_8["reintentado_con"] = "qwen3_5_0_8b"
+            return {"status": "ok", **resultado_0_8}
+
+        # Si el 0.8B tampoco, intentar con 1.7B
+        print("[YARVIS-IA] Qwen 0.8B no pudo analizar, usando Qwen 3 1.7B directamente...")
         model_1_7 = _cargar_modelo_1_7()
         resultado_1_7 = _ejecutar_analisis(model_1_7, texto_ticket)
 

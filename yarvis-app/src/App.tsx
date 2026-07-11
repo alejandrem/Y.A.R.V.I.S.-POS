@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
+import { ParserProvider } from "./hooks/ParserContext";
 import "./App.css";
 
 function App() {
@@ -147,18 +148,20 @@ function App() {
 
   if (step === 2) {
     return (
-      <AdminDashboard
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        setStep={setStep}
-        setSelectedRole={setSelectedRole}
-        setLoginPass={setLoginPass}
-        adminName={adminName}
-        storeName={storeName}
-        adminPass={password}
-        initialLocation={adminLocation}
-        initialCp={adminCp}
-      />
+      <ParserProvider>
+        <AdminDashboard
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          setStep={setStep}
+          setSelectedRole={setSelectedRole}
+          setLoginPass={setLoginPass}
+          adminName={adminName}
+          storeName={storeName}
+          adminPass={password}
+          initialLocation={adminLocation}
+          initialCp={adminCp}
+        />
+      </ParserProvider>
     );
   }
 

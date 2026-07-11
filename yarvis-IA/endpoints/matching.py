@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import sqlite3
 import re
 
-from core.embeddings import texto_a_embedding, cosine_similarity
+from core.embeddings import texto_a_embedding, cosine_similarity, blob_a_embedding
 
 router = APIRouter()
 
@@ -29,13 +29,8 @@ def _cargar_inventario(db_path: str) -> list[dict]:
         ).fetchall()
         conn.close()
 
-        import struct
         for pid, nombre, precio, blob in rows:
-            if blob:
-                n = len(blob) // 4
-                embedding = list(struct.unpack(f"<{n}f", blob))
-            else:
-                embedding = None
+            embedding = blob_a_embedding(blob) if blob else None
             productos.append({
                 "id": pid,
                 "nombre": nombre,

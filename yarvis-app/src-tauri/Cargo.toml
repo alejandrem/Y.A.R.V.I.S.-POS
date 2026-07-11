@@ -25,7 +25,9 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-native-tls"] }
 tokio = { version = "1.38", features = ["full"] }
 tauri-plugin-dialog = "2"
 # HTTP client para el health check del sidecar Python
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+# Stream utilities para leer SSE chunk-by-chunk
+futures-util = "0.3"
 # Hashing seguro de contraseñas (Primera Ola - Seguridad)
 argon2 = "0.5"
 rand = "0.8"
@@ -33,3 +35,5 @@ rand = "0.8"
 base64 = "0.22"
 # Serialización JSON para llamadas HTTP a Python
 serde_json = "1"
+# SHA256 para hashing de catálogos
+sha2 = "0.10"

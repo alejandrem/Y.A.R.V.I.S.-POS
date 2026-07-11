@@ -68,10 +68,11 @@ pub fn run() {
             commands::inventory::delete_inventory_item,
             commands::inventory::importar_catalogo,
             commands::inventory::buscar_producto_similar,
+            commands::inventory::get_catalogos_importados,
+            commands::inventory::get_productos_por_catalogo,
             // Parser (nueva estructura)
             parser_rs::leer_archivo_raw,
             parser_rs::leer_archivo_bytes,
-            parser_rs::parsear_catalogo,
             parser_rs::parsear_catalogo_csv,
             parser_rs::parsear_catalogo_visual,
             parser_rs::parsear_excel,
@@ -85,6 +86,7 @@ pub fn run() {
             commands::parser::guardar_vinculacion,
             commands::parser::get_db_path,
             commands::parser::descargar_modelos,
+            parser_rs::listar_archivos_carpeta,
             // Tickets
             commands::tickets::get_tickets,
             commands::tickets::get_cortes,

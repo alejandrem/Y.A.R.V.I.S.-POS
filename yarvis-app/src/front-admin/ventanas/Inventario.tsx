@@ -9,6 +9,7 @@ export interface InventoryItem {
   precio_venta: number;
   stock: number;
   stock_minimo: number;
+  vendido: number;
   codigo_barras?: string;
   categoria?: string;
 }
@@ -70,6 +71,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
         precio_venta: item.precio_venta || 0,
         stock: item.stock || 0,
         stock_minimo: item.stock_minimo || 0,
+        vendido: item.vendido || 0,
       };
 
       if (cleanedItem.id) {
@@ -107,6 +109,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
       precio_venta: 0,
       stock: 0,
       stock_minimo: 5,
+      vendido: 0,
     };
     setInventory(prev => [newItem, ...prev]);
     setEditingId(tempId);
@@ -161,6 +164,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
             <tr className="bg-neutral-50/50 border-b border-neutral-100">
               <th className="px-8 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Producto</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-center">Stock</th>
+              <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-center">Vendido</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Costo</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Venta</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-right">Margen %</th>
@@ -209,6 +213,22 @@ const Inventario = ({ activeTab }: InventarioProps) => {
                           <div className={`h-full rounded-full ${item.stock <= item.stock_minimo ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${Math.min(100, (item.stock / 50) * 100)}%` }}></div>
                         </div>
                       </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    {isEditing ? (
+                      <input 
+                        type="number"
+                        className="bg-white border border-neutral-200 px-3 py-1.5 rounded-lg text-xs font-bold w-20 text-center focus:outline-none focus:border-neutral-900"
+                        value={item.vendido}
+                        onChange={(e) => {
+                          const newInv = [...inventory];
+                          newInv[inventory.indexOf(item)].vendido = parseFloat(e.target.value);
+                          setInventory(newInv);
+                        }}
+                      />
+                    ) : (
+                      <span className="text-xs font-bold text-neutral-900">{item.vendido}</span>
                     )}
                   </td>
                   <td className="px-6 py-4">

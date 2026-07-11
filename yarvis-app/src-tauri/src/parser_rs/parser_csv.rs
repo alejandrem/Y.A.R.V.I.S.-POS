@@ -104,6 +104,7 @@ pub fn parsear_catalogo_csv(path: String) -> Result<Vec<InventoryItem>, String> 
                 precio_venta,
                 stock: 0.0,
                 stock_minimo: 5.0,
+                vendido: 0.0,
                 codigo_barras: None,
                 categoria: None,
             });
@@ -111,9 +112,4 @@ pub fn parsear_catalogo_csv(path: String) -> Result<Vec<InventoryItem>, String> 
     }
 
     Ok(items)
-}
-
-#[tauri::command]
-pub fn parsear_catalogo(path: String) -> Result<Vec<InventoryItem>, String> {
-    parsear_catalogo_csv(path)
 }
