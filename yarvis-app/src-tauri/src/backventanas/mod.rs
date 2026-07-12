@@ -1,10 +1,3 @@
-pub mod admininventory;
-pub mod admintickets;
-pub mod adminventas;
-pub mod adminfinanzas;
-pub mod adminclientes;
-pub mod adminempleados;
-pub mod adminconfig;
-pub mod adminparser;
-pub mod admintarvis;
+pub mod backadmin;
+pub mod backempleado;
 pub mod db;
