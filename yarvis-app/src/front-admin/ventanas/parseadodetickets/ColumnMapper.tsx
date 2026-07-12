@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { LLMAnalysis, ColumnMapping } from "../types";
+import type { LLMAnalysis, ColumnMapping } from "../../types";
 
 interface ColumnMapperProps {
   onGuardarTicket: (items: any[], analysis: LLMAnalysis) => void;

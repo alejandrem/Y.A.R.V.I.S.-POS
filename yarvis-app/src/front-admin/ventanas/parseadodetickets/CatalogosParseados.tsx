@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useParserContext } from "../../hooks/ParserContext";
+import { useParserContext } from "../../../hooks/ParserContext";
 
 interface CatalogoImportado {
   id: number;

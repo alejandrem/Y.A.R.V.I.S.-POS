@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useThemeContext } from "../../hooks/ThemeContext";
-import { useParserContext } from "../../hooks/ParserContext";
-import ColumnMapper from "./ColumnMapper";
-import BatchProcessor from "./BatchProcessor";
-import CatalogosParseados from "./CatalogosParseados";
+import { useThemeContext } from "../../../hooks/ThemeContext";
+import { useParserContext } from "../../../hooks/ParserContext";
+import ColumnMapper from "../parseadodetickets/ColumnMapper";
+import BatchProcessor from "../parseadodetickets/BatchProcessor";
+import CatalogosParseados from "../parseadodetickets/CatalogosParseados";
 
 interface ConfiguracionProps {
   adminName: string;

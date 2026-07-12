@@ -1,6 +1,11 @@
-import Inventario from "./ventanas/Inventario";
-import Configuracion from "./ventanas/Configuracion";
-import Tickets from "./ventanas/Tickets";
+import Inventario from "./ventanas/admininventario/inventario";
+import Configuracion from "./ventanas/adminconfig/configuracion";
+import Tickets from "./ventanas/adminticket/tickets";
+import AdminVentas from "./ventanas/adminventas/ventas";
+import AdminFinanzas from "./ventanas/adminfinanzas/finanzas";
+import AdminClientes from "./ventanas/adminclientes/clientes";
+import AdminEmpleados from "./ventanas/adminempleados/empleados";
+import AdminYarvis from "./ventanas/adminyarvis/yarvis";
 
 interface AdminDashboardProps {
   activeTab: string;
@@ -70,15 +75,6 @@ const AdminDashboard = ({
     },
   ];
 
-  const content: Record<string, string> = {
-    ventas: "ventas <- El sistema debe aprender de tus ventas y decirte cuanto vas a vender el proximo fin de semana, mes etc. con un margen de error, el sistema presente las predicciones con Intervalos de Confianza seran graficas complejas pero tambien",
-    finanzas: "finainzas <- aqui si veremos las graficas complejas y completas de cada seccion controlaremos todos los Cortes de caja (X y Z) visualizando todos los que se han hecho tambien las graficas de Utilidad bruta, Utilidad Operativa, Utilidad Neta, Utilidad Marginal.",
-    clientes: "clientes <- aqui mostraremos la gestión de los clientes y pedidos como Quién me compra, cuánto me compra, cuanto me genera y cuándo fue su última visita, ademas de ver los pedidos encargados por clientes generados por el empleado, visualizando el formato de pago, los productos, si se aplico algun descuento, los tipos de ganancia etc. con la opcion de crear facturas reportes",
-    tickets: "tickets y facturacion <- todo lo que ha pasado por la impresora y todo lo que se ha facturado. aqui podremos visualizar todos los tickets que se han impreso a lo largo del tiempo el promedio de venta por ticket el promedio de tickets por dia, cosas asi ademas de la visualizacion de los cortes de caja de igual manera mostrar todos los cortes de caja generados el promedio de estos al igual que graficas tanto para tickets como para cortes de caja y la importantisima facturacion electronica.",
-    empleados: "empleados <- desde aqui podremos gestionar quienes son los empleados nombre de los empleados, cuanto venden, ventas canceladas, con descuentos ventas, metas que les puedes poner para generar bonos, definir turnos, horarios, definir su salario semanal, para que puedas visualizar cuanto te estan generando y cuanto te esta costando mantenerlo, visualizar cuando hicieron cortes de caja x y z recordemos que el corte de caja Z es el cierre de turno, visualizar cuando iniciaron turno",
-    yarvis: "Y.A.R.V.I.S. <- AQUI SOLO PONDRAS LA INTERFAZ DEL CHAT BOT NO HARAS QUE FUNCIONE POR QUE FALTA CONECTAR EL MOTOR.",
-  };
-
   return (
     <main className="h-screen w-full flex bg-white font-sans text-neutral-800 animate-in fade-in duration-500 overflow-hidden">
       {/* SIDEBAR */}
@@ -103,37 +99,29 @@ const AdminDashboard = ({
         <div className="mt-auto pt-6 border-t border-neutral-100">
           <button onClick={() => { setStep(1); setSelectedRole(null); setLoginPass(""); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-neutral-400 hover:bg-neutral-50 transition-all">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1-2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-            CERRAR SESIÓN
+            CERRAR SESION
           </button>
         </div>
       </aside>
 
       {/* CONTENIDO CENTRAL */}
       <section className="flex-1 p-12 bg-white overflow-y-auto custom-scrollbar">
-        {activeTab === "inventario" ? (
-          <Inventario activeTab={activeTab} />
-        ) : activeTab === "ajustes" ? (
-          <Configuracion 
+        {activeTab === "inventario" && <Inventario activeTab={activeTab} />}
+        {activeTab === "ajustes" && (
+          <Configuracion
             adminName={adminName}
             storeName={storeName}
             adminPass={adminPass}
             initialLocation={initialLocation}
             initialCp={initialCp}
           />
-        ) : activeTab === "tickets" ? (
-          <Tickets />
-        ) : (
-          <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto">
-            <header className="mb-10 text-center">
-              <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight mb-2">{menuItems.find(i => i.id === activeTab)?.label}</h2>
-              <div className="h-1.5 w-12 bg-neutral-900 rounded-full mx-auto"></div>
-            </header>
-
-            <div className="bg-neutral-50 p-10 rounded-[2.5rem] border border-neutral-100 shadow-inner">
-              <p className="text-xl text-neutral-600 font-light leading-relaxed first-letter:text-4xl first-letter:font-black first-letter:text-neutral-900">{content[activeTab]}</p>
-            </div>
-          </div>
         )}
+        {activeTab === "tickets" && <Tickets />}
+        {activeTab === "ventas" && <AdminVentas />}
+        {activeTab === "finanzas" && <AdminFinanzas />}
+        {activeTab === "clientes" && <AdminClientes />}
+        {activeTab === "empleados" && <AdminEmpleados />}
+        {activeTab === "yarvis" && <AdminYarvis />}
       </section>
     </main>
   );
