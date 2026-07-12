@@ -359,12 +359,12 @@ const BatchProcessor = ({ onVolver, initialFolder }: BatchProcessorProps) => {
           )}
 
           {vinculacionResult && (
-            <div className="px-8 pb-8 space-y-4">
-              <div className="bg-blue-50 rounded-2xl p-6 border border-blue-100">
-                <h5 className="text-[10px] font-black text-blue-700 uppercase tracking-[0.3em] mb-4">
+            <div className="px-4 sm:px-8 pb-4 sm:pb-8 space-y-3 sm:space-y-4">
+              <div className="bg-blue-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-blue-100">
+                <h5 className="text-[9px] sm:text-[10px] font-black text-blue-700 uppercase tracking-[0.3em] mb-3 sm:mb-4">
                   Resultado de Vinculacion
                 </h5>
-                <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                   <div className="text-center">
                     <p className="text-2xl font-black text-green-600">{vinculacionResult.estadisticas.exactos}</p>
                     <p className="text-[8px] font-black text-green-700 uppercase">Exactos</p>

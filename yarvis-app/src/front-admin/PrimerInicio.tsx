@@ -65,7 +65,7 @@ const PrimerInicio = ({
               <label className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Tienda</label>
               <input type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="Nombre del negocio" className="w-full px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-neutral-400" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Contraseña</label>
                 <div className="relative">

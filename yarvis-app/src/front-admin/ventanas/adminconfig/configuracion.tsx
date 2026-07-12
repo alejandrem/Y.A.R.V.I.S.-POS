@@ -237,7 +237,7 @@ const Configuracion = ({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="group">
                 <label className="text-[9px] font-black text-neutral-400 uppercase ml-2 mb-1 block group-focus-within:text-neutral-900 transition-colors">Ubicación</label>
                 <input
@@ -372,7 +372,7 @@ const Configuracion = ({
         )}
 
         {!showBatchProcessor && (
-        <div className="p-10 grid grid-cols-1 lg:grid-cols-12 gap-10">
+        <div className="p-5 sm:p-10 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-10">
           <div className="lg:col-span-12 space-y-8">
                 <div className="space-y-3">
                   <div className="flex justify-between items-center px-2">
@@ -499,7 +499,7 @@ const Configuracion = ({
                       Análisis del Motor de IA
                     </span>
                     <div className="bg-neutral-900 rounded-3xl p-6 text-white shadow-inner">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-4">
                         <div className="bg-white/5 rounded-xl p-3">
                           <p className="text-[8px] font-black text-neutral-500 uppercase tracking-widest">Formato</p>
                           <p className="text-[11px] font-bold mt-1 truncate">{llmAnalysis.mapeo.formato_detectado}</p>

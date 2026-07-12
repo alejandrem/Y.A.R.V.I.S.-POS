@@ -7,6 +7,7 @@ import { yarvisNav } from "./ventanas/empleayarvis/yarvis";
 import { ajustesNav } from "./ventanas/empleaajustes/ajustes";
 
 import Inventario from "./ventanas/empleainventario/inventario";
+import Perfil from "./ventanas/empleaperfil/perfil";
 
 interface EmployeeDashboardProps {
   activeTab: string;
@@ -46,6 +47,8 @@ const EmployeeDashboard = ({
     switch (activeTab) {
       case "inventario":
         return <Inventario activeTab={activeTab} />;
+      case "perfil":
+        return <Perfil activeTab={activeTab} operatorName={operatorName} />;
       case "nueva_venta":
         return (
           <div className="flex-1 flex flex-col gap-4 animate-in fade-in duration-500 max-w-5xl mx-auto w-full">

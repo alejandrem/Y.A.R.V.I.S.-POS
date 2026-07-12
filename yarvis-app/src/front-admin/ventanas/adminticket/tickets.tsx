@@ -129,16 +129,16 @@ const Tickets = () => {
       </header>
 
       {/* MÉTRICAS PRINCIPALES */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         {[
           { label: "Promedio Venta", value: `$ ${displayMetrics.avgTicket.toFixed(2)}`, info: filteredTickets.length === 0 ? "Esperando ventas..." : `${filteredTickets.length} ventas`, color: "bg-neutral-50" },
           { label: "Tickets / Día", value: `${displayMetrics.ticketsPerDay} TICKETS`, info: filteredTickets.length === 0 ? "Sin actividad" : "Promedio diario", color: "bg-neutral-50" },
           { label: "Promedio Corte", value: `$ ${displayMetrics.avgCorte.toFixed(2)}`, info: filteredCortes.length === 0 ? "Esperando cortes..." : `${filteredCortes.length} cortes`, color: "bg-neutral-900 text-white shadow-2xl shadow-neutral-200" }
         ].map((stat, i) => (
-          <div key={i} className={`${stat.color} p-8 rounded-[2rem] border border-neutral-100 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300`}>
-            <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${stat.color.includes('black') ? 'text-neutral-400' : 'text-neutral-400'}`}>{stat.label}</p>
-            <h3 className="text-2xl font-black">{stat.value}</h3>
-            <span className={`absolute top-8 right-8 text-[8px] font-black px-2 py-1 rounded-lg uppercase ${stat.color.includes('black') ? 'bg-white/10 text-neutral-400' : 'bg-neutral-100 text-neutral-400'}`}>
+          <div key={i} className={`${stat.color} p-4 sm:p-8 rounded-2xl sm:rounded-[2rem] border border-neutral-100 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300`}>
+            <p className={`text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-2 ${stat.color.includes('black') ? 'text-neutral-400' : 'text-neutral-400'}`}>{stat.label}</p>
+            <h3 className="text-xl sm:text-2xl font-black">{stat.value}</h3>
+            <span className={`absolute top-4 sm:top-8 right-4 sm:right-8 text-[7px] sm:text-[8px] font-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg uppercase ${stat.color.includes('black') ? 'bg-white/10 text-neutral-400' : 'bg-neutral-100 text-neutral-400'}`}>
               {stat.info}
             </span>
           </div>
@@ -146,13 +146,13 @@ const Tickets = () => {
       </div>
 
       {/* HISTORIALES */}
-      <div className="grid grid-cols-2 gap-8">
-        <div className="bg-white rounded-[2.5rem] border border-neutral-200 p-8 shadow-sm">
-          <h3 className="text-xs font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+        <div className="bg-white rounded-2xl sm:rounded-[2.5rem] border border-neutral-200 p-4 sm:p-8 shadow-sm">
+          <h3 className="text-xs font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2 mb-4 sm:mb-8">
             <div className="w-1.5 h-4 bg-neutral-900 rounded-full"></div>
             Historial de Tickets
           </h3>
-          <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-neutral-100 rounded-3xl bg-neutral-50/50">
+          <div className="h-48 sm:h-64 flex flex-col items-center justify-center border-2 border-dashed border-neutral-100 rounded-2xl sm:rounded-3xl bg-neutral-50/50">
             {filteredTickets.length > 0 ? (
               <div className="w-full px-4 space-y-2 overflow-y-auto">
                 {filteredTickets.map((t) => (
@@ -174,12 +174,12 @@ const Tickets = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-[2.5rem] border border-neutral-200 p-8 shadow-sm">
-          <h3 className="text-xs font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2 mb-8">
+        <div className="bg-white rounded-2xl sm:rounded-[2.5rem] border border-neutral-200 p-4 sm:p-8 shadow-sm">
+          <h3 className="text-xs font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2 mb-4 sm:mb-8">
             <div className="w-1.5 h-4 bg-neutral-900 rounded-full"></div>
             Historial de Cortes
           </h3>
-          <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-neutral-100 rounded-3xl bg-neutral-50/50">
+          <div className="h-48 sm:h-64 flex flex-col items-center justify-center border-2 border-dashed border-neutral-100 rounded-2xl sm:rounded-3xl bg-neutral-50/50">
             {filteredCortes.length > 0 ? (
               <div className="w-full px-4 space-y-2 overflow-y-auto">
                 {filteredCortes.map((c) => (
@@ -245,9 +245,9 @@ const Tickets = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-8">
-          <div className="bg-neutral-50 rounded-[2.5rem] border border-neutral-100 p-8 h-80 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute top-6 left-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-80 flex flex-col items-center justify-center relative overflow-hidden">
+             <div className="absolute top-4 sm:top-6 left-4 sm:left-8">
                 <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Rendimiento de Tickets</p>
                 <p className="text-[8px] text-neutral-400 font-bold uppercase mt-1">Mostrando: {filteredTickets.length} tickets</p>
              </div>
@@ -257,8 +257,8 @@ const Tickets = () => {
              </div>
           </div>
 
-          <div className="bg-neutral-50 rounded-[2.5rem] border border-neutral-100 p-8 h-80 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute top-6 left-8">
+          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-80 flex flex-col items-center justify-center relative overflow-hidden">
+             <div className="absolute top-4 sm:top-6 left-4 sm:left-8">
                 <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Flujo de Cortes de Caja</p>
                 <p className="text-[8px] text-neutral-400 font-bold uppercase mt-1">Mostrando: {filteredCortes.length} cortes</p>
              </div>
@@ -271,9 +271,9 @@ const Tickets = () => {
       </div>
 
       {/* PREDICCIÓN Y ACCIONES */}
-      <div className="grid grid-cols-3 gap-8 pb-12">
-        <div className="col-span-2 bg-neutral-900 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden h-[450px] flex flex-col">
-          <div className="relative z-10 flex flex-col gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-8 pb-12">
+        <div className="sm:col-span-2 bg-neutral-900 rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-10 shadow-2xl relative overflow-hidden h-[280px] sm:h-[450px] flex flex-col">
+          <div className="relative z-10 flex flex-col gap-3 sm:gap-6">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-black text-white uppercase tracking-tight">Predicción de Flujo de Caja</h3>
@@ -304,9 +304,9 @@ const Tickets = () => {
           <div className="absolute -bottom-10 -right-10 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none"></div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-white rounded-[2rem] border border-neutral-100 p-8 h-56 relative overflow-hidden flex flex-col">
-             <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-4">Formas de Pago</h4>
+        <div className="space-y-4 sm:space-y-6">
+          <div className="bg-white rounded-2xl sm:rounded-[2rem] border border-neutral-100 p-4 sm:p-8 h-36 sm:h-56 relative overflow-hidden flex flex-col">
+             <h4 className="text-[9px] sm:text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-2 sm:mb-4">Formas de Pago</h4>
              <div className="flex-1 flex items-center justify-center relative">
                 <div className="w-24 h-24 rounded-full border-4 border-neutral-50 flex items-center justify-center">
                    <div className="w-16 h-16 rounded-full border-2 border-neutral-50 border-t-neutral-100"></div>
@@ -315,13 +315,13 @@ const Tickets = () => {
              </div>
           </div>
 
-          <div className="bg-neutral-50 rounded-[2rem] border border-neutral-100 p-8 space-y-4">
-             <h4 className="text-[10px] font-black text-neutral-900 uppercase tracking-widest mb-2">Acciones Rápidas</h4>
-             <button className="w-full py-4 bg-white border border-neutral-200 rounded-2xl text-[10px] font-black text-neutral-900 uppercase tracking-widest hover:bg-neutral-900 hover:text-white transition-all shadow-sm flex items-center justify-center gap-3">
+          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2rem] border border-neutral-100 p-4 sm:p-8 space-y-3 sm:space-y-4">
+             <h4 className="text-[9px] sm:text-[10px] font-black text-neutral-900 uppercase tracking-widest mb-1 sm:mb-2">Acciones Rápidas</h4>
+             <button className="w-full py-3 sm:py-4 bg-white border border-neutral-200 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black text-neutral-900 uppercase tracking-widest hover:bg-neutral-900 hover:text-white transition-all shadow-sm flex items-center justify-center gap-3">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
                 Generar Factura
              </button>
-             <button className="w-full py-4 bg-white border border-neutral-200 rounded-2xl text-[10px] font-black text-neutral-900 uppercase tracking-widest hover:bg-neutral-900 hover:text-white transition-all shadow-sm flex items-center justify-center gap-3">
+             <button className="w-full py-3 sm:py-4 bg-white border border-neutral-200 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black text-neutral-900 uppercase tracking-widest hover:bg-neutral-900 hover:text-white transition-all shadow-sm flex items-center justify-center gap-3">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                 Reporte Gral. PDF
              </button>

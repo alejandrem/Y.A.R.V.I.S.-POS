@@ -98,6 +98,8 @@ pub fn run() {
             backventanas::backadmin::adminempleados::modalmetas::check_employee_goals,
             // Empleados - Modal turnos
             backventanas::backadmin::adminempleados::modalturnos::get_turnos_empleados,
+            // Empleado - Perfil
+            backventanas::backempleado::empleaperfil::perfil::get_employee_profile,
             // IA / Sidecar
             backventanas::backadmin::admintarvis::ai::get_ai_status,
         ])

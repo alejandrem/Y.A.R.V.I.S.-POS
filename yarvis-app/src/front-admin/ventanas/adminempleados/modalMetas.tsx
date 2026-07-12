@@ -234,9 +234,9 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                 <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
+                  <label className="text-[8px] sm:text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
                     Pago Diario ($)
                   </label>
                   <input
@@ -265,20 +265,20 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-2">
-                <div className="bg-white rounded-xl p-3 text-center border border-neutral-100">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
                   <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Hora</p>
                   <p className="text-sm font-black text-neutral-900 mt-1">${hora.toFixed(2)}</p>
                 </div>
-                <div className="bg-white rounded-xl p-3 text-center border border-neutral-100">
+                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
                   <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Día</p>
                   <p className="text-sm font-black text-neutral-900 mt-1">${salarioDiario.toFixed(2)}</p>
                 </div>
-                <div className="bg-white rounded-xl p-3 text-center border border-neutral-100">
+                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
                   <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Semana</p>
                   <p className="text-sm font-black text-neutral-900 mt-1">${semanal.toFixed(2)}</p>
                 </div>
-                <div className="bg-white rounded-xl p-3 text-center border border-neutral-100">
+                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
                   <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Mes</p>
                   <p className="text-sm font-black text-neutral-900 mt-1">${mensual.toFixed(2)}</p>
                 </div>
@@ -316,7 +316,7 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <div className="space-y-1">
                     <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
                       Meta de Venta Semanal

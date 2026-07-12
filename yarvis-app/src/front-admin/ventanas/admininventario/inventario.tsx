@@ -297,11 +297,11 @@ const Inventario = ({ activeTab }: InventarioProps) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
-        <div className="bg-white rounded-[2.5rem] border border-neutral-200 p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center text-lg">⚠️</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+        <div className="bg-white rounded-2xl sm:rounded-[2.5rem] border border-neutral-200 p-4 sm:p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-4 sm:mb-8">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-red-50 text-red-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-base sm:text-lg">⚠️</div>
               <div>
                 <h3 className="text-xs font-black text-neutral-900 uppercase tracking-widest">Alerta de Stock Bajo</h3>
                 <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-tighter">Productos por agotarse</p>
@@ -334,12 +334,12 @@ const Inventario = ({ activeTab }: InventarioProps) => {
           </div>
         </div>
 
-        <div className="bg-neutral-900 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-16 translate-x-16 blur-3xl"></div>
+        <div className="bg-neutral-900 rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-8 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 sm:w-32 h-24 sm:h-32 bg-white/5 rounded-full -translate-y-12 sm:-translate-y-16 translate-x-12 sm:translate-x-16 blur-3xl"></div>
           
-          <div className="flex items-center justify-between mb-8 relative z-10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/10 text-white rounded-2xl flex items-center justify-center text-lg">✨</div>
+          <div className="flex items-center justify-between mb-4 sm:mb-8 relative z-10">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/10 text-white rounded-xl sm:rounded-2xl flex items-center justify-center text-base sm:text-lg">✨</div>
               <div>
                 <h3 className="text-xs font-black text-white uppercase tracking-widest">Predicciones de Compra</h3>
                 <p className="text-[9px] text-neutral-500 font-bold uppercase tracking-tighter">Sugerencias Inteligentes</p>
@@ -359,10 +359,10 @@ const Inventario = ({ activeTab }: InventarioProps) => {
         </div>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] border border-neutral-200 p-10 shadow-sm space-y-8">
+      <div className="bg-white rounded-2xl sm:rounded-[2.5rem] border border-neutral-200 p-5 sm:p-10 shadow-sm space-y-5 sm:space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-black text-neutral-900 uppercase tracking-tight">Conciliación de Inventario</h3>
+            <h3 className="text-base sm:text-xl font-black text-neutral-900 uppercase tracking-tight">Conciliación de Inventario</h3>
             <p className="text-[9px] text-neutral-400 uppercase font-black tracking-widest">Físico vs Sistema</p>
           </div>
         </div>

@@ -199,17 +199,17 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
       </header>
 
       {/* ── RESUMEN GLOBAL ── */}
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6">
         {[
           { label: "Emp. Activos", value: `${resumen.empleados_activos}`, info: "Personal activo", color: "bg-neutral-900 text-white shadow-2xl shadow-neutral-200" },
           { label: "Ventas Totales", value: formatMoney(resumen.ventas_totales), info: "Acumulado", color: "bg-green-50 border-green-100" },
           { label: "Costo de Nómina", value: formatMoney(resumen.costo_nomina), info: "Gasto fijo", color: "bg-red-50 border-red-100" },
           { label: "ROI Neto", value: `${resumen.roi_neto >= 0 ? '+' : ''}${formatMoney(resumen.roi_neto)}`, info: resumen.roi_neto >= 0 ? "Rentable" : "En pérdida", color: resumen.roi_neto >= 0 ? "bg-neutral-50" : "bg-red-50 border-red-100" },
         ].map((stat, i) => (
-          <div key={i} className={`${stat.color} p-6 rounded-[2rem] border border-neutral-100 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300`}>
-            <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${stat.color.includes('white') || stat.color.includes('red-50') ? 'text-neutral-400' : 'text-neutral-400'}`}>{stat.label}</p>
-            <h3 className={`text-2xl font-black ${stat.color.includes('text-white') ? 'text-white' : stat.label === 'ROI Neto' && resumen.roi_neto < 0 ? 'text-red-600' : 'text-neutral-900'}`}>{stat.value}</h3>
-            <span className={`absolute top-6 right-6 text-[8px] font-black px-2 py-1 rounded-lg uppercase ${stat.color.includes('white') ? 'bg-white/10 text-neutral-400' : 'bg-neutral-100 text-neutral-400'}`}>
+          <div key={i} className={`${stat.color} p-3 sm:p-6 rounded-2xl sm:rounded-[2rem] border border-neutral-100 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300`}>
+            <p className={`text-[8px] sm:text-[10px] font-black uppercase tracking-widest mb-1 sm:mb-2 ${stat.color.includes('white') || stat.color.includes('red-50') ? 'text-neutral-400' : 'text-neutral-400'}`}>{stat.label}</p>
+            <h3 className={`text-lg sm:text-2xl font-black ${stat.color.includes('text-white') ? 'text-white' : stat.label === 'ROI Neto' && resumen.roi_neto < 0 ? 'text-red-600' : 'text-neutral-900'}`}>{stat.value}</h3>
+            <span className={`absolute top-3 sm:top-6 right-3 sm:right-6 text-[7px] sm:text-[8px] font-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg uppercase ${stat.color.includes('white') ? 'bg-white/10 text-neutral-400' : 'bg-neutral-100 text-neutral-400'}`}>
               {stat.info}
             </span>
           </div>
@@ -233,14 +233,14 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
               <div
                 key={emp.id}
                 onClick={() => loadDetalle(emp.id)}
-                className={`grid grid-cols-5 gap-3 cursor-pointer transition-all duration-200 ${
+                className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 cursor-pointer transition-all duration-200 ${
                   selectedId === emp.id
                     ? "ring-2 ring-neutral-900/10 rounded-[2rem]"
                     : ""
                 }`}
               >
                 {/* NOMBRE */}
-                <div className={`rounded-[1.5rem] p-6 text-center transition-all hover:scale-[1.02] ${
+                <div className={`rounded-xl sm:rounded-[1.5rem] p-3 sm:p-6 text-center transition-all hover:scale-[1.02] ${
                   selectedId === emp.id
                     ? "bg-neutral-900 text-white shadow-xl"
                     : "bg-white border border-neutral-200 shadow-sm"
@@ -254,7 +254,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
                 </div>
 
                 {/* ESTADO */}
-                <div className="bg-white rounded-[1.5rem] border border-neutral-200 p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
+                <div className="bg-white rounded-xl sm:rounded-[1.5rem] border border-neutral-200 p-3 sm:p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
                   <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-2">
                     Estado
                   </p>
@@ -267,7 +267,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
                 </div>
 
                 {/* ENTRADA / REGISTRO */}
-                <div className="bg-white rounded-[1.5rem] border border-neutral-200 p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
+                <div className="bg-white rounded-xl sm:rounded-[1.5rem] border border-neutral-200 p-3 sm:p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
                   <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-2">
                     Entrada / Registro
                   </p>
@@ -277,7 +277,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
                 </div>
 
                 {/* TURNO */}
-                <div className="bg-white rounded-[1.5rem] border border-neutral-200 p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
+                <div className="bg-white rounded-xl sm:rounded-[1.5rem] border border-neutral-200 p-3 sm:p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
                   <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-2">
                     Turno
                   </p>
@@ -291,7 +291,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
                 </div>
 
                 {/* CAJA INICIAL */}
-                <div className="bg-white rounded-[1.5rem] border border-neutral-200 p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
+                <div className="bg-white rounded-xl sm:rounded-[1.5rem] border border-neutral-200 p-3 sm:p-6 text-center shadow-sm hover:scale-[1.02] transition-all">
                   <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-2">
                     Caja Inicial
                   </p>
