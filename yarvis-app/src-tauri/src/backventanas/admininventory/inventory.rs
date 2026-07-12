@@ -3,7 +3,7 @@ use std::sync::Arc;
 use sha2::{Sha256, Digest};
 use crate::models::InventoryItem;
 use crate::sidecar::{AiSidecar, AiStatus};
-use crate::db::DbPath;
+use crate::backventanas::db::db::DbPath;
 
 /// Calcula SHA256 del contenido del catálogo
 fn calcular_hash_catalogo(contenido: &str) -> String {

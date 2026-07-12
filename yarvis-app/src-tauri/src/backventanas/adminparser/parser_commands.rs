@@ -1,5 +1,5 @@
 use crate::sidecar::AiSidecar;
-use crate::db::DbPath;
+use crate::backventanas::db::db::DbPath;
 use std::sync::Arc;
 
 /// Retorna la ruta absoluta de la base de datos SQLite.
