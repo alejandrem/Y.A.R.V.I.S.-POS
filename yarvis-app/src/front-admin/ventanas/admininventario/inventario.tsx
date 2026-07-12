@@ -159,9 +159,10 @@ const Inventario = ({ activeTab }: InventarioProps) => {
       </header>
 
       <div className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden">
+        <div className="max-h-[560px] overflow-y-auto custom-scrollbar">
         <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-neutral-50/50 border-b border-neutral-100">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-neutral-50/95 backdrop-blur-sm border-b border-neutral-100">
               <th className="px-8 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Producto</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-center">Stock</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-center">Vendido</th>
@@ -293,6 +294,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-8">

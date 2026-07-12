@@ -80,6 +80,24 @@ pub fn run() {
             backventanas::admintickets::tickets::get_tickets,
             backventanas::admintickets::tickets::get_cortes,
             backventanas::admintickets::tickets::guardar_ticket_parseado,
+            // Empleados - Dashboard
+            backventanas::adminempleados::empleados::get_empleados,
+            backventanas::adminempleados::empleados::get_empleado_ventas,
+            backventanas::adminempleados::empleados::get_resumen_empleados,
+            backventanas::adminempleados::empleados::get_cortes_empleado,
+            // Empleados - Modal empleado
+            backventanas::adminempleados::modalempleado::update_empleado,
+            backventanas::adminempleados::modalempleado::delete_empleado,
+            // Empleados - Modal metas
+            backventanas::adminempleados::modalmetas::get_salario_info,
+            backventanas::adminempleados::modalmetas::save_salario,
+            backventanas::adminempleados::modalmetas::get_employee_goals,
+            backventanas::adminempleados::modalmetas::save_employee_goal,
+            backventanas::adminempleados::modalmetas::save_custom_goal,
+            backventanas::adminempleados::modalmetas::delete_employee_goal,
+            backventanas::adminempleados::modalmetas::check_employee_goals,
+            // Empleados - Modal turnos
+            backventanas::adminempleados::modalturnos::get_turnos_empleados,
             // IA / Sidecar
             backventanas::admintarvis::ai::get_ai_status,
         ])

@@ -241,7 +241,7 @@ function App() {
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">Contraseña</label>
                         <div className="relative">
-                          <input type={showLoginPass ? "text" : "password"} value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="••••••••" className="w-full px-4 py-2 pr-10 rounded-xl bg-neutral-50 border border-neutral-100 text-sm focus:outline-none focus:border-neutral-900" />
+                          <input type={showLoginPass ? "text" : "password"} value={loginPass} onChange={(e) => setLoginPass(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLoginAdmin()} placeholder="••••••••" className="w-full px-4 py-2 pr-10 rounded-xl bg-neutral-50 border border-neutral-100 text-sm focus:outline-none focus:border-neutral-900" />
                           <button onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-300 hover:text-neutral-500 transition-colors">
                             {showLoginPass ? "👁️" : "🙈"}
                           </button>
@@ -271,6 +271,7 @@ function App() {
                             type={showEmployeeLoginPass ? "text" : "password"}
                             value={employeeLoginPass}
                             onChange={(e) => setEmployeeLoginPass(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleLoginEmployee()}
                             placeholder="••••"
                             className="w-full px-4 py-2 pr-10 rounded-xl bg-neutral-50 border border-neutral-100 text-sm focus:outline-none focus:border-neutral-900"
                           />

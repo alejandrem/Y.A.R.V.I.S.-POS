@@ -134,13 +134,17 @@ pub async fn guardar_empleado(state: tauri::State<'_, SqlitePool>, name: String,
 
 #[tauri::command]
 pub async fn validar_login_empleado(state: tauri::State<'_, SqlitePool>, pass: String) -> Result<Option<String>, String> {
-    let rows = sqlx::query_as::<_, (String, String)>("SELECT nombre, password FROM usuarios WHERE rol = 'empleado'")
+    let rows = sqlx::query_as::<_, (String, String, i32)>("SELECT nombre, password, id FROM usuarios WHERE rol = 'empleado'")
         .fetch_all(&*state)
         .await
         .map_err(|e| e.to_string())?;
 
-    for (nombre, hash) in rows {
+    for (nombre, hash, id) in rows {
         if verify_password(&pass, &hash) {
+            let _ = sqlx::query("UPDATE usuarios SET ultimo_login = datetime('now', 'localtime') WHERE id = ?")
+                .bind(id)
+                .execute(&*state)
+                .await;
             return Ok(Some(nombre));
         }
     }

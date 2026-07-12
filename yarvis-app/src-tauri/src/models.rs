@@ -90,3 +90,27 @@ pub struct SimilarSearchResponse {
     pub status: String,
     pub results: Vec<SimilarResult>,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct EmployeeGoal {
+    pub id: i32,
+    pub employee_id: i32,
+    pub goal_type: String,
+    pub goal_name: Option<String>,
+    pub ventas_threshold: String,
+    pub bonus_percentage: f64,
+    pub bonus_amount: f64,
+    pub is_completed: bool,
+    pub completed_at: Option<String>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SalarioInfo {
+    pub salario_diario: f64,
+    pub horas_por_dia: f64,
+    pub salario_hora: f64,
+    pub salario_semanal: f64,
+    pub salario_mensual: f64,
+    pub dias_semana: i32,
+}

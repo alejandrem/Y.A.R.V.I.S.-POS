@@ -40,11 +40,48 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             password TEXT NOT NULL,
             rol TEXT NOT NULL,
             ubicacion TEXT,
-            cp TEXT
+            cp TEXT,
+            salario_semanal REAL DEFAULT 0,
+            turno TEXT DEFAULT 'matutino',
+            horario_inicio TEXT DEFAULT '08:00',
+            horario_fin TEXT DEFAULT '14:00',
+            meta_mensual REAL DEFAULT 0,
+            bono REAL DEFAULT 0,
+            estado TEXT DEFAULT 'activo',
+            registrado_en DATETIME DEFAULT '2000-01-01 00:00:00',
+            ultimo_login DATETIME
         )").execute(&pool).await.expect("Fallo al crear tabla de usuarios");
 
         let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN ubicacion TEXT").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN cp TEXT").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN salario_semanal REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN turno TEXT DEFAULT 'matutino'").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN horario_inicio TEXT DEFAULT '08:00'").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN horario_fin TEXT DEFAULT '14:00'").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN meta_mensual REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN bono REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN estado TEXT DEFAULT 'activo'").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN registrado_en DATETIME DEFAULT '2000-01-01 00:00:00'").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN ultimo_login DATETIME").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN salario_diario REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN dias_semana INTEGER DEFAULT 6").execute(&pool).await;
+
+        // ========================
+        // TABLA: employee_goals
+        // ========================
+        sqlx::query("CREATE TABLE IF NOT EXISTS employee_goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            goal_type TEXT NOT NULL,
+            goal_name TEXT,
+            ventas_threshold TEXT DEFAULT '5',
+            bonus_percentage REAL DEFAULT 0,
+            bonus_amount REAL DEFAULT 0,
+            is_completed INTEGER DEFAULT 0,
+            completed_at TEXT,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (employee_id) REFERENCES usuarios(id)
+        )").execute(&pool).await.expect("Fallo al crear tabla employee_goals");
 
         // ========================
         // TABLA: productos

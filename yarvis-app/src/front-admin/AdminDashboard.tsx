@@ -105,7 +105,7 @@ const AdminDashboard = ({
       </aside>
 
       {/* CONTENIDO CENTRAL */}
-      <section className="flex-1 p-12 bg-white overflow-y-auto custom-scrollbar">
+      <section className="flex-1 p-6 bg-white overflow-y-auto custom-scrollbar">
         {activeTab === "inventario" && <Inventario activeTab={activeTab} />}
         {activeTab === "ajustes" && (
           <Configuracion
@@ -120,7 +120,7 @@ const AdminDashboard = ({
         {activeTab === "ventas" && <AdminVentas />}
         {activeTab === "finanzas" && <AdminFinanzas />}
         {activeTab === "clientes" && <AdminClientes />}
-        {activeTab === "empleados" && <AdminEmpleados />}
+        {activeTab === "empleados" && <AdminEmpleados activeTab={activeTab} />}
         {activeTab === "yarvis" && <AdminYarvis />}
       </section>
     </main>
