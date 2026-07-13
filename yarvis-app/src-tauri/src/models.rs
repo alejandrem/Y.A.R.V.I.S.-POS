@@ -105,6 +105,45 @@ pub struct EmployeeGoal {
     pub created_at: Option<String>,
 }
 
+// ============================================================
+// MODELOS PARA VENTA DE EMPLEADO
+// ============================================================
+
+#[derive(Deserialize, Clone)]
+pub struct CartItemRequest {
+    pub id: Option<i32>,
+    pub nombre: String,
+    pub precio_venta: f64,
+    pub cantidad: f64,
+}
+
+#[derive(Deserialize)]
+pub struct VentaRequest {
+    pub items: Vec<CartItemRequest>,
+    pub total: f64,
+    pub subtotal: f64,
+    pub descuento: f64,
+    pub monto_efectivo: f64,
+    pub monto_tarjeta: f64,
+    pub monto_transferencia: f64,
+    pub cajero: String,
+    pub cliente_id: Option<i32>,
+}
+
+#[derive(Serialize)]
+pub struct VentaResponse {
+    pub venta_id: i64,
+    pub ticket_number: i64,
+    pub mensaje: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TiendaInfo {
+    pub nombre: Option<String>,
+    pub ubicacion: Option<String>,
+    pub cp: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct SalarioInfo {
     pub salario_diario: f64,

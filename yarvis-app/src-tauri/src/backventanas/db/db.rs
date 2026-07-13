@@ -214,6 +214,11 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
         )").execute(&pool).await.expect("Fallo al crear tabla knowledge_base");
 
+        // Migraciones para pagos parciales en ventas
+        let _ = sqlx::query("ALTER TABLE ventas ADD COLUMN monto_efectivo REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE ventas ADD COLUMN monto_tarjeta REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE ventas ADD COLUMN monto_transferencia REAL DEFAULT 0").execute(&pool).await;
+
         // ========================
         // TABLA: catalogos_importados (control de duplicados)
         // ========================

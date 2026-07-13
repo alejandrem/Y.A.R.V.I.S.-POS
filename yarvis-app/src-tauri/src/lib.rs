@@ -98,6 +98,10 @@ pub fn run() {
             backventanas::backadmin::adminempleados::modalmetas::check_employee_goals,
             // Empleados - Modal turnos
             backventanas::backadmin::adminempleados::modalturnos::get_turnos_empleados,
+            // Empleado - Nueva Venta
+            backventanas::backempleado::emplea_new_venta::new_venta::completar_venta,
+            backventanas::backempleado::emplea_new_venta::new_venta::get_next_ticket_number,
+            backventanas::backempleado::emplea_new_venta::new_venta::get_tienda_info,
             // Empleado - Perfil
             backventanas::backempleado::empleaperfil::perfil::get_employee_profile,
             // IA / Sidecar

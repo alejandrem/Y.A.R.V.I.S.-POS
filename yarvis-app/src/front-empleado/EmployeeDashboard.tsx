@@ -6,6 +6,7 @@ import { perfilNav } from "./ventanas/empleaperfil/perfil";
 import { yarvisNav } from "./ventanas/empleayarvis/yarvis";
 import { ajustesNav } from "./ventanas/empleaajustes/ajustes";
 
+import NuevaVenta from "./ventanas/emplea_new_venta/nueva_venta";
 import Inventario from "./ventanas/empleainventario/inventario";
 import Perfil from "./ventanas/empleaperfil/perfil";
 
@@ -30,9 +31,6 @@ const EmployeeDashboard = ({
   shiftProgress = 0,
   operatorName = "",
 }: EmployeeDashboardProps) => {
-  const cart: any[] = [];
-  const iaSuggestion = "";
-
   const employeeMenuItems = [
     nuevaVentaNav,
     inventarioNav,
@@ -50,89 +48,7 @@ const EmployeeDashboard = ({
       case "perfil":
         return <Perfil activeTab={activeTab} operatorName={operatorName} />;
       case "nueva_venta":
-        return (
-          <div className="flex-1 flex flex-col gap-4 animate-in fade-in duration-500 max-w-5xl mx-auto w-full">
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400 group-hover:text-neutral-900 transition-colors"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-              </div>
-              <input
-                type="text"
-                placeholder="Escanea o busca un producto con IA..."
-                className="w-full pl-11 pr-4 py-3 bg-white border border-neutral-200 rounded-xl shadow-sm text-xs focus:outline-none focus:ring-4 focus:ring-neutral-900/5 focus:border-neutral-400 focus:shadow-[0_0_20px_rgba(0,0,0,0.03)] transition-all duration-300"
-              />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                <span className="px-1.5 py-0.5 bg-neutral-50 text-neutral-400 text-[8px] font-black rounded border border-neutral-200 uppercase tracking-tighter group-focus-within:border-neutral-900 group-focus-within:text-neutral-900 transition-all">Buscador Inteligente</span>
-              </div>
-            </div>
-
-            <div className="flex-1 bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col">
-              <div className="px-6 py-4 border-b border-neutral-50 bg-neutral-50/30 flex justify-between items-center">
-                <h3 className="text-[10px] font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2">
-                  <div className="w-1 h-4 bg-black rounded-full"></div>
-                  Detalle de Venta
-                </h3>
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-tighter">{cart.length} ARTÍCULOS</span>
-              </div>
-              <div className="flex-1 overflow-y-auto px-6">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 bg-white z-10">
-                    <tr className="text-[9px] font-black text-neutral-400 uppercase tracking-widest border-b border-neutral-50">
-                      <th className="py-3 px-2">Cant.</th>
-                      <th className="py-3 px-2">Producto</th>
-                      <th className="py-3 px-2">Total</th>
-                      <th className="py-3 px-2">Desc.</th>
-                      <th className="py-3 px-2 text-right">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-50">
-                    {cart.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-24 text-center">
-                          <div className="flex flex-col items-center gap-3 opacity-10">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.56-7.43H5.12" /></svg>
-                            <p className="text-[10px] font-black uppercase tracking-[0.3em]">Esperando productos...</p>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      cart.map((item: any, idx: number) => (
-                        <tr key={idx} className="group hover:bg-neutral-50/50 transition-colors">
-                          <td className="py-3 px-2 font-black text-neutral-900 text-xs">
-                            <input type="number" value={item.cant} className="w-12 bg-transparent focus:outline-none" />
-                          </td>
-                          <td className="py-3 px-2 font-bold text-neutral-700 text-xs">{item.producto}</td>
-                          <td className="py-3 px-2 font-medium text-neutral-300 text-xs line-through">${item.total.toFixed(2)}</td>
-                          <td className="py-3 px-2 font-bold text-neutral-400 text-xs">-${item.descuento.toFixed(2)}</td>
-                          <td className="py-3 px-2 text-right font-black text-neutral-900 text-sm">${item.final.toFixed(2)}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="p-4 bg-neutral-900 text-white flex items-center gap-4">
-                <div className="flex-1 flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/10">
-                  <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-sm">✨</div>
-                  <div>
-                    <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest mb-0.5">Sugerencia IA</p>
-                    <p className="text-[11px] font-medium text-neutral-200 leading-tight">
-                      {iaSuggestion || <span className="opacity-30 italic">Sin recomendaciones...</span>}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <p className="text-[8px] font-black text-neutral-500 uppercase tracking-widest leading-none">Total a cobrar</p>
-                  <button className="px-8 py-3.5 bg-white hover:bg-neutral-50 text-black rounded-xl font-black text-base shadow-lg hover:shadow-white/5 transition-all hover:scale-[1.05] active:scale-95 flex items-center gap-2 leading-none border border-transparent hover:border-white/20">
-                    ${(cart.reduce((acc: number, item: any) => acc + item.final, 0)).toFixed(2)}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+        return <NuevaVenta activeTab={activeTab} />;
       default:
         return (
           <div className="flex-1 flex items-center justify-center bg-white rounded-2xl border border-dashed border-neutral-200">
