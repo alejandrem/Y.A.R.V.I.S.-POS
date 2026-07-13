@@ -1,3 +1,5 @@
+import ChatWidget from "../../../components/ChatWidget";
+
 const yarvisNav = {
   id: "yarvis",
   label: "Y.A.R.V.I.S.",
@@ -15,8 +17,17 @@ const yarvisNav = {
 
 export default function Yarvis() {
   return (
-    <div>
-      <h1>Y.A.R.V.I.S.</h1>
+    <div className="h-full animate-in fade-in duration-500">
+      <ChatWidget
+        role="empleado"
+        userId="empleado"
+        suggestions={[
+          "¿Qué productos tengo de limpieza?",
+          "¿Cuánto stock hay de Coca-Cola?",
+          "¿Qué es lo más vendido esta semana?",
+          "¿Qué productos no tienen sal?",
+        ]}
+      />
     </div>
   );
 }

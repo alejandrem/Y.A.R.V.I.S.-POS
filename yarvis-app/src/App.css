@@ -140,3 +140,188 @@ body {
 .dark table thead { background-color: var(--bg-sidebar) !important; }
 .dark table th { color: var(--text-faint) !important; }
 .dark table td { color: var(--text-primary) !important; }
+
+/* ============================================================
+   CHAT MARKDOWN — Estilos para mensajes del asistente
+   ============================================================ */
+
+.chat-markdown p {
+  margin: 0.5em 0;
+  line-height: 1.65;
+}
+
+.chat-markdown p:first-child {
+  margin-top: 0;
+}
+
+.chat-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown strong {
+  font-weight: 800;
+  color: #171717;
+}
+
+.dark .chat-markdown strong {
+  color: #f5f5f5;
+}
+
+.chat-markdown em {
+  font-style: italic;
+  color: #525252;
+}
+
+.dark .chat-markdown em {
+  color: #a3a3a3;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3 {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  margin: 1em 0 0.5em;
+  line-height: 1.2;
+}
+
+.chat-markdown h1 { font-size: 1.1em; }
+.chat-markdown h2 { font-size: 1em; }
+.chat-markdown h3 { font-size: 0.9em; }
+
+.chat-markdown h1:first-child,
+.chat-markdown h2:first-child,
+.chat-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.chat-markdown li {
+  margin: 0.25em 0;
+  line-height: 1.5;
+}
+
+.chat-markdown ul {
+  list-style-type: disc;
+}
+
+.chat-markdown ol {
+  list-style-type: decimal;
+}
+
+.chat-markdown code {
+  background: #f5f5f5;
+  padding: 0.15em 0.4em;
+  border-radius: 6px;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #171717;
+}
+
+.dark .chat-markdown code {
+  background: #262626;
+  color: #f5f5f5;
+}
+
+.chat-markdown pre {
+  background: #171717;
+  color: #f5f5f5;
+  padding: 1em;
+  border-radius: 12px;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.chat-markdown pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-weight: 400;
+}
+
+.chat-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  font-size: 0.9em;
+}
+
+.chat-markdown th {
+  background: #f5f5f5;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.7em;
+  letter-spacing: 0.05em;
+  padding: 0.6em 0.8em;
+  text-align: left;
+  border-bottom: 2px solid #e5e5e5;
+}
+
+.dark .chat-markdown th {
+  background: #262626;
+  border-bottom-color: #404040;
+}
+
+.chat-markdown td {
+  padding: 0.5em 0.8em;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.dark .chat-markdown td {
+  border-bottom-color: #262626;
+}
+
+.chat-markdown blockquote {
+  border-left: 3px solid #d4d4d4;
+  padding-left: 1em;
+  margin: 0.5em 0;
+  color: #525252;
+  font-style: italic;
+}
+
+.dark .chat-markdown blockquote {
+  border-left-color: #404040;
+  color: #a3a3a3;
+}
+
+.chat-markdown hr {
+  border: none;
+  border-top: 1px solid #e5e5e5;
+  margin: 1em 0;
+}
+
+.dark .chat-markdown hr {
+  border-top-color: #262626;
+}
+
+.chat-markdown a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-markdown a:hover {
+  color: #1d4ed8;
+}
+
+/* ============================================================
+   LOADING BAR ANIMATION — Barra de carga para modelos
+   ============================================================ */
+
+@keyframes loading-bar {
+  0% { width: 0%; }
+  20% { width: 25%; }
+  50% { width: 60%; }
+  80% { width: 85%; }
+  100% { width: 95%; }
+}
+
+.animate-loading-bar {
+  animation: loading-bar 20s ease-in-out forwards;
+}

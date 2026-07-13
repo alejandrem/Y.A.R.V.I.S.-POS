@@ -106,6 +106,11 @@ pub fn run() {
             backventanas::backempleado::empleaperfil::perfil::get_employee_profile,
             // IA / Sidecar
             backventanas::backadmin::admintarvis::ai::get_ai_status,
+            backventanas::backadmin::admintarvis::chat::send_chat_message,
+            backventanas::backadmin::admintarvis::chat::send_chat_stream,
+            backventanas::backadmin::admintarvis::chat::get_model_status,
+            backventanas::backadmin::admintarvis::chat::load_chat_model,
+            backventanas::backadmin::admintarvis::chat::unload_chat_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
