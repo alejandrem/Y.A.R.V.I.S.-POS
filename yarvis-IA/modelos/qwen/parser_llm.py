@@ -26,6 +26,11 @@ Reglas:
 - El total es siempre la última columna numérica
 - El nombre del producto es texto entre la cantidad y los precios
 - Detecta si hay descuentos, impuestos (IVA), o notas extra
+- BUSCA la fecha del ticket: puede estar en formatos como "15/03/2024", "2024-03-15",
+  "15 de marzo de 2024", "Mar 15 2024", "Fecha: 15/03/24", "15-03-2024", etc.
+- BUSCA la hora del ticket: puede estar en formatos como "14:32", "14:32:05",
+  "2:32 PM", "Hora: 14:32", etc.
+- Si no encuentras fecha u hora, devuelve null para esos campos.
 
 Responde SOLO con JSON válido, sin explicaciones.
 
@@ -46,6 +51,8 @@ FORMATO DE RESPUESTA:
     "tiene_descuento": true_o_false,
     "tiene_iva": true_o_false
   },
+  "fecha_ticket": "YYYY-MM-DD_O_NULL",
+  "hora_ticket": "HH:MM_O_NULL",
   "ejemplo_parseado": [
     {
       "cantidad": NUMERO_ENTERO,

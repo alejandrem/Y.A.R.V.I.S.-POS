@@ -13,6 +13,92 @@ from core.utils import limpiar_producto
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# Extractor de fecha/hora con regex (fallback si el LLM no detecta)
+# ---------------------------------------------------------------------------
+
+# Meses en español
+_MESES_ES = {
+    "enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
+    "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
+    "septiembre": "09", "octubre": "10", "noviembre": "11", "diciembre": "12",
+    "jan": "01", "feb": "02", "mar": "03", "apr": "04",
+    "may": "05", "jun": "06", "jul": "07", "aug": "08",
+    "sep": "09", "oct": "10", "nov": "11", "dec": "12",
+}
+
+
+def _extraer_fecha_hora_regex(texto: str) -> tuple[str | None, str | None]:
+    """
+    Busca fecha y hora en el texto del ticket usando regex.
+    Retorna: (fecha_iso "YYYY-MM-DD" o None, hora "HH:MM" o None)
+    """
+    fecha = None
+    hora = None
+    lineas = texto.splitlines()
+
+    # Patrones de fecha ordenados de más específico a menos
+    patrones_fecha = [
+        # ISO: 2024-03-15
+        (r'\b(\d{4})-(\d{2})-(\d{2})\b', lambda m: f"{m.group(1)}-{m.group(2)}-{m.group(3)}"),
+        # DD/MM/YYYY o DD/MM/YY
+        (r'\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b', lambda m: (
+            f"{m.group(3) if len(m.group(3)) == 4 else '20' + m.group(3)}-"
+            f"{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
+        )),
+        # DD-MM-YYYY
+        (r'\b(\d{1,2})-(\d{1,2})-(\d{4})\b', lambda m: (
+            f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
+        )),
+        # "15 de marzo de 2024" o "15 marzo 2024"
+        (r'\b(\d{1,2})\s+(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?(\d{4})\b',
+         lambda m: f"{m.group(3)}-{_MESES_ES[m.group(2).lower()]}-{m.group(1).zfill(2)}"),
+    ]
+
+    # Patrón de hora: HH:MM o HH:MM:SS o H:MM AM/PM
+    patron_hora = re.compile(
+        r'\b(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)?\b'
+    )
+
+    for linea in lineas:
+        linea_lower = linea.lower()
+
+        # ¿La línea menciona explícitamente la fecha? (ej: "Fecha: 15/03/2024")
+        # Se usa para enriquecer el log: sabremos si fue una línea dedicada o una genérica.
+        es_linea_fecha = any(kw in linea_lower for kw in ["fecha", "date", "emitido", "emisión"])
+
+        if fecha is None:
+            for patron, formateador in patrones_fecha:
+                m = re.search(patron, linea, re.IGNORECASE)
+                if m:
+                    try:
+                        fecha = formateador(m)
+                        fuente = "línea de fecha explícita" if es_linea_fecha else "línea genérica"
+                        print(f"[YARVIS-PARSER] 📅 Fecha detectada ({fuente}): '{fecha}' ← '{linea.strip()}'")
+                    except Exception:
+                        pass
+                    break
+
+        if hora is None:
+            m_hora = patron_hora.search(linea)
+            if m_hora:
+                h = int(m_hora.group(1))
+                mins = m_hora.group(2)
+                ampm = m_hora.group(3)
+                if ampm and ampm.upper() == "PM" and h < 12:
+                    h += 12
+                elif ampm and ampm.upper() == "AM" and h == 12:
+                    h = 0
+                hora = f"{h:02d}:{mins}"
+                fuente_hora = "línea de fecha explícita" if es_linea_fecha else "línea genérica"
+                print(f"[YARVIS-PARSER] ⏰ Hora detectada ({fuente_hora}): '{hora}' ← '{linea.strip()}'")
+
+        if fecha and hora:
+            break
+
+    return fecha, hora
+
+
 class AnalizarTicketRequest(BaseModel):
     texto: str
 
@@ -21,15 +107,47 @@ class AnalizarTicketRequest(BaseModel):
 async def analizar_ticket_endpoint(request: AnalizarTicketRequest):
     """
     Recibe: { "texto": "contenido del ticket .txt" }
-    Retorna: { "status": "ok", "mapeo": {...}, "confianza": 0.95 }
+    Retorna: { "status": "ok", "mapeo": {...}, "fecha_ticket": "...", "hora_ticket": "...", "confianza": 0.95 }
     """
     from modelos.qwen.parser_llm import analizar_ticket, descargar_modelos
     try:
         resultado = analizar_ticket(request.texto)
     finally:
         descargar_modelos()
+
     if resultado.get("status") == "error":
         raise HTTPException(status_code=400, detail=resultado.get("error", "Error desconocido"))
+
+    # --- Fecha y hora: LLM primero, regex como fallback ---
+    fecha_llm = resultado.get("fecha_ticket")
+    hora_llm = resultado.get("hora_ticket")
+
+    # Limpiar valores "null" en string que el LLM a veces devuelve
+    if isinstance(fecha_llm, str) and fecha_llm.lower() in ("null", "none", ""):
+        fecha_llm = None
+    if isinstance(hora_llm, str) and hora_llm.lower() in ("null", "none", ""):
+        hora_llm = None
+
+    fecha_regex, hora_regex = _extraer_fecha_hora_regex(request.texto)
+
+    fecha_final = fecha_llm or fecha_regex
+    hora_final = hora_llm or hora_regex
+
+    resultado["fecha_ticket"] = fecha_final
+    resultado["hora_ticket"] = hora_final
+
+    # --- Imprimir en terminal para verificacion ---
+    print("\n[YARVIS-PARSER] ====== RESULTADO ANALISIS TICKET ======")
+    print(f"[YARVIS-PARSER] 📅 Fecha ticket : {fecha_final or 'NO DETECTADA'} (LLM={fecha_llm}, regex={fecha_regex})")
+    print(f"[YARVIS-PARSER] ⏰ Hora ticket  : {hora_final or 'NO DETECTADA'} (LLM={hora_llm}, regex={hora_regex})")
+    print(f"[YARVIS-PARSER] 🤖 Confianza LLM: {resultado.get('confianza', '?')}")
+    print(f"[YARVIS-PARSER] 📦 Modelo usado : {resultado.get('reintentado_con', 'qwen2_5_0_5b')}")
+    if resultado.get('ejemplo_parseado'):
+        print(f"[YARVIS-PARSER] 🛍️  Productos    : {len(resultado['ejemplo_parseado'])} detectados")
+        for item in resultado['ejemplo_parseado'][:3]:
+            print(f"[YARVIS-PARSER]   - {item.get('cantidad', '?')}x {item.get('producto', '?')} = ${item.get('total', '?')}")
+    print("[YARVIS-PARSER] ==========================================\n")
+
     return resultado
 
 
@@ -77,7 +195,7 @@ def _es_linea_util(linea: str) -> bool:
 
     patrones_skip = [
         "ticket", "factura", "cfdi", "rfc", "serie", "folio",
-        "fecha", "hora", "caja", "cajero", "turno",
+        "caja", "cajero", "turno",
         "subtotal", "iva", "total a pagar", "cambio",
         "metodo de pago", "forma de pago",
         "nombre", "direccion", "telefono", "tel:", "correo",

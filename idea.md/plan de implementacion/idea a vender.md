@@ -1,3 +1,5 @@
+# Idea a vender del software
+
 
 **Venta Ultra-Rápida:** El cajero no puede esperar. Debe soportar escáner de códigos de barras, búsqueda rápida por teclado y múltiples métodos de pago (efectivo, tarjeta, transferencia).
 

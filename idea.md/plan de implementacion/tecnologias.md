@@ -1,26 +1,26 @@
 # Tecnologías Detalladas - Y.A.R.V.I.S. POS
 
-### Lenguajes de Programación
-- Rust: Núcleo del backend y lógica de alto rendimiento. Rust (Axum, Tokio, SQLx).
-- Python: Procesamiento de datos, modelos predictivos e IA. FastAPI, Meta Prophet, llama-cpp-python.
-- TypeScript: Desarrollo del frontend y tipos seguros. TypeScript (Vite, React, Tailwind CSS, Shadcn UI).
-- SQL (SQLite): Consultas de base de datos relacional. SQLite 3 + sqlite-vec.
-- Bash: Scripts de automatización y despliegue local.
+## Lenguajes de Programación
+> * **Rust**: Núcleo del backend y lógica de alto rendimiento. Rust (Axum, Tokio, SQLx).
+> * **Python**: Procesamiento de datos, modelos predictivos e IA. FastAPI, Meta Prophet, llama-cpp-python.
+> * **TypeScript**: Desarrollo del frontend y tipos seguros. TypeScript (Vite, React, Tailwind CSS, Shadcn UI).
+> * **SQL (SQLite)**: Consultas de base de datos relacional. SQLite 3 + sqlite-vec.
+> * **Bash**: Scripts de automatización y despliegue local.
 
-### Frontend (Interfaz de Usuario Premium)
-- Contenedor de Escritorio: Tauri (Crea la ventana nativa como software de Windows sin usar navegadores externos).
-- Lenguaje: TypeScript.
-- Framework: Vite + React. Es rapidísimo al compilar y se integra de forma perfecta con Tauri.
-- Estilos: Tailwind CSS.
-- Componentes: Shadcn UI.
-- Animaciones: Framer Motion.
-- Iconografía: Lucide React.
-- Gráficas: Recharts.
-- Gestión de Estado: Zustand.
-- Consumo de APIs: TanStack Query (React Query).
-- Validación: Zod + React Hook Form.
+## Frontend (Interfaz de Usuario Premium)
+> * **Contenedor de Escritorio**: Tauri (Crea la ventana nativa como software de Windows sin usar navegadores externos).
+> * **Lenguaje**: TypeScript.
+> * **Framework**: Vite + React. Es rapidísimo al compilar y se integra de forma perfecta con Tauri.
+> * **Estilos**: Tailwind CSS.
+> * **Componentes**: Shadcn UI.
+> * **Animaciones**: Framer Motion.
+> * **Iconografía**: Lucide React.
+> * **Gráficas**: Recharts.
+> * **Gestión de Estado**: Zustand.
+> * **Consumo de APIs**: TanStack Query (React Query).
+> * **Validación**: Zod + React Hook Form.
 
-### Backend (Motor de Alto Rendimiento en Rust)
+## Backend (Motor de Alto Rendimiento en Rust)
 - Framework Web: Axum.
 - Runtime Asíncrono: Tokio.
 - Serialización: Serde.
@@ -31,7 +31,7 @@
 - Seguridad: Argon2 (Hashing) & Jsonwebtoken (JWT).
 - Detección de Hardware: sysinfo (detecta RAM disponible para seleccionar el modelo de IA correcto).
 
-### IA y Ciencia de Datos (Cerebro en Python)
+## IA y Ciencia de Datos (Cerebro en Python)
 - Predicción de Ventas: Meta Prophet.
 - Inferencia de LLM Local: llama-cpp-python (modo CPU exclusivo, sin GPU para máxima portabilidad).
 - Modelo local a usar: Qwen 2.5 en formato GGUF. Se selecciona 1.7B o 0.5B según la RAM detectada.
