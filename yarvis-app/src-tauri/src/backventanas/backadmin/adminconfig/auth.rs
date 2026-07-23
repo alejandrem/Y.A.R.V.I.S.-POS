@@ -102,12 +102,16 @@ pub async fn update_admin_data(
     ubicacion: String,
     cp: String
 ) -> Result<String, String> {
-    let hashed = hash_password(&pass);
+    let final_pass = if pass.is_empty() || pass.starts_with("$argon2id") {
+        pass
+    } else {
+        hash_password(&pass)
+    };
 
     sqlx::query("UPDATE usuarios SET nombre = ?, tienda = ?, password = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'")
         .bind(&nombre)
         .bind(&tienda)
-        .bind(&hashed)
+        .bind(&final_pass)
         .bind(&ubicacion)
         .bind(&cp)
         .execute(&*state)

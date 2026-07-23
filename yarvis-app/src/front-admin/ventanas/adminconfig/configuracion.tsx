@@ -18,15 +18,15 @@ interface ConfiguracionProps {
 const Configuracion = ({
   adminName,
   storeName,
-  adminPass,
   initialLocation = "",
   initialCp = "",
 }: ConfiguracionProps) => {
   const [currentAdminName, setCurrentAdminName] = useState(adminName);
   const [currentStoreName, setCurrentStoreName] = useState(storeName);
-  const [currentPass, setCurrentPass] = useState(adminPass);
+  const [currentPass, setCurrentPass] = useState("");
   const [location, setLocation] = useState(initialLocation);
   const [cp, setCp] = useState(initialCp);
+  const [successMessage, setSuccessMessage] = useState("");
   const { theme, setTheme } = useThemeContext();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showBatchProcessor, setShowBatchProcessor] = useState(false);
@@ -59,6 +59,24 @@ const Configuracion = ({
       alert("¡Datos actualizados con éxito, patrón!");
     } catch (error) {
       console.error("Error al actualizar:", error);
+      alert("Hubo una falla al guardar los datos.");
+    }
+  };
+
+  // Botón independiente para guardar solo Datos de Identidad (nombre, tienda, ubicación, CP)
+  const handleSaveIdentity = async () => {
+    try {
+      await invoke("update_admin_data", {
+        nombre: currentAdminName,
+        tienda: currentStoreName,
+        pass: "",  // vacío → Rust no re-hashea
+        ubicacion: location,
+        cp: cp
+      });
+      setSuccessMessage("Cambios guardados exitosamente");
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (error) {
+      console.error("Error al guardar datos de identidad:", error);
       alert("Hubo una falla al guardar los datos.");
     }
   };
@@ -213,9 +231,16 @@ const Configuracion = ({
 
   return (
     <div className="flex-1 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
-      <header className="mb-8 text-left">
+      <header className="mb-8 text-left relative">
         <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight mb-2">Ajustes del Sistema</h2>
         <div className="h-1.5 w-12 bg-neutral-900 rounded-full"></div>
+
+        {/* Toast de éxito con fade-out */}
+        {successMessage && (
+          <div className="absolute top-0 right-0 bg-green-50 border border-green-200 text-green-700 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest animate-in fade-in slide-in-from-top-2 duration-500 shadow-lg">
+            {successMessage}
+          </div>
+        )}
       </header>
 
       {(
@@ -267,6 +292,14 @@ const Configuracion = ({
                 />
               </div>
             </div>
+
+            {/* Botón Guardar Cambios exclusivo para Datos de Identidad */}
+            <button
+              onClick={handleSaveIdentity}
+              className="w-full bg-neutral-900 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-lg"
+            >
+              Guardar Cambios
+            </button>
           </div>
         </div>
 
