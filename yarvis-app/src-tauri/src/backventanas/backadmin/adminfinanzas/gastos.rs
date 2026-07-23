@@ -1,5 +1,5 @@
 use sqlx::SqlitePool;
-use chrono::{NaiveDate, Duration, Datelike, Weekday};
+use chrono::{NaiveDate, Duration};
 use crate::backventanas::backadmin::adminfinanzas::models::*;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
@@ -118,24 +118,18 @@ fn map_row_to_gasto(row: sqlx::sqlite::SqliteRow) -> GastoRecurrente {
 
 #[tauri::command]
 pub async fn get_gastos_recurrentes(state: tauri::State<'_, SqlitePool>) -> Result<Vec<GastoRecurrente>, String> {
-    let rows = sqlx::query(
-        "SELECT * FROM gastos_recurrentes ORDER BY fecha_inicio DESC"
-    )
-    .fetch_all(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
+    let rows = sqlx::query("SELECT * FROM gastos_recurrentes ORDER BY fecha_inicio ASC")
+        .fetch_all(&*state)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(rows.into_iter().map(map_row_to_gasto).collect())
 }
 
 #[tauri::command]
-pub async fn crear_gasto(
-    state: tauri::State<'_, SqlitePool>,
-    gasto: CrearGastoRequest,
-) -> Result<i64, String> {
+pub async fn crear_gasto(state: tauri::State<'_, SqlitePool>, gasto: CrearGastoRequest) -> Result<i64, String> {
     let result = sqlx::query(
-        r#"INSERT INTO gastos_recurrentes 
-           (nombre, tipo, categoria, monto_proyectado, frecuencia, dia_pago, intervalo_dias, fecha_inicio, fecha_fin, folio_comprobante, notas)
+        r#"INSERT INTO gastos_recurrentes (nombre, tipo, categoria, monto_proyectado, frecuencia, dia_pago, intervalo_dias, fecha_inicio, fecha_fin, folio_comprobante, notas)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
     )
     .bind(&gasto.nombre)
@@ -157,15 +151,11 @@ pub async fn crear_gasto(
 }
 
 #[tauri::command]
-pub async fn actualizar_gasto(
-    state: tauri::State<'_, SqlitePool>,
-    id: i64,
-    gasto: CrearGastoRequest,
-) -> Result<(), String> {
+pub async fn actualizar_gasto(state: tauri::State<'_, SqlitePool>, id: i64, gasto: CrearGastoRequest) -> Result<(), String> {
     sqlx::query(
         r#"UPDATE gastos_recurrentes SET
-           nombre = ?, tipo = ?, categoria = ?, monto_proyectado = ?, frecuencia = ?,
-           dia_pago = ?, intervalo_dias = ?, fecha_inicio = ?, fecha_fin = ?,
+           nombre = ?, tipo = ?, categoria = ?, monto_proyectado = ?, frecuencia = ?, 
+           dia_pago = ?, intervalo_dias = ?, fecha_inicio = ?, fecha_fin = ?, 
            folio_comprobante = ?, notas = ?, actualizado_en = datetime('now','localtime')
            WHERE id = ?"#
     )
@@ -199,12 +189,7 @@ pub async fn eliminar_gasto(state: tauri::State<'_, SqlitePool>, id: i64) -> Res
 }
 
 #[tauri::command]
-pub async fn registrar_pago_gasto(
-    state: tauri::State<'_, SqlitePool>,
-    pago: RegistrarPagoRequest,
-) -> Result<i64, String> {
-    let mut tx = state.begin().await.map_err(|e| e.to_string())?;
-
+pub async fn registrar_pago_gasto(state: tauri::State<'_, SqlitePool>, pago: RegistrarPagoRequest) -> Result<i64, String> {
     let result = sqlx::query(
         r#"INSERT INTO pagos_gastos (gasto_id, fecha_pago, monto_pagado, metodo_pago, folio_comprobante, notas)
            VALUES (?, ?, ?, ?, ?, ?)"#
@@ -215,24 +200,34 @@ pub async fn registrar_pago_gasto(
     .bind(&pago.metodo_pago)
     .bind(&pago.folio_comprobante)
     .bind(&pago.notas)
-    .execute(&mut *tx)
+    .execute(&*state)
     .await
     .map_err(|e| e.to_string())?;
 
-    let pago_id = result.last_insert_rowid();
+    // Actualizar monto_real y estado del gasto
+    let gasto_row = sqlx::query("SELECT monto_proyectado, monto_real FROM gastos_recurrentes WHERE id = ?")
+        .bind(pago.gasto_id)
+        .fetch_optional(&*state)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    sqlx::query(
-        "UPDATE gastos_recurrentes SET monto_real = monto_real + ?, estado_pago = 'pagado', actualizado_en = datetime('now','localtime') WHERE id = ?"
-    )
-    .bind(pago.monto_pagado)
-    .bind(pago.gasto_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    if let Some(row) = gasto_row {
+        let monto_proyectado: f64 = decode_f64(&row, "monto_proyectado");
+        let monto_real_actual: f64 = decode_f64(&row, "monto_real");
+        let nuevo_monto_real = monto_real_actual + pago.monto_pagado;
+        
+        let nuevo_estado = if nuevo_monto_real >= monto_proyectado { "pagado" } else { "pendiente" };
+        
+        sqlx::query("UPDATE gastos_recurrentes SET monto_real = ?, estado_pago = ?, actualizado_en = datetime('now','localtime') WHERE id = ?")
+            .bind(nuevo_monto_real)
+            .bind(nuevo_estado)
+            .bind(pago.gasto_id)
+            .execute(&*state)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
 
-    tx.commit().await.map_err(|e| e.to_string())?;
-
-    Ok(pago_id)
+    Ok(result.last_insert_rowid())
 }
 
 #[tauri::command]
@@ -264,54 +259,56 @@ pub async fn get_proximos_vencimientos(state: tauri::State<'_, SqlitePool>, dias
     let limite = hoy + Duration::days(dias as i64);
     
     let rows = sqlx::query(
-        "SELECT * FROM gastos_recurrentes WHERE estado_pago IN ('pendiente', 'proximo_vencer') AND fecha_inicio <= ? ORDER BY fecha_inicio ASC"
+        "SELECT * FROM gastos_recurrentes 
+         WHERE estado_pago IN ('pendiente', 'proximo_vencer') 
+         AND (fecha_fin IS NULL OR fecha_fin >= ?)
+         ORDER BY fecha_inicio ASC"
     )
-    .bind(limite.format("%Y-%m-%d").to_string())
+    .bind(hoy.format("%Y-%m-%d").to_string())
     .fetch_all(&*state)
     .await
     .map_err(|e| e.to_string())?;
 
     let gastos: Vec<GastoRecurrente> = rows.into_iter().map(map_row_to_gasto).collect();
-    Ok(gastos.into_iter().filter(|g| g.dias_para_vencer.unwrap_or(999) <= dias).collect())
+    
+    Ok(gastos.into_iter()
+        .filter(|g| g.dias_para_vencer.unwrap_or(i32::MAX) <= dias)
+        .collect())
 }
 
 #[tauri::command]
 pub async fn actualizar_estados_gastos(state: tauri::State<'_, SqlitePool>) -> Result<(), String> {
     let hoy = chrono::Local::now().date_naive();
     let en_3_dias = hoy + Duration::days(3);
-
+    
+    // Marcar vencidos
     sqlx::query(
-        "UPDATE gastos_recurrentes SET estado_pago = 'vencido', actualizado_en = datetime('now','localtime')
-         WHERE estado_pago IN ('pendiente', 'proximo_vencer')
-         AND fecha_fin IS NULL
-         AND (
-             (frecuencia = 'semanal' AND date(fecha_inicio, '+' || ((julianday(?) - julianday(fecha_inicio)) / 7 + 1) * 7 || ' days') < ?)
-             OR (frecuencia = 'mensual' AND date(fecha_inicio, '+' || (strftime('%m', ?) - strftime('%m', fecha_inicio) + (strftime('%Y', ?) - strftime('%Y', fecha_inicio)) * 12) || ' months') < ?)
-         )"
+        r#"UPDATE gastos_recurrentes 
+           SET estado_pago = 'vencido', actualizado_en = datetime('now','localtime')
+           WHERE estado_pago IN ('pendiente', 'proximo_vencer')
+           AND (fecha_fin IS NULL OR fecha_fin >= ?)
+           AND id IN (
+               SELECT id FROM gastos_recurrentes 
+               WHERE proxima_fecha_pago < ?
+           )"#
     )
-    .bind(hoy.format("%Y-%m-%d").to_string())
-    .bind(hoy.format("%Y-%m-%d").to_string())
-    .bind(hoy.format("%Y-%m-%d").to_string())
-    .bind(hoy.format("%Y-%m-%d").to_string())
     .bind(hoy.format("%Y-%m-%d").to_string())
     .bind(hoy.format("%Y-%m-%d").to_string())
     .execute(&*state)
     .await
     .map_err(|e| e.to_string())?;
 
+    // Marcar próximos a vencer (3 días)
     sqlx::query(
-        "UPDATE gastos_recurrentes SET estado_pago = 'proximo_vencer', actualizado_en = datetime('now','localtime')
-         WHERE estado_pago = 'pendiente'
-         AND fecha_fin IS NULL
-         AND (
-             (frecuencia = 'semanal' AND date(fecha_inicio, '+' || ((julianday(?) - julianday(fecha_inicio)) / 7 + 1) * 7 || ' days') BETWEEN ? AND ?)
-             OR (frecuencia = 'mensual' AND date(fecha_inicio, '+' || (strftime('%m', ?) - strftime('%m', fecha_inicio) + (strftime('%Y', ?) - strftime('%Y', fecha_inicio)) * 12) || ' months') BETWEEN ? AND ?)
-         )"
+        r#"UPDATE gastos_recurrentes 
+           SET estado_pago = 'proximo_vencer', actualizado_en = datetime('now','localtime')
+           WHERE estado_pago = 'pendiente'
+           AND (fecha_fin IS NULL OR fecha_fin >= ?)
+           AND id IN (
+               SELECT id FROM gastos_recurrentes 
+               WHERE proxima_fecha_pago BETWEEN ? AND ?
+           )"#
     )
-    .bind(hoy.format("%Y-%m-%d").to_string())
-    .bind(hoy.format("%Y-%m-%d").to_string())
-    .bind(en_3_dias.format("%Y-%m-%d").to_string())
-    .bind(hoy.format("%Y-%m-%d").to_string())
     .bind(hoy.format("%Y-%m-%d").to_string())
     .bind(hoy.format("%Y-%m-%d").to_string())
     .bind(en_3_dias.format("%Y-%m-%d").to_string())
