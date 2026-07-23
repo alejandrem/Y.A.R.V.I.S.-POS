@@ -80,6 +80,7 @@ pub fn run() {
             backventanas::backadmin::admintickets::tickets::get_tickets,
             backventanas::backadmin::admintickets::tickets::get_cortes,
             backventanas::backadmin::admintickets::tickets::guardar_ticket_parseado,
+            backventanas::backadmin::admintickets::tickets::get_predictions,
             // Empleados - Dashboard
             backventanas::backadmin::adminempleados::empleados::get_empleados,
             backventanas::backadmin::adminempleados::empleados::get_empleado_ventas,

@@ -7,7 +7,7 @@ import os
 import glob
 import asyncio
 
-from endpoints.parser import MapeoColumnas, _parsear_linea as parsear_linea
+from endpoints.parser import MapeoColumnas, _parsear_linea as parsear_linea, _extraer_fecha_hora_regex, _extraer_metodo_pago
 from modelos.qwen.parser_llm import descargar_modelos
 
 router = APIRouter()
@@ -40,15 +40,21 @@ def _extraer_cajero(texto: str) -> str:
     return "SISTEMA"
 
 
-def _insertar_venta(conn: sqlite3.Connection, items: list[dict], cajero: str, archivo: str) -> int:
+def _insertar_venta(conn: sqlite3.Connection, items: list[dict], cajero: str, archivo: str, fecha_iso: str = None, metodo_pago: str = "efectivo") -> int:
     subtotal = _calcular_subtotal(items)
     iva = round(subtotal * 0.16, 2)
     total = round(subtotal + iva, 2)
 
-    cursor = conn.execute("""
-        INSERT INTO ventas (total, subtotal, iva, cajero, metodo_pago, estado)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (total, subtotal, iva, cajero, "efectivo", "completada"))
+    if fecha_iso:
+        cursor = conn.execute("""
+            INSERT INTO ventas (total, subtotal, iva, cajero, metodo_pago, estado, fecha)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (total, subtotal, iva, cajero, metodo_pago, "completada", fecha_iso))
+    else:
+        cursor = conn.execute("""
+            INSERT INTO ventas (total, subtotal, iva, cajero, metodo_pago, estado)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (total, subtotal, iva, cajero, metodo_pago, "completada"))
     venta_id = cursor.lastrowid
 
     for item in items:
@@ -150,9 +156,15 @@ def _procesar_carpeta_impl(archivos: list[str], mapeo: dict, db_path: str) -> di
 
             if items:
                 try:
+                    fecha, hora = _extraer_fecha_hora_regex(texto)
+                    fecha_iso = None
+                    if fecha:
+                        fecha_iso = f"{fecha} {hora}:00" if hora else f"{fecha} 00:00:00"
+
                     conn = sqlite3.connect(db_path)
                     cajero = _extraer_cajero(texto)
-                    venta_id = _insertar_venta(conn, items, cajero, archivo)
+                    metodo_pago = _extraer_metodo_pago(texto)
+                    venta_id = _insertar_venta(conn, items, cajero, archivo, fecha_iso, metodo_pago)
                     conn.commit()
                     conn.close()
 
@@ -285,8 +297,14 @@ async def parsear_carpeta_stream(request: ParseCarpetaRequest):
 
                         if items:
                             try:
+                                fecha, hora = _extraer_fecha_hora_regex(texto)
+                                fecha_iso = None
+                                if fecha:
+                                    fecha_iso = f"{fecha} {hora}:00" if hora else f"{fecha} 00:00:00"
+
                                 cajero = _extraer_cajero(texto)
-                                _insertar_venta(conn, items, cajero, archivo)
+                                metodo_pago = _extraer_metodo_pago(texto)
+                                _insertar_venta(conn, items, cajero, archivo, fecha_iso, metodo_pago)
                                 exitosos += 1
                                 ventas_creadas += 1
                                 items_insertados += len(items)

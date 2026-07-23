@@ -129,7 +129,12 @@ const Configuracion = ({
     try {
       if (parserMode === 'entrenar IA') {
         const total = items.reduce((acc: number, item: any) => acc + (item.total || 0), 0);
-        await invoke("guardar_ticket_parseado", { items, total });
+        await invoke("guardar_ticket_parseado", { 
+          items, 
+          total,
+          fecha: _analysis?.fecha_ticket || null,
+          hora: _analysis?.hora_ticket || null
+        });
         setIaTrained(true);
         setTicketsParsed(true);
         setTicketsCount((c) => c + items.length);
@@ -153,7 +158,12 @@ const Configuracion = ({
     try {
       if (parserMode === 'entrenar IA') {
         const total = parsedItems.reduce((acc, item) => acc + (item.total || 0), 0);
-        await invoke("guardar_ticket_parseado", { items: parsedItems, total });
+        await invoke("guardar_ticket_parseado", { 
+          items: parsedItems, 
+          total,
+          fecha: llmAnalysis?.fecha_ticket || null,
+          hora: llmAnalysis?.hora_ticket || null
+        });
         setIaTrained(true);
         setTicketsParsed(true);
         setTicketsCount((c) => c + parsedItems.length);

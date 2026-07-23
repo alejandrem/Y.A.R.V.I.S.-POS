@@ -17,8 +17,11 @@ export interface LLMAnalysis {
     tiene_descuento: boolean;
     tiene_iva: boolean;
   };
+  fecha_ticket: string | null;
+  hora_ticket: string | null;
   ejemplo_parseado: any[];
   confianza: number;
   notas: string;
   reintentado_con: string | null;
 }
+

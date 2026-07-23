@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from "react";
 
 interface ParserState {
   parsedItems: any[];
@@ -80,42 +80,43 @@ export function ParserProvider({ children }: { children: ReactNode }) {
     saveToLocalStorage(state);
   }, [state]);
 
-  const setParsedItems = (items: any[]) => setState(s => ({ ...s, parsedItems: items }));
-  const setFileContent = (content: string) => setState(s => ({ ...s, fileContent: content }));
-  const setSelectedPath = (path: string) => setState(s => ({ ...s, selectedPath: path }));
-  const setParserMode = (mode: "catalogo" | "entrenar IA" | "insertar") => setState(s => ({ ...s, parserMode: mode }));
-  const setShowColumnMapper = (show: boolean) => setState(s => ({ ...s, showColumnMapper: show }));
-  const setLlmAnalysis = (analysis: any | null) => setState(s => ({ ...s, llmAnalysis: analysis }));
-  const setLastCatalogPath = (path: string) => setState(s => ({ ...s, lastCatalogPath: path }));
-  const setLastCatalogItems = (items: any[]) => setState(s => ({ ...s, lastCatalogItems: items }));
-  const setCatalogParsed = (parsed: boolean) => setState(s => ({ ...s, catalogParsed: parsed }));
-  const setIaTrained = (trained: boolean) => setState(s => ({ ...s, iaTrained: trained }));
-  const setTicketsParsed = (parsed: boolean) => setState(s => ({ ...s, ticketsParsed: parsed }));
-  const setTicketsCount = (count: number | ((c: number) => number)) => setState(s => ({
+  const setParsedItems = useCallback((items: any[]) => setState(s => ({ ...s, parsedItems: items })), []);
+  const setFileContent = useCallback((content: string) => setState(s => ({ ...s, fileContent: content })), []);
+  const setSelectedPath = useCallback((path: string) => setState(s => ({ ...s, selectedPath: path })), []);
+  const setParserMode = useCallback((mode: "catalogo" | "entrenar IA" | "insertar") => setState(s => ({ ...s, parserMode: mode })), []);
+  const setShowColumnMapper = useCallback((show: boolean) => setState(s => ({ ...s, showColumnMapper: show })), []);
+  const setLlmAnalysis = useCallback((analysis: any | null) => setState(s => ({ ...s, llmAnalysis: analysis })), []);
+  const setLastCatalogPath = useCallback((path: string) => setState(s => ({ ...s, lastCatalogPath: path })), []);
+  const setLastCatalogItems = useCallback((items: any[]) => setState(s => ({ ...s, lastCatalogItems: items })), []);
+  const setCatalogParsed = useCallback((parsed: boolean) => setState(s => ({ ...s, catalogParsed: parsed })), []);
+  const setIaTrained = useCallback((trained: boolean) => setState(s => ({ ...s, iaTrained: trained })), []);
+  const setTicketsParsed = useCallback((parsed: boolean) => setState(s => ({ ...s, ticketsParsed: parsed })), []);
+  const setTicketsCount = useCallback((count: number | ((c: number) => number)) => setState(s => ({
     ...s,
     ticketsCount: typeof count === "function" ? count(s.ticketsCount) : count,
-  }));
-  const setTicketsGuardados = (count: number | ((c: number) => number)) => setState(s => ({
+  })), []);
+  const setTicketsGuardados = useCallback((count: number | ((c: number) => number)) => setState(s => ({
     ...s,
     ticketsGuardados: typeof count === "function" ? count(s.ticketsGuardados) : count,
-  }));
+  })), []);
+  const contextValue = useMemo(() => ({
+    ...state,
+    setParsedItems,
+    setFileContent,
+    setSelectedPath,
+    setParserMode,
+    setShowColumnMapper,
+    setLlmAnalysis,
+    setLastCatalogPath,
+    setLastCatalogItems,
+    setCatalogParsed,
+    setIaTrained,
+    setTicketsParsed,
+    setTicketsCount,
+    setTicketsGuardados,
+  }), [state, setParsedItems, setFileContent, setSelectedPath, setParserMode, setShowColumnMapper, setLlmAnalysis, setLastCatalogPath, setLastCatalogItems, setCatalogParsed, setIaTrained, setTicketsParsed, setTicketsCount, setTicketsGuardados]);
   return (
-    <ParserContext.Provider value={{
-      ...state,
-      setParsedItems,
-      setFileContent,
-      setSelectedPath,
-      setParserMode,
-      setShowColumnMapper,
-      setLlmAnalysis,
-      setLastCatalogPath,
-      setLastCatalogItems,
-      setCatalogParsed,
-      setIaTrained,
-      setTicketsParsed,
-      setTicketsCount,
-      setTicketsGuardados,
-    }}>
+    <ParserContext.Provider value={contextValue}>
       {children}
     </ParserContext.Provider>
   );

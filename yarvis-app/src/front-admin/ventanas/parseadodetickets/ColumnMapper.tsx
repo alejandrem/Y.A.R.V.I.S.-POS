@@ -95,7 +95,7 @@ const ColumnMapper = ({ onGuardarTicket, onPreviewUpdate, fileContent: initialFi
 
   useEffect(() => {
     onPreviewUpdate(previewItems);
-  }, [previewItems, onPreviewUpdate]);
+  }, [previewItems]);
 
   const productoRangeOptions = COLUMN_OPTIONS.flatMap((opt) =>
     COLUMN_OPTIONS.filter((opt2) => opt2.value >= opt.value).map((opt2) => ({

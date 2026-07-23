@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import Graficas from "./graficas";
 
 interface TicketDb {
   id: number;
@@ -16,12 +17,11 @@ interface CorteDb {
 }
 
 const Tickets = () => {
-  const [selectedRange, setSelectedRange] = useState("7 DÍAS");
-  const [predictionRange, setPredictionRange] = useState("7 DÍAS");
+  const [selectedRange, setSelectedRange] = useState("1 AÑO");
   
   const [tickets, setTickets] = useState<TicketDb[]>([]);
   const [cortes, setCortes] = useState<CorteDb[]>([]);
-  
+
   const [histStartDate, setHistStartDate] = useState("");
   const [histEndDate, setHistEndDate] = useState("");
 
@@ -54,6 +54,7 @@ const Tickets = () => {
     }
 
     const daysMap: Record<string, number> = {
+      "TODOS": 99999,
       "7 DÍAS": 7,
       "15 DÍAS": 15,
       "1 MES": 30,
@@ -61,10 +62,11 @@ const Tickets = () => {
       "1 AÑO": 365,
     };
 
-    const days = daysMap[selectedRange] ?? 7;
+    const days = daysMap[selectedRange] ?? 99999;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
+    if (selectedRange === "TODOS") return tickets;
     return tickets.filter(t => new Date(t.fecha) >= cutoff);
   }, [tickets, selectedRange, histStartDate, histEndDate]);
 
@@ -80,6 +82,7 @@ const Tickets = () => {
     }
 
     const daysMap: Record<string, number> = {
+      "TODOS": 99999,
       "7 DÍAS": 7,
       "15 DÍAS": 15,
       "1 MES": 30,
@@ -87,10 +90,11 @@ const Tickets = () => {
       "1 AÑO": 365,
     };
 
-    const days = daysMap[selectedRange] ?? 7;
+    const days = daysMap[selectedRange] ?? 99999;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
+    if (selectedRange === "TODOS") return cortes;
     return cortes.filter(c => new Date(c.fecha) >= cutoff);
   }, [cortes, selectedRange, histStartDate, histEndDate]);
 
@@ -202,132 +206,47 @@ const Tickets = () => {
         </div>
       </div>
 
-      {/* SECCIÓN DE GRÁFICAS HISTÓRICAS */}
-      <div className="space-y-8 pt-10 border-t border-neutral-100">
-        <div className="flex flex-col gap-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-black text-neutral-900 uppercase tracking-tight">Análisis de Rendimiento</h3>
-            <div className="flex bg-neutral-100 p-1 rounded-xl flex-wrap gap-1">
-              {["7 DÍAS", "15 DÍAS", "1 MES", "6 MESES", "1 AÑO", "PERSONALIZADO"].map(r => (
-                <button 
-                  key={r} 
-                  onClick={() => setSelectedRange(r)}
-                  className={`px-3 py-2 text-[8px] font-black rounded-lg transition-all ${selectedRange === r ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {selectedRange === "PERSONALIZADO" && (
-            <div className="flex items-center gap-6 bg-neutral-900 p-6 rounded-3xl self-end shadow-2xl shadow-neutral-200">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[9px] font-black text-neutral-500 uppercase tracking-widest ml-1">Fecha Inicial</label>
-                <input 
-                  type="date"
-                  value={histStartDate}
-                  onChange={(e) => setHistStartDate(e.target.value)}
-                  className="bg-neutral-800 border border-neutral-700 text-white rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-white w-40 transition-all"
-                />
-              </div>
-              <div className="h-8 w-px bg-neutral-800 mt-4"></div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[9px] font-black text-neutral-500 uppercase tracking-widest ml-1">Fecha Final</label>
-                <input 
-                  type="date"
-                  value={histEndDate}
-                  onChange={(e) => setHistEndDate(e.target.value)}
-                  className="bg-neutral-800 border border-neutral-700 text-white rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-white w-40 transition-all"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
-          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-80 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute top-4 sm:top-6 left-4 sm:left-8">
-                <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Rendimiento de Tickets</p>
-                <p className="text-[8px] text-neutral-400 font-bold uppercase mt-1">Mostrando: {filteredTickets.length} tickets</p>
-             </div>
-             <div className="text-center space-y-4">
-                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto shadow-sm text-xl">📊</div>
-                <p className="text-[10px] font-black text-neutral-300 uppercase tracking-[0.2em]">{filteredTickets.length > 0 ? "Listo para graficar" : "Esperando tickets..."}</p>
-             </div>
-          </div>
-
-          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-80 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute top-4 sm:top-6 left-4 sm:left-8">
-                <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Flujo de Cortes de Caja</p>
-                <p className="text-[8px] text-neutral-400 font-bold uppercase mt-1">Mostrando: {filteredCortes.length} cortes</p>
-             </div>
-             <div className="text-center space-y-4">
-                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto shadow-sm text-xl">📉</div>
-                <p className="text-[10px] font-black text-neutral-300 uppercase tracking-[0.2em]">{filteredCortes.length > 0 ? "Listo para graficar" : "Esperando cortes..."}</p>
-             </div>
-          </div>
+      {/* SECCIÓN DE GRÁFICAS (Rendimiento, Cortes, Predicción) */}
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-black text-neutral-900 uppercase tracking-tight">Análisis de Rendimiento</h3>
+        <div className="flex bg-neutral-100 p-1 rounded-xl flex-wrap gap-1">
+          {["TODOS", "7 DÍAS", "15 DÍAS", "1 MES", "6 MESES", "1 AÑO", "PERSONALIZADO"].map(r => (
+            <button 
+              key={r} 
+              onClick={() => setSelectedRange(r)}
+              className={`px-3 py-2 text-[8px] font-black rounded-lg transition-all ${selectedRange === r ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
+            >
+              {r}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* PREDICCIÓN Y ACCIONES */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-8 pb-12">
-        <div className="sm:col-span-2 bg-neutral-900 rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-10 shadow-2xl relative overflow-hidden h-[280px] sm:h-[450px] flex flex-col">
-          <div className="relative z-10 flex flex-col gap-3 sm:gap-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-white uppercase tracking-tight">Predicción de Flujo de Caja</h3>
-                <p className="text-[10px] text-neutral-500 font-black uppercase tracking-[0.2em] mt-1">Modelo Prophet (Próximos días)</p>
-              </div>
-              <div className="flex bg-white/5 p-1 rounded-xl gap-1">
-                {["7D", "15D", "6M", "1A"].map(r => (
-                  <button 
-                    key={r} 
-                    onClick={() => setPredictionRange(r)}
-                    className={`px-3 py-1.5 text-[8px] font-black rounded-lg transition-all ${predictionRange === r ? 'bg-white text-neutral-900' : 'text-neutral-500 hover:text-white'}`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
+      {selectedRange === "PERSONALIZADO" && (
+        <div className="flex items-center gap-6 bg-neutral-900 p-6 rounded-3xl mb-8 self-end shadow-2xl shadow-neutral-200">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[9px] font-black text-neutral-500 uppercase tracking-widest ml-1">Fecha Inicial</label>
+            <input 
+              type="date"
+              value={histStartDate}
+              onChange={(e) => setHistStartDate(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 text-white rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-white w-40 transition-all"
+            />
           </div>
-          
-          <div className="flex-1 flex flex-col items-center justify-center relative z-10">
-             <div className="w-full h-px bg-white/5 absolute top-1/2"></div>
-             <div className="text-center space-y-4">
-                <div className="w-20 h-20 bg-white/5 rounded-[2rem] flex items-center justify-center mx-auto text-3xl opacity-20">🔮</div>
-                <p className="text-[11px] font-black text-white uppercase tracking-[0.3em] opacity-40">Sin datos para predecir</p>
-             </div>
-          </div>
-          
-          <div className="absolute -bottom-10 -right-10 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none"></div>
-        </div>
-
-        <div className="space-y-4 sm:space-y-6">
-          <div className="bg-white rounded-2xl sm:rounded-[2rem] border border-neutral-100 p-4 sm:p-8 h-36 sm:h-56 relative overflow-hidden flex flex-col">
-             <h4 className="text-[9px] sm:text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-2 sm:mb-4">Formas de Pago</h4>
-             <div className="flex-1 flex items-center justify-center relative">
-                <div className="w-24 h-24 rounded-full border-4 border-neutral-50 flex items-center justify-center">
-                   <div className="w-16 h-16 rounded-full border-2 border-neutral-50 border-t-neutral-100"></div>
-                </div>
-                <p className="absolute text-[8px] font-black text-neutral-300 uppercase tracking-tighter">Sin datos</p>
-             </div>
-          </div>
-
-          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2rem] border border-neutral-100 p-4 sm:p-8 space-y-3 sm:space-y-4">
-             <h4 className="text-[9px] sm:text-[10px] font-black text-neutral-900 uppercase tracking-widest mb-1 sm:mb-2">Acciones Rápidas</h4>
-             <button className="w-full py-3 sm:py-4 bg-white border border-neutral-200 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black text-neutral-900 uppercase tracking-widest hover:bg-neutral-900 hover:text-white transition-all shadow-sm flex items-center justify-center gap-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Generar Factura
-             </button>
-             <button className="w-full py-3 sm:py-4 bg-white border border-neutral-200 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black text-neutral-900 uppercase tracking-widest hover:bg-neutral-900 hover:text-white transition-all shadow-sm flex items-center justify-center gap-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                Reporte Gral. PDF
-             </button>
+          <div className="h-8 w-px bg-neutral-800 mt-4"></div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[9px] font-black text-neutral-500 uppercase tracking-widest ml-1">Fecha Final</label>
+            <input 
+              type="date"
+              value={histEndDate}
+              onChange={(e) => setHistEndDate(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 text-white rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-white w-40 transition-all"
+            />
           </div>
         </div>
-      </div>
+      )}
+
+      <Graficas filteredTickets={filteredTickets} filteredCortes={filteredCortes} />
     </div>
   );
 };

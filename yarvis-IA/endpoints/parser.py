@@ -99,6 +99,53 @@ def _extraer_fecha_hora_regex(texto: str) -> tuple[str | None, str | None]:
     return fecha, hora
 
 
+# ---------------------------------------------------------------------------
+# Extractor de método de pago desde el texto del ticket
+# ---------------------------------------------------------------------------
+
+_PATRONES_PAGO = [
+    (r'(?:FORMA\s+DE\s+PAGO|METODO\s+DE\s+PAGO|PAGO\s+CON|PAGO:?)\s*:?\s*(\d+\s*[-:]?\s*)?(EFECTIVO)', "efectivo"),
+    (r'(?:FORMA\s+DE\s+PAGO|METODO\s+DE\s+PAGO|PAGO\s+CON|PAGO:?)\s*:?\s*(\d+\s*[-:]?\s*)?(TARJETA\s+DEBITO)', "tarjeta"),
+    (r'(?:FORMA\s+DE\s+PAGO|METODO\s+DE\s+PAGO|PAGO\s+CON|PAGO:?)\s*:?\s*(\d+\s*[-:]?\s*)?(TARJETA\s+CREDITO)', "tarjeta"),
+    (r'(?:FORMA\s+DE\s+PAGO|METODO\s+DE\s+PAGO|PAGO\s+CON|PAGO:?)\s*:?\s*(\d+\s*[-:]?\s*)?(DEBITO)', "tarjeta"),
+    (r'(?:FORMA\s+DE\s+PAGO|METODO\s+DE\s+PAGO|PAGO\s+CON|PAGO:?)\s*:?\s*(\d+\s*[-:]?\s*)?(CREDITO)', "tarjeta"),
+    (r'(?:FORMA\s+DE\s+PAGO|METODO\s+DE\s+PAGO|PAGO\s+CON|PAGO:?)\s*:?\s*(\d+\s*[-:]?\s*)?(TRANSFERENCIA)', "transferencia"),
+    (r'(?:FORMA\s+DE\s+PAGO|METODO\s+DE\s+PAGO|PAGO\s+CON|PAGO:?)\s*:?\s*(\d+\s*[-:]?\s*)?(CHEQUE)', "cheque"),
+    # Líneas directas con monto: "EFECTIVO........... $1,234.56"
+    (r'^EFECTIVO[\s\.]+(?:\$|[\d])', "efectivo"),
+    (r'^TARJETA\s+DEBITO[\s\.]+(?:\$|[\d])', "tarjeta"),
+    (r'^TARJETA\s+CREDITO[\s\.]+(?:\$|[\d])', "tarjeta"),
+    (r'^DEBITO[\s\.]+(?:\$|[\d])', "tarjeta"),
+    (r'^CREDITO[\s\.]+(?:\$|[\d])', "tarjeta"),
+    (r'^TRANSFERENCIA[\s\.]+(?:\$|[\d])', "transferencia"),
+    (r'^CHEQUE[\s\.]+(?:\$|[\d])', "cheque"),
+    # Monto: "EFECTIVO: $1,234.56"
+    (r'^EFECTIVO\s*:', "efectivo"),
+    (r'^TARJETA\s+DEBITO\s*:', "tarjeta"),
+    (r'^TARJETA\s+CREDITO\s*:', "tarjeta"),
+    (r'^DEBITO\s*:', "tarjeta"),
+    (r'^CREDITO\s*:', "tarjeta"),
+    (r'^TRANSFERENCIA\s*:', "transferencia"),
+    (r'^CHEQUE\s*:', "cheque"),
+]
+
+
+def _extraer_metodo_pago(texto: str) -> str:
+    """
+    Busca en las últimas 25 líneas del ticket el método de pago.
+    Retorna: "efectivo", "tarjeta", "transferencia", "cheque" o "efectivo" por defecto.
+    """
+    lineas = texto.splitlines()
+    # Revisar solo las últimas 25 líneas (zona de total/pago)
+    for linea in lineas[-25:]:
+        linea_upper = linea.strip().upper()
+        for patron, metodo in _PATRONES_PAGO:
+            if re.search(patron, linea_upper):
+                print(f"[YARVIS-PARSER] 💳 Método de pago detectado: '{metodo}' ← '{linea.strip()}'")
+                return metodo
+    return "efectivo"
+
+
 class AnalizarTicketRequest(BaseModel):
     texto: str
 
@@ -208,6 +255,8 @@ def _es_linea_util(linea: str) -> bool:
         "tel ", "tel.", "pagina", "www", "ticket #",
         # Línea de total
         "total", "pago:", "efectivo", "tarjeta",
+        # Fecha, hora, lineas de pago
+        "fecha:", "hora:", "pago con", "c.p.",
     ]
     for patron in patrones_skip:
         if patron in linea_lower:
@@ -269,7 +318,7 @@ def _parsear_linea(linea: str, mapeo: MapeoColumnas, total_cols: int) -> dict | 
     total = _limpiar_precio(cols[idx_total] if idx_total is not None and idx_total < len(cols) else "")
     descuento = _limpiar_precio(cols[idx_desc] if idx_desc is not None and idx_desc < len(cols) else "")
 
-    if not producto and cantidad == 0 and total == 0:
+    if not producto or (cantidad == 0 and total == 0):
         return None
 
     return {

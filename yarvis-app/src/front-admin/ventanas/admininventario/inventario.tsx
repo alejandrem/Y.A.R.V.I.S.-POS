@@ -23,12 +23,25 @@ const Inventario = ({ activeTab }: InventarioProps) => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [inventoryFilter, setInventoryFilter] = useState("A-Z");
   const [searchQuery, setSearchQuery] = useState("");
+  const [conciliacion, setConciliacion] = useState<Record<number, { fisico: number; sistema: number }>>({});
 
   useEffect(() => {
     if (activeTab === "inventario") {
       loadInventory();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (inventory.length > 0 && Object.keys(conciliacion).length === 0) {
+      const next: Record<number, { fisico: number; sistema: number }> = {};
+      for (const item of inventory) {
+        if (item.id != null) {
+          next[item.id] = { fisico: item.stock, sistema: item.stock };
+        }
+      }
+      setConciliacion(next);
+    }
+  }, [inventory]);
 
   const loadInventory = async () => {
     try {
@@ -365,27 +378,91 @@ const Inventario = ({ activeTab }: InventarioProps) => {
             <h3 className="text-base sm:text-xl font-black text-neutral-900 uppercase tracking-tight">Conciliación de Inventario</h3>
             <p className="text-[9px] text-neutral-400 uppercase font-black tracking-widest">Físico vs Sistema</p>
           </div>
+          <button
+            onClick={() => {/* TODO: conectar con impresora para imprimir el contenido de la tabla */}}
+            className="px-4 py-2 text-[8px] font-black bg-neutral-900 text-white rounded-xl hover:bg-neutral-800 transition-all uppercase tracking-widest"
+          >
+            Imprimir Lista
+          </button>
         </div>
 
         <div className="border border-neutral-100 rounded-3xl overflow-hidden">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-neutral-50 text-neutral-400 border-b border-neutral-100">
-                <th className="px-8 py-4 text-[9px] font-black uppercase tracking-widest">Producto</th>
-                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-center">Físico</th>
-                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-center">Sistema</th>
-                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-center">Dif.</th>
-                <th className="px-8 py-4 text-[9px] font-black uppercase tracking-widest text-right">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-50">
-              <tr className="opacity-40">
-                <td colSpan={5} className="px-8 py-12 text-center text-[10px] font-black text-neutral-300 uppercase tracking-widest italic">
-                  Módulo de auditoría listo para sincronización manual.
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="max-h-96 overflow-y-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="bg-neutral-50 text-neutral-400 border-b border-neutral-100">
+                  <th className="px-4 py-4 text-[8px] font-black uppercase tracking-widest">Producto</th>
+                  <th className="px-3 py-4 text-[8px] font-black uppercase tracking-widest text-center">Físico</th>
+                  <th className="px-3 py-4 text-[8px] font-black uppercase tracking-widest text-center">Sistema</th>
+                  <th className="px-3 py-4 text-[8px] font-black uppercase tracking-widest text-center">Dif.</th>
+                  <th className="px-3 py-4 text-[8px] font-black uppercase tracking-widest text-center">Estado</th>
+                  <th className="px-4 py-4 text-[8px] font-black uppercase tracking-widest text-right">Pérdida</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-50">
+                {sortedInventory.map((item) => {
+                  if (item.id == null) return null;
+                  const c = conciliacion[item.id];
+                  if (!c) return null;
+                  const dif = c.fisico - c.sistema;
+                  const perdida = dif < 0 ? Math.abs(dif) * item.precio_venta : 0;
+                  const estado =
+                    dif === 0
+                      ? { label: "Correcto", color: "text-green-600 bg-green-50" }
+                      : dif > 0
+                      ? { label: "Sobrante", color: "text-amber-600 bg-amber-50" }
+                      : { label: "Faltante", color: "text-red-600 bg-red-50" };
+
+                  return (
+                    <tr key={item.id} className="hover:bg-neutral-50 transition-colors">
+                      <td className="px-4 py-3 text-[10px] font-bold text-neutral-900 truncate max-w-[180px]">
+                        {item.nombre}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          value={c.fisico}
+                          onChange={(e) =>
+                            setConciliacion((prev) => ({
+                              ...prev,
+                              [item.id!]: { ...prev[item.id!], fisico: Math.max(0, Number(e.target.value)) },
+                            }))
+                          }
+                          className="w-16 text-center text-[10px] font-black bg-neutral-50 border border-neutral-200 rounded-xl py-1.5 focus:outline-none focus:border-neutral-900 transition-colors"
+                        />
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          value={c.sistema}
+                          onChange={(e) =>
+                            setConciliacion((prev) => ({
+                              ...prev,
+                              [item.id!]: { ...prev[item.id!], sistema: Math.max(0, Number(e.target.value)) },
+                            }))
+                          }
+                          className="w-16 text-center text-[10px] font-black bg-white border border-neutral-200 rounded-xl py-1.5 focus:outline-none focus:border-neutral-900 transition-colors"
+                        />
+                      </td>
+                      <td className={`px-3 py-3 text-center text-[11px] font-black ${dif === 0 ? "text-neutral-300" : dif > 0 ? "text-amber-600" : "text-red-600"}`}>
+                        {dif === 0 ? "0" : dif > 0 ? `+${dif}` : `${dif}`}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`inline-block px-2 py-1 text-[8px] font-black rounded-lg uppercase ${estado.color}`}>
+                          {estado.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-[11px] font-black text-red-500">
+                        {perdida > 0 ? `$${perdida.toFixed(2)}` : <span className="text-neutral-200">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

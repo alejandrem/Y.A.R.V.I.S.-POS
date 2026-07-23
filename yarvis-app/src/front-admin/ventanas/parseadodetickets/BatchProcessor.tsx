@@ -127,7 +127,7 @@ const BatchProcessor = ({ onVolver, initialFolder }: BatchProcessorProps) => {
 
       await invoke("parsear_carpeta_stream", {
         carpeta: selectedFolder,
-        mapeo: { cantidad: -3, producto: [0, -4], precio_unitario: -2, total: -1 },
+        mapeo: { cantidad: 0, producto: [1, -4], precio_unitario: -3, total: -1 },
         dbPath: dbPath,
       });
 

@@ -18,6 +18,7 @@ QUERY_VENTAS_DIARIAS = """
     FROM ventas
     WHERE fecha IS NOT NULL
       AND fecha != ''
+      AND strftime('%Y-%m-%d', fecha) IS NOT NULL
     GROUP BY ds
     ORDER BY ds ASC
 """
@@ -89,6 +90,8 @@ def run_prediction(db_path: str, days: int = 30) -> dict:
         query = _detectar_schema(conn)
         df = pd.read_sql_query(query, conn)
         conn.close()
+
+        df = df.dropna(subset=["ds"])
 
         print(f"[YARVIS-PROFETA] 📊 Registros históricos diarios cargados: {len(df)}")
 
