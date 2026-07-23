@@ -230,6 +230,122 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             total_productos INTEGER DEFAULT 0
         )").execute(&pool).await.expect("Fallo al crear tabla catalogos_importados");
 
+        // ========================
+        // TABLA: gastos_recurrentes (Módulo Finanzas)
+        // ========================
+        sqlx::query("CREATE TABLE IF NOT EXISTS gastos_recurrentes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            tipo TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            monto_proyectado REAL NOT NULL,
+            monto_real REAL DEFAULT 0,
+            frecuencia TEXT NOT NULL,
+            dia_pago INTEGER,
+            intervalo_dias INTEGER,
+            fecha_inicio DATE NOT NULL,
+            fecha_fin DATE,
+            estado_pago TEXT DEFAULT 'pendiente',
+            folio_comprobante TEXT,
+            comprobante_url TEXT,
+            notas TEXT,
+            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+            actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+        )").execute(&pool).await.expect("Fallo al crear tabla gastos_recurrentes");
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gastos_fecha_inicio ON gastos_recurrentes(fecha_inicio)").execute(&pool).await;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gastos_estado ON gastos_recurrentes(estado_pago)").execute(&pool).await;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gastos_tipo ON gastos_recurrentes(tipo)").execute(&pool).await;
+
+        // ========================
+        // TABLA: pagos_gastos (Historial de pagos)
+        // ========================
+        sqlx::query("CREATE TABLE IF NOT EXISTS pagos_gastos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            gasto_id INTEGER NOT NULL,
+            fecha_pago DATETIME NOT NULL,
+            monto_pagado REAL NOT NULL,
+            metodo_pago TEXT,
+            folio_comprobante TEXT,
+            comprobante_url TEXT,
+            notas TEXT,
+            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (gasto_id) REFERENCES gastos_recurrentes(id) ON DELETE CASCADE
+        )").execute(&pool).await.expect("Fallo al crear tabla pagos_gastos");
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_pagos_gasto_id ON pagos_gastos(gasto_id)").execute(&pool).await;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_pagos_fecha ON pagos_gastos(fecha_pago)").execute(&pool).await;
+
+        // ========================
+        // MIGRACIONES: cortes_caja (extender para cortes X/Z)
+        // ========================
+        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN tipo_corte TEXT DEFAULT 'Z'").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN turno TEXT").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN entradas_manuales REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN retiros_manuales REAL DEFAULT 0").execute(&pool).await;
+        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN observaciones TEXT").execute(&pool).await;
+
+        // ========================
+        // TABLA: movimientos_caja (Detalle de entradas/salidas en corte)
+        // ========================
+        sqlx::query("CREATE TABLE IF NOT EXISTS movimientos_caja (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            corte_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            concepto TEXT NOT NULL,
+            monto REAL NOT NULL,
+            metodo_pago TEXT,
+            referencia_id INTEGER,
+            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (corte_id) REFERENCES cortes_caja(id) ON DELETE CASCADE
+        )").execute(&pool).await.expect("Fallo al crear tabla movimientos_caja");
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_movimientos_corte ON movimientos_caja(corte_id)").execute(&pool).await;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_movimientos_tipo ON movimientos_caja(tipo)").execute(&pool).await;
+
+        // ========================
+        // TABLA: resumen_financiero_diario (Materialized view para gráficas P&L)
+        // ========================
+        sqlx::query("CREATE TABLE IF NOT EXISTS resumen_financiero_diario (
+            fecha DATE PRIMARY KEY,
+            ventas_totales REAL DEFAULT 0,
+            ventas_efectivo REAL DEFAULT 0,
+            ventas_tarjeta REAL DEFAULT 0,
+            ventas_transferencia REAL DEFAULT 0,
+            costo_ventas REAL DEFAULT 0,
+            utilidad_bruta REAL DEFAULT 0,
+            gastos_operativos REAL DEFAULT 0,
+            utilidad_operativa REAL DEFAULT 0,
+            impuestos_comisiones REAL DEFAULT 0,
+            utilidad_neta REAL DEFAULT 0,
+            margen_neto_pct REAL DEFAULT 0,
+            cortes_z_count INTEGER DEFAULT 0,
+            diferencia_caja_total REAL DEFAULT 0,
+            actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+        )").execute(&pool).await.expect("Fallo al crear tabla resumen_financiero_diario");
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_resumen_fecha ON resumen_financiero_diario(fecha)").execute(&pool).await;
+
+        // ========================
+        // TABLA: alertas_financieras (Semáforo de vencimientos)
+        // ========================
+        sqlx::query("CREATE TABLE IF NOT EXISTS alertas_financieras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL,
+            severidad TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            mensaje TEXT NOT NULL,
+            entidad_id INTEGER,
+            entidad_tipo TEXT,
+            fecha_vencimiento DATE,
+            leida INTEGER DEFAULT 0,
+            creada_en DATETIME DEFAULT CURRENT_TIMESTAMP
+        )").execute(&pool).await.expect("Fallo al crear tabla alertas_financieras");
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_alertas_tipo ON alertas_financieras(tipo)").execute(&pool).await;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_alertas_severidad ON alertas_financieras(severidad)").execute(&pool).await;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_alertas_leida ON alertas_financieras(leida)").execute(&pool).await;
+
         (pool, db_path_str)
     })
 }
