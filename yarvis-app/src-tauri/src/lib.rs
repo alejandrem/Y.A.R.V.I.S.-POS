@@ -41,7 +41,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![
+.invoke_handler(tauri::generate_handler![
             // Auth
             backventanas::backadmin::adminconfig::auth::check_setup_done,
             backventanas::backadmin::adminconfig::auth::guardar_admin,
@@ -65,7 +65,6 @@ pub fn run() {
             backventanas::backadmin::adminparser::parsear_catalogo_csv,
             backventanas::backadmin::adminparser::parsear_catalogo_visual,
             backventanas::backadmin::adminparser::parsear_excel,
-            backventanas::backadmin::adminparser::parsear_ticket,
             backventanas::backadmin::adminparser::analizar_ticket_llm,
             backventanas::backadmin::adminparser::analizar_ticket_con_ia,
             backventanas::backadmin::adminparser::parsear_con_mapeo,
@@ -105,6 +104,41 @@ pub fn run() {
             backventanas::backempleado::emplea_new_venta::new_venta::get_tienda_info,
             // Empleado - Perfil
             backventanas::backempleado::empleaperfil::perfil::get_employee_profile,
+            // Finanzas - Gastos
+            backventanas::backadmin::adminfinanzas::gastos::get_gastos_recurrentes,
+            backventanas::backadmin::adminfinanzas::gastos::crear_gasto,
+            backventanas::backadmin::adminfinanzas::gastos::actualizar_gasto,
+            backventanas::backadmin::adminfinanzas::gastos::eliminar_gasto,
+            backventanas::backadmin::adminfinanzas::gastos::registrar_pago_gasto,
+            backventanas::backadmin::adminfinanzas::gastos::get_pagos_gasto,
+            backventanas::backadmin::adminfinanzas::gastos::get_proximos_vencimientos,
+            backventanas::backadmin::adminfinanzas::gastos::actualizar_estados_gastos,
+            // Finanzas - Cortes X/Z
+            backventanas::backadmin::adminfinanzas::cortes::get_cortes_caja,
+            backventanas::backadmin::adminfinanzas::cortes::get_corte_detalle,
+            backventanas::backadmin::adminfinanzas::cortes::crear_corte_x,
+            backventanas::backadmin::adminfinanzas::cortes::crear_corte_z,
+            backventanas::backadmin::adminfinanzas::cortes::cerrar_corte,
+            backventanas::backadmin::adminfinanzas::cortes::agregar_movimiento_caja,
+            backventanas::backadmin::adminfinanzas::cortes::get_movimientos_corte,
+            backventanas::backadmin::adminfinanzas::cortes::get_cortes_por_cajero_fecha,
+            // Finanzas - Métricas y Utilidades
+            backventanas::backadmin::adminfinanzas::metricas::get_metricas_diarias,
+            backventanas::backadmin::adminfinanzas::metricas::get_resumen_periodo,
+            backventanas::backadmin::adminfinanzas::metricas::recalcular_resumen_diario,
+            backventanas::backadmin::adminfinanzas::metricas::get_punto_equilibrio,
+            // Finanzas - Gráficas
+            backventanas::backadmin::adminfinanzas::graficas::get_datos_grafica_pl,
+            backventanas::backadmin::adminfinanzas::graficas::get_gastos_por_categoria,
+            backventanas::backadmin::adminfinanzas::graficas::get_tendencia_cortes_z,
+            backventanas::backadmin::adminfinanzas::graficas::get_ventas_vs_gastos_mensual,
+            // Finanzas - Alertas
+            backventanas::backadmin::adminfinanzas::alertas::get_alertas,
+            backventanas::backadmin::adminfinanzas::alertas::marcar_alerta_leida,
+            backventanas::backadmin::adminfinanzas::alertas::generar_alertas_automaticas,
+            // Finanzas - Export (TODO)
+            backventanas::backadmin::adminfinanzas::export::exportar_balance_pdf,
+            backventanas::backadmin::adminfinanzas::export::exportar_gastos_csv,
             // IA / Sidecar
             backventanas::backadmin::admintarvis::ai::get_ai_status,
             backventanas::backadmin::admintarvis::chat::send_chat_message,
