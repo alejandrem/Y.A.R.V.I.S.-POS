@@ -23,7 +23,9 @@ const Configuracion = ({
 }: ConfiguracionProps) => {
   const [currentAdminName, setCurrentAdminName] = useState(adminName);
   const [currentStoreName, setCurrentStoreName] = useState(storeName);
-  const [currentPass, setCurrentPass] = useState("");
+  const PASS_PLACEHOLDER = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+  const [currentPass, setCurrentPass] = useState(PASS_PLACEHOLDER);
+  const [passwordChanged, setPasswordChanged] = useState(false);
   const [location, setLocation] = useState(initialLocation);
   const [cp, setCp] = useState(initialCp);
   const [successMessage, setSuccessMessage] = useState("");
@@ -49,14 +51,22 @@ const Configuracion = ({
 
   const handleUpdate = async () => {
     try {
+      // Solo mandar contraseña si el usuario la cambió y no está vacía
+      const passToSend = passwordChanged && currentPass.trim() !== "" ? currentPass : "";
       await invoke("update_admin_data", {
         nombre: currentAdminName,
         tienda: currentStoreName,
-        pass: currentPass,
+        pass: passToSend,
         ubicacion: location,
         cp: cp
       });
-      alert("¡Datos actualizados con éxito, patrón!");
+      // Resetear feedback visual de contraseña
+      if (passwordChanged) {
+        setCurrentPass(PASS_PLACEHOLDER);
+        setPasswordChanged(false);
+      }
+      setSuccessMessage("Contraseña actualizada exitosamente");
+      setTimeout(() => setSuccessMessage(""), 3000);
     } catch (error) {
       console.error("Error al actualizar:", error);
       alert("Hubo una falla al guardar los datos.");
@@ -309,12 +319,33 @@ const Configuracion = ({
             <h3 className="text-[10px] font-black text-neutral-500 uppercase tracking-[0.4em]">Seguridad & Acceso</h3>
             <div className="space-y-4 relative z-10">
               <div className="group/input">
-                <label className="text-[9px] font-black text-neutral-500 uppercase ml-2 mb-1 block group-focus-within/input:text-white transition-colors">Contraseña Maestra</label>
+                <label className="text-[9px] font-black uppercase ml-2 mb-1 flex items-center gap-2 transition-colors">
+                  <span className={passwordChanged ? "text-yellow-400" : "text-neutral-500"}>Contraseña Maestra</span>
+                  {passwordChanged ? (
+                    <span className="text-[8px] text-yellow-400 font-black tracking-widest">● EDITANDO</span>
+                  ) : (
+                    <span className="text-[8px] text-green-400 font-black tracking-widest">✓ GUARDADA</span>
+                  )}
+                </label>
                 <input
                   type="password"
                   value={currentPass}
-                  onChange={(e) => setCurrentPass(e.target.value)}
+                  onFocus={() => {
+                    if (!passwordChanged) {
+                      setCurrentPass("");
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!passwordChanged && currentPass === "") {
+                      setCurrentPass(PASS_PLACEHOLDER);
+                    }
+                  }}
+                  onChange={(e) => {
+                    setCurrentPass(e.target.value);
+                    setPasswordChanged(true);
+                  }}
                   className="w-full bg-white/5 border border-white/10 px-6 py-4 rounded-2xl text-xs font-bold focus:outline-none focus:ring-4 focus:ring-white/5 focus:border-white/20 transition-all text-white placeholder:text-white/20"
+                  placeholder="Nueva contraseña..."
                 />
               </div>
               <button

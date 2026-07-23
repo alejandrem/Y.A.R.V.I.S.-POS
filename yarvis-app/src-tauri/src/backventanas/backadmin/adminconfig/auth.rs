@@ -102,21 +102,29 @@ pub async fn update_admin_data(
     ubicacion: String,
     cp: String
 ) -> Result<String, String> {
-    let final_pass = if pass.is_empty() || pass.starts_with("$argon2id") {
-        pass
+    if pass.is_empty() {
+        // Sin contraseña nueva: actualizar todo EXCEPTO password
+        sqlx::query("UPDATE usuarios SET nombre = ?, tienda = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'")
+            .bind(&nombre)
+            .bind(&tienda)
+            .bind(&ubicacion)
+            .bind(&cp)
+            .execute(&*state)
+            .await
+            .map_err(|e| e.to_string())?;
     } else {
-        hash_password(&pass)
-    };
-
-    sqlx::query("UPDATE usuarios SET nombre = ?, tienda = ?, password = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'")
-        .bind(&nombre)
-        .bind(&tienda)
-        .bind(&final_pass)
-        .bind(&ubicacion)
-        .bind(&cp)
-        .execute(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
+        // Hay contraseña nueva: hashear y guardar todo
+        let hashed = hash_password(&pass);
+        sqlx::query("UPDATE usuarios SET nombre = ?, tienda = ?, password = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'")
+            .bind(&nombre)
+            .bind(&tienda)
+            .bind(&hashed)
+            .bind(&ubicacion)
+            .bind(&cp)
+            .execute(&*state)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
 
     Ok("Datos actualizados correctamente".into())
 }
