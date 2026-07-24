@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
-use chrono::{NaiveDate, Duration};
+use chrono::{NaiveDate, Duration, Datelike};
 use crate::backventanas::backadmin::adminfinanzas::models::*;
+use sqlx::Row;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -21,7 +22,7 @@ fn calcular_proxima_fecha(fecha_inicio: &str, frecuencia: &str, dia_pago: Option
             Some(fecha.format("%Y-%m-%d").to_string())
         }
         "quincenal" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 15);
+            let dia = dia_pago.unwrap_or(1).clamp(1, 15) as u32;
             let mut fecha = NaiveDate::from_ymd_opt(desde.year(), desde.month(), dia)?;
             if fecha <= desde {
                 if desde.month() == 12 {
@@ -33,7 +34,7 @@ fn calcular_proxima_fecha(fecha_inicio: &str, frecuencia: &str, dia_pago: Option
             Some(fecha.format("%Y-%m-%d").to_string())
         }
         "mensual" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 28);
+            let dia = dia_pago.unwrap_or(1).clamp(1, 28) as u32;
             let mut fecha = NaiveDate::from_ymd_opt(desde.year(), desde.month(), dia)?;
             if fecha <= desde {
                 if desde.month() == 12 {
@@ -45,7 +46,7 @@ fn calcular_proxima_fecha(fecha_inicio: &str, frecuencia: &str, dia_pago: Option
             Some(fecha.format("%Y-%m-%d").to_string())
         }
         "trimestral" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 28);
+            let dia = dia_pago.unwrap_or(1).clamp(1, 28) as u32;
             let mut mes = ((desde.month() - 1) / 3 + 1) * 3 + 1;
             let mut anio = desde.year();
             if mes > 12 {
@@ -232,7 +233,7 @@ pub async fn registrar_pago_gasto(state: tauri::State<'_, SqlitePool>, pago: Reg
 
 #[tauri::command]
 pub async fn get_pagos_gasto(state: tauri::State<'_, SqlitePool>, gasto_id: i64) -> Result<Vec<PagoGasto>, String> {
-    let rows = sqlx::query_as::<_, (i64, i64, String, f64, Option<String>, Option<String>, Option<String>, String)>(
+    let rows = sqlx::query_as::<_, (i64, i64, String, f64, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
         "SELECT id, gasto_id, fecha_pago, monto_pagado, metodo_pago, folio_comprobante, comprobante_url, notas, creado_en FROM pagos_gastos WHERE gasto_id = ? ORDER BY fecha_pago DESC"
     )
     .bind(gasto_id)
@@ -278,6 +279,10 @@ pub async fn get_proximos_vencimientos(state: tauri::State<'_, SqlitePool>, dias
 
 #[tauri::command]
 pub async fn actualizar_estados_gastos(state: tauri::State<'_, SqlitePool>) -> Result<(), String> {
+    actualizar_estados_gastos_impl(&*state).await
+}
+
+pub async fn actualizar_estados_gastos_impl(state: &SqlitePool) -> Result<(), String> {
     let hoy = chrono::Local::now().date_naive();
     let en_3_dias = hoy + Duration::days(3);
     

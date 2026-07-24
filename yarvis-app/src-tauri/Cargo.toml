@@ -44,4 +44,4 @@ printpdf = "0.4"
 # Excel export (calamine lee/escribe xlsx)
 calamine = "0.21"
 # Background jobs scheduler para alertas y recálculos
-tokio-cron-scheduler = { version = "0.11", features = ["tokio1"] }
+tokio-cron-scheduler = { version = "0.11" }

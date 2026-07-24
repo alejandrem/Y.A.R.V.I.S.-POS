@@ -123,7 +123,7 @@ async fn _generar_datos_cortes(
 
 /// Formatear moneda MXN
 fn _formato_mxn(monto: f64) -> String {
-    format!("${:,.2}", monto)
+    format!("${:.2}", monto)
 }
 
 /// Formatear porcentaje

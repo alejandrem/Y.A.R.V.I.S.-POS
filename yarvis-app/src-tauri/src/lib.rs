@@ -132,6 +132,7 @@ pub fn run() {
             backventanas::backadmin::adminfinanzas::graficas::get_gastos_por_categoria,
             backventanas::backadmin::adminfinanzas::graficas::get_tendencia_cortes_z,
             backventanas::backadmin::adminfinanzas::graficas::get_ventas_vs_gastos_mensual,
+            backventanas::backadmin::adminfinanzas::graficas::get_predicciones_financieras,
             // Finanzas - Alertas
             backventanas::backadmin::adminfinanzas::alertas::get_alertas,
             backventanas::backadmin::adminfinanzas::alertas::marcar_alerta_leida,

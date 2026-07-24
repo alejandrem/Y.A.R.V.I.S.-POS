@@ -1,18 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { 
-  useMetricas, useGraficas, useAlertas,
-  type ResumenPeriodo, type PuntoEquilibrio, type DatoGraficaPL, type AlertaFinanciera,
-  type FiltrosPeriodo
-} from './hooks';
-import { 
-  formatMXN, formatPct, getFechaInicioPeriodo, getFechaHoy,
-  COLORES_CATEGORIAS, COLORES_SEVERIDAD
-} from './utils';
 import {
-  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar
+  Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, ComposedChart,
 } from 'recharts';
+import { useMetricas, useGraficas, useAlertas } from './hooks';
+import {
+  formatMXN, formatPct, getFechaInicioPeriodo, getFechaHoy,
+  COLORES_CATEGORIAS, COLORES_SEVERIDAD,
+} from './utils';
 
 export const FinanzasDashboard = () => {
   const [periodo, setPeriodo] = useState<'semana' | 'mes' | 'trimestre' | 'año'>('mes');
@@ -21,191 +17,181 @@ export const FinanzasDashboard = () => {
 
   const { resumen, puntoEquilibrio, loading: loadingMetricas, cargarResumen } = useMetricas();
   const { datosPL, loading: loadingGraficas, cargarPL } = useGraficas();
-  const { alertas, loading: loadingAlertas } = useAlertas();
+  const { alertas, cargarAlertas } = useAlertas();
 
   useEffect(() => {
     cargarResumen(fechaInicio, fechaFin);
-    cargarPL(fechaInicio, fechaFin, periodo === 'semana' ? 'semana' : periodo === 'mes' ? 'mes' : 'mes');
-  }, [fechaInicio, fechaFin, periodo, cargarResumen, cargarPL]);
+    cargarPL(fechaInicio, fechaFin, periodo === 'semana' ? 'semana' : 'mes');
+    cargarAlertas(true);
+  }, [fechaInicio, fechaFin, periodo, cargarResumen, cargarPL, cargarAlertas]);
 
-  const alertasCriticas = useMemo(() => 
+  const alertasCriticas = useMemo(() =>
     alertas.filter(a => !a.leida && (a.severidad === 'rojo' || a.severidad === 'amarillo')).slice(0, 3),
-  [alertas]);
+    [alertas]);
 
   const kpis = useMemo(() => [
     {
       label: 'UTILIDAD BRUTA',
-      value: resumen ? formatMXN(resumen.total_utilidad_bruta) : '$0.00',
-      subtitle: 'Ventas - COGS',
-      color: 'bg-blue-500',
+      value: resumen ? formatMXN(resumen.total_utilidad_bruta) : '—',
+      subtitle: 'Ventas − COGS',
       icon: '📈',
       trend: resumen && resumen.total_utilidad_bruta > 0 ? 'up' : 'down',
     },
     {
       label: 'UTILIDAD OPERATIVA',
-      value: resumen ? formatMXN(resumen.total_utilidad_operativa) : '$0.00',
-      subtitle: 'Bruta - Gastos Op.',
-      color: 'bg-green-500',
+      value: resumen ? formatMXN(resumen.total_utilidad_operativa) : '—',
+      subtitle: 'Bruta − Gastos Op.',
       icon: '🏢',
       trend: resumen && resumen.total_utilidad_operativa > 0 ? 'up' : 'down',
     },
     {
       label: 'UTILIDAD NETA',
-      value: resumen ? formatMXN(resumen.total_utilidad_neta) : '$0.00',
-      subtitle: 'Operativa - Impuestos',
-      color: 'bg-purple-500',
+      value: resumen ? formatMXN(resumen.total_utilidad_neta) : '—',
+      subtitle: 'Operativa − Impuestos',
       icon: '💰',
       trend: resumen && resumen.total_utilidad_neta > 0 ? 'up' : 'down',
     },
     {
       label: 'MARGEN NETO %',
-      value: resumen ? formatPct(resumen.margen_promedio_pct) : '0.00%',
+      value: resumen ? formatPct(resumen.margen_promedio_pct) : '—',
       subtitle: '(Neta / Ventas) × 100',
-      color: resumen && resumen.margen_promedio_pct > 15 ? 'bg-emerald-500' : 'bg-amber-500',
       icon: '📊',
       trend: resumen && resumen.margen_promedio_pct > 15 ? 'up' : 'down',
     },
   ], [resumen]);
 
+  const progresoEquilibrio = useMemo(() => {
+    if (!puntoEquilibrio || !resumen || puntoEquilibrio.ventas_necesarias <= 0) return 0;
+    return Math.min(100, (resumen.total_ventas / puntoEquilibrio.ventas_necesarias) * 100);
+  }, [puntoEquilibrio, resumen]);
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      {/* Header con selector de período */}
+    <div className="space-y-10 animate-in fade-in duration-500">
+
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-neutral-900 uppercase tracking-tight">Dashboard Financiero</h2>
-          <p className="text-xs text-neutral-400 uppercase tracking-widest">Visión general del rendimiento del negocio</p>
+          <h3 className="text-xl font-black text-neutral-900 uppercase tracking-tight">Dashboard Financiero</h3>
+          <p className="text-[10px] text-neutral-400 font-black uppercase tracking-widest mt-0.5">Visión general del rendimiento del negocio</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {['semana', 'mes', 'trimestre', 'año'].map(p => (
+        <div className="flex bg-neutral-100 p-1 rounded-xl flex-wrap gap-1">
+          {(['semana', 'mes', 'trimestre', 'año'] as const).map(p => (
             <button
               key={p}
-              onClick={() => setPeriodo(p as any)}
-              className={`px-4 py-2 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${
-                periodo === p 
-                  ? 'bg-neutral-900 text-white shadow-lg shadow-neutral-200' 
-                  : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700'
-              }`}
+              onClick={() => setPeriodo(p)}
+              className={`px-3 py-2 text-[8px] font-black rounded-lg transition-all ${periodo === p
+                ? 'bg-white shadow-sm text-neutral-900'
+                : 'text-neutral-400 hover:text-neutral-600'
+                }`}
             >
-              {p.toUpperCase()}
+              {p === 'semana' ? '7D' : p === 'mes' ? '1M' : p === 'trimestre' ? '3M' : '1A'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* KPIs Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, i) => (
-          <KPICard key={i} {...kpi} />
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {loadingMetricas
+          ? Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="bg-neutral-50 rounded-2xl border border-neutral-100 p-6 h-[148px] animate-pulse" />
+          ))
+          : kpis.map((kpi, i) => <KPICard key={i} {...kpi} />)}
       </div>
 
-      {/* Grid principal: Gráfica P&L + Punto Equilibrio + Alertas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Gráfica P&L Evolution */}
-        <div className="lg:col-span-2 bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-neutral-100">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-tight">EVOLUCIÓN P&L (PÉRDIDAS Y GANANCIAS)</h3>
-              <div className="flex gap-2">
-                {['dia', 'semana', 'mes'].map(g => (
-                  <button
-                    key={g}
-                    className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${
-                      (periodo === 'semana' && g === 'semana') || (periodo === 'mes' && g === 'mes') || (periodo === 'trimestre' && g === 'mes')
-                        ? 'bg-neutral-900 text-white' 
-                        : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-                    }`}
-                  >
-                    {g.toUpperCase()}
-                  </button>
-                ))}
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        <div className="lg:col-span-2 bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-64 sm:h-80 flex flex-col relative overflow-hidden">
+          <div className="absolute top-4 sm:top-6 left-4 sm:left-8 z-10">
+            <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Evolución P&L</p>
+            <p className="text-[8px] text-neutral-400 font-bold uppercase mt-1">Pérdidas y Ganancias</p>
+          </div>
+          {loadingGraficas ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
             </div>
-            <div className="h-[350px]">
+          ) : datosPL.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm text-xl">📈</div>
+              <p className="text-[10px] font-black text-neutral-300 uppercase tracking-[0.2em] mt-4">Sin datos de ventas en este período</p>
+            </div>
+          ) : (
+            <div className="w-full h-full pt-14">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={datosPL} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                  <XAxis 
-                    dataKey="fecha" 
-                    tick={{ fontSize: 10, fill: '#9ca3af' }} 
-                    axisLine={{ stroke: '#e5e7eb' }}
-                    tickLine={false}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 10, fill: '#9ca3af' }} 
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={v => formatMXN(v).replace('$', '') + 'k'}
-                  />
-                  <Tooltip 
-                    content={<CustomTooltip />}
-                    formatter={v => [formatMXN(v), '']}
-                    labelFormatter={fecha => new Date(fecha).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}
-                  />
+                <ComposedChart data={datosPL} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" vertical={false} />
+                  <XAxis dataKey="fecha" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip content={<CustomTooltip />} />
                   <Legend layout="horizontal" align="center" verticalAlign="bottom" iconType="line" wrapperStyle={{ paddingTop: 10 }} />
-                  <Area type="monotone" dataKey="ingresos" name="Ingresos Totales" stroke="#22c55e" fill="#22c55e" fillOpacity={0.1} strokeWidth={2} />
-                  <Area type="monotone" dataKey="gastos" name="Gastos Totales" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
-                  <Line type="monotone" dataKey="utilidad_neta" name="Utilidad Neta" stroke="#8b5cf6" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                  <Area type="monotone" dataKey="ingresos" name="Ingresos" stroke="#171717" fill="#171717" fillOpacity={0.1} strokeWidth={2} />
+                  <Area type="monotone" dataKey="gastos" name="Gastos" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
+                  <Area type="monotone" dataKey="utilidad_neta" name="Utilidad Neta" stroke="#22c55e" fill="#22c55e" fillOpacity={0.05} strokeWidth={3} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Panel derecho: Punto Equilibrio + Alertas */}
         <div className="space-y-6">
-          {/* Punto de Equilibrio */}
-          <div className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden p-6">
-            <h3 className="text-lg font-black text-neutral-900 uppercase tracking-tight mb-4 flex items-center gap-2">
-              <span className="w-8 h-8 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center text-sm">⚖️</span>
-              PUNTO DE EQUILIBRIO
-            </h3>
+
+          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-80 flex flex-col relative overflow-hidden">
+            <div className="absolute top-4 sm:top-6 left-4 sm:left-8 z-10">
+              <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1.5 h-4 bg-neutral-900 rounded-full inline-block" />
+                BREAK-EVEN
+              </p>
+            </div>
             {puntoEquilibrio ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <MetricItem label="GASTOS FIJOS MENSUALES" value={formatMXN(puntoEquilibrio.gastos_fijos_mensuales)} />
-                  <MetricItem label="MARGEN CONTRIBUCIÓN" value={formatPct(puntoEquilibrio.margen_contribucion_pct)} />
-                  <MetricItem label="VENTAS NECESARIAS" value={formatMXN(puntoEquilibrio.ventas_necesarias)} />
-                  <MetricItem label="TICKETS NECESARIOS" value={puntoEquilibrio.tickets_necesarios.toFixed(0)} />
+              <div className="flex-1 flex flex-col justify-center pt-6 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <MetricItem label="GASTOS FIJOS" value={formatMXN(puntoEquilibrio.gastos_fijos_mensuales)} />
+                  <MetricItem label="MARGEN CONTRIB." value={formatPct(puntoEquilibrio.margen_contribucion_pct)} />
+                  <MetricItem label="VENTAS NECES." value={formatMXN(puntoEquilibrio.ventas_necesarias)} />
+                  <MetricItem label="TICKETS NECES." value={puntoEquilibrio.tickets_necesarios.toFixed(0)} />
                 </div>
-                <div className="pt-4 border-t border-neutral-100">
-                  <div className="h-4 bg-neutral-100 rounded-full overflow-hidden">
-                    const progreso = Math.min(100, (resumen?.total_ventas || 0) / (puntoEquilibrio.ventas_necesarias || 1) * 100);
-                    <div className={`h-full rounded-full transition-all duration-500 ${progreso >= 100 ? 'bg-green-500' : progreso >= 70 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${progreso}%` }}></div>
+                <div className="pt-3 border-t border-neutral-200">
+                  <div className="h-3 bg-neutral-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${progresoEquilibrio >= 100 ? 'bg-neutral-800' : progresoEquilibrio >= 70 ? 'bg-neutral-500' : 'bg-red-500'}`}
+                      style={{ width: `${progresoEquilibrio}%` }}
+                    />
                   </div>
-                  <p className="text-xs text-neutral-500 mt-1 text-center">
-                    {progreso >= 100 ? '✅ Punto de equilibrio SUPERADO' : `Faltan ${formatMXN(puntoEquilibrio.ventas_necesarias - (resumen?.total_ventas || 0))} para alcanzar el break-even`}
+                  <p className="text-[10px] text-neutral-500 mt-1.5 text-center font-bold">
+                    {progresoEquilibrio >= 100
+                      ? '✅ Break-even superado'
+                      : `Faltan ${formatMXN(Math.max(0, puntoEquilibrio.ventas_necesarias - (resumen?.total_ventas ?? 0)))} para el break-even`}
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-neutral-400">Calculando...</div>
+              <div className="flex-1 flex flex-col items-center justify-center">
+                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm text-xl">⚖️</div>
+                <p className="text-[10px] font-black text-neutral-300 uppercase tracking-[0.2em] mt-4">
+                  {loadingMetricas ? 'Calculando...' : 'Sin datos suficientes'}
+                </p>
+              </div>
             )}
           </div>
 
-          {/* Alertas Críticas */}
-          <div className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
-              <h3 className="text-lg font-black text-neutral-900 uppercase tracking-tight flex items-center gap-2">
-                <span className="w-8 h-8 bg-red-100 text-red-600 rounded-xl flex items-center justify-center text-sm">🚨</span>
-                ALERTAS CRÍTICAS
-              </h3>
+          <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-80 flex flex-col relative overflow-hidden">
+            <div className="absolute top-4 sm:top-6 left-4 sm:left-8 z-10 flex items-center justify-between w-[calc(100%-2rem)] sm:w-[calc(100%-4rem)]">
+              <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1.5 h-4 bg-red-500 rounded-full inline-block" />
+                ALERTAS
+              </p>
               {alertasCriticas.length > 0 && (
-                <span className="px-2 py-1 bg-red-500 text-white text-[10px] font-black rounded-lg">{alertasCriticas.length}</span>
+                <span className="px-2 py-0.5 bg-red-500 text-white text-[8px] font-black rounded-lg">{alertasCriticas.length}</span>
               )}
             </div>
-            <div className="p-4">
+            <div className="flex-1 flex flex-col justify-center pt-6">
               {alertasCriticas.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3 text-3xl">✅</div>
-                  <p className="text-sm font-medium text-neutral-600">Sin alertas críticas</p>
-                  <p className="text-xs text-neutral-400">Todo bajo control</p>
+                <div className="flex flex-col items-center justify-center">
+                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm text-xl">⚪</div>
+                  <p className="text-[10px] font-black text-neutral-300 uppercase tracking-[0.2em] mt-4">Sin alertas críticas</p>
+                  <p className="text-[8px] text-neutral-300 mt-1">Todo bajo control</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {alertasCriticas.map(alerta => (
-                    <AlertaItem key={alerta.id} alerta={alerta} compact />
-                  ))}
+                <div className="space-y-2">
+                  {alertasCriticas.map(a => <AlertaItem key={a.id} alerta={a} compact />)}
                 </div>
               )}
             </div>
@@ -213,164 +199,176 @@ export const FinanzasDashboard = () => {
         </div>
       </div>
 
-      {/* Resumen rápido: Ventas por método + Gastos por categoría */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden p-6">
-          <h3 className="text-lg font-black text-neutral-900 uppercase tracking-tight mb-4 flex items-center gap-2">
-            <span className="w-8 h-8 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-sm">💳</span>
-            VENTAS POR MÉTODO DE PAGO
-          </h3>
-          <VentasMetodoChart />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 pb-12">
+        <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-64 flex flex-col relative overflow-hidden">
+          <div className="absolute top-4 sm:top-6 left-4 sm:left-8 z-10">
+            <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Ventas por Método</p>
+            <p className="text-[8px] text-neutral-400 font-bold uppercase mt-1">Distribución de cobro</p>
+          </div>
+          <VentasMetodoChart fechaInicio={fechaInicio} fechaFin={fechaFin} />
         </div>
-        <div className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden p-6">
-          <h3 className="text-lg font-black text-neutral-900 uppercase tracking-tight mb-4 flex items-center gap-2">
-            <span className="w-8 h-8 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-sm">🍩</span>
-            GASTOS POR CATEGORÍA
-          </h3>
-          <GastosCategoriaChart />
+        <div className="bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100 p-4 sm:p-8 h-48 sm:h-64 flex flex-col relative overflow-hidden">
+          <div className="absolute top-4 sm:top-6 left-4 sm:left-8 z-10">
+            <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Gastos por Categoría</p>
+            <p className="text-[8px] text-neutral-400 font-bold uppercase mt-1">Distribución de egresos</p>
+          </div>
+          <GastosCategoriaChart fechaInicio={fechaInicio} fechaFin={fechaFin} />
         </div>
       </div>
+
     </div>
   );
 };
 
-// Componentes auxiliares
-const KPICard = ({ label, value, subtitle, color, icon, trend }: any) => (
-  <div className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden p-6">
-    <div className="flex items-start justify-between">
-      <div>
-        <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-1">{label}</p>
-        <p className="text-3xl font-black text-neutral-900">{value}</p>
-        <p className="text-xs text-neutral-400 mt-1">{subtitle}</p>
-      </div>
-      <div className={`${color} w-14 h-14 rounded-2xl flex items-center justify-center text-2xl`}>{icon}</div>
-    </div>
-    <div className="mt-4 pt-4 border-t border-neutral-100 flex items-center justify-between">
-      <span className={`text-[10px] font-black ${trend === 'up' ? 'text-green-600' : 'text-red-600'}`}>
-        {trend === 'up' ? '↑ Positivo' : '↓ Revisar'}
-      </span>
-    </div>
+const KPICard = ({ label, value, subtitle, trend }: any) => (
+  <div className={`p-4 sm:p-8 rounded-2xl sm:rounded-[2rem] border border-neutral-100 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300 ${
+    trend === 'up' ? 'bg-neutral-900 text-white shadow-2xl shadow-neutral-200' : 'bg-neutral-50'
+  }`}>
+    <p className={`text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-2 ${trend === 'up' ? 'text-neutral-400' : 'text-neutral-400'}`}>{label}</p>
+    <h3 className="text-xl sm:text-2xl font-black">{value}</h3>
+    <span className={`absolute top-4 sm:top-8 right-4 sm:right-8 text-[7px] sm:text-[8px] font-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-lg uppercase ${trend === 'up' ? 'bg-white/10 text-neutral-400' : 'bg-neutral-100 text-neutral-400'}`}>
+      {subtitle}
+    </span>
   </div>
 );
 
-const MetricItem = ({ label, value }: any) => (
+const MetricItem = ({ label, value }: { label: string; value: string }) => (
   <div>
-    <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">{label}</p>
-    <p className="text-xl font-black text-neutral-900 mt-1">{value}</p>
+    <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">{label}</p>
+    <p className="text-base font-black text-neutral-900 mt-0.5">{value}</p>
   </div>
 );
 
-const AlertaItem = ({ alerta, compact }: any) => {
-  const colores = COLORES_SEVERIDAD[alerta.severidad];
+const AlertaItem = ({ alerta, compact }: { alerta: any; compact?: boolean }) => {
+  const colores = COLORES_SEVERIDAD[alerta.severidad as keyof typeof COLORES_SEVERIDAD] ?? COLORES_SEVERIDAD.rojo;
   return (
-    <div className={`p-3 rounded-xl border-l-4 ${colores.border} ${colores.bg.replace('500', '50')} flex items-start gap-3`}>
-      <span className="text-lg">{colores.icon}</span>
+    <div className={`p-3 rounded-xl border-l-4 ${colores.border} bg-white flex items-start gap-3`}>
+      <span className="text-base leading-none mt-0.5">{colores.icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-black text-neutral-900">{alerta.titulo}</p>
-        <p className="text-[10px] text-neutral-600 mt-0.5 truncate">{alerta.mensaje}</p>
+        <p className="text-[10px] text-neutral-500 mt-0.5 truncate">{alerta.mensaje}</p>
       </div>
-      {!compact && <span className="text-[9px] font-black text-neutral-400">{new Date(alerta.creada_en).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span>}
+      {!compact && (
+        <span className="text-[9px] font-black text-neutral-400 shrink-0">
+          {new Date(alerta.creada_en).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      )}
     </div>
   );
 };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active) return null;
+  if (!active || !payload?.length) return null;
   return (
-    <div className="bg-neutral-900 text-white p-3 rounded-lg shadow-lg border border-neutral-700">
-      <p className="text-xs font-medium text-neutral-400 mb-2">{label}</p>
-      {payload?.map((entry: any, i: number) => (
-        <p key={i} className="text-sm font-bold" style={{ color: entry.color }}>
-          {entry.name}: {entry.value !== null ? formatMXN(entry.value) : '—'}
+    <div className="bg-neutral-900 text-white p-3 rounded-xl shadow-2xl border border-neutral-700 text-xs">
+      <p className="text-neutral-400 font-medium mb-2">{label}</p>
+      {payload.map((e: any, i: number) => (
+        <p key={i} className="font-bold" style={{ color: e.color }}>
+          {e.name}: {formatMXN(e.value)}
         </p>
       ))}
     </div>
   );
 };
 
-// Gráfica de ventas por método (placeholder - se conectará con datos reales)
-const VentasMetodoChart = () => {
-  const data = [
-    { name: 'Efectivo', value: 45, color: '#22c55e' },
-    { name: 'Tarjeta', value: 35, color: '#3b82f6' },
-    { name: 'Transferencia', value: 20, color: '#8b5cf6' },
-  ];
-  return (
-    <div className="h-[200px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%" cy="50%"
-            innerRadius={50} outerRadius={80}
-            dataKey="value" nameKey="name"
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-            labelLine={false}
-          >
-            {data.map((_, i) => <Cell key={i} fill={COLORES_CATEGORIAS[i]} />)}
-          </Pie>
-          <Tooltip formatter={v => [`${v}%`, '']} />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
+const VentasMetodoChart = ({ fechaInicio, fechaFin }: { fechaInicio: string; fechaFin: string }) => {
+  const [data, setData] = useState<{ name: string; value: number }[]>([]);
 
-// Gráfica de gastos por categoría (placeholder)
-const GastosCategoriaChart = () => {
-  const data = [
-    { name: 'Servicios', value: 40, color: '#ef4444' },
-    { name: 'Operativo', value: 30, color: '#f59e0b' },
-    { name: 'Nómina', value: 20, color: '#3b82f6' },
-    { name: 'Impuestos', value: 10, color: '#8b5cf6' },
-  ];
-  return (
-    <div className="h-[200px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%" cy="50%"
-            innerRadius={50} outerRadius={80}
-            dataKey="value" nameKey="name"
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-            labelLine={false}
-          >
-            {data.map((_, i) => <Cell key={i} fill={COLORES_CATEGORIAS[i]} />)}
-          </Pie>
-          <Tooltip formatter={v => [`${v}%`, '']} />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
+  useEffect(() => {
+    invoke<any[]>('get_cortes_caja', { filtros: { fecha_inicio: fechaInicio, fecha_fin: fechaFin } })
+      .then(cortes => {
+        const efe = cortes.reduce((a, c) => a + (c.total_efectivo || 0), 0);
+        const tar = cortes.reduce((a, c) => a + (c.total_tarjeta || 0), 0);
+        const tra = cortes.reduce((a, c) => a + (c.total_transferencia || 0), 0);
+        setData(
+          [{ name: 'Efectivo', value: efe }, { name: 'Tarjeta', value: tar }, { name: 'Transferencia', value: tra }]
+            .filter(d => d.value > 0)
+            .map(d => ({ ...d, value: Math.round(d.value * 100) / 100 }))
+        );
+      })
+      .catch(() => setData([]));
+  }, [fechaInicio, fechaFin]);
 
-import { useEffect, useMemo } from 'react';
-import { formatMXN, formatPct, getFechaInicioPeriodo, getFechaHoy } from './utils';
-import { ComposedChart } from 'recharts';
-
-// Helper functions
-function formatMXN(monto: number): string {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(monto);
-}
-
-function formatPct(valor: number): string {
-  return `${valor.toFixed(2)}%`;
-}
-
-function getFechaHoy(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-function getFechaInicioPeriodo(periodo: string, fechaFin: string): string {
-  const fin = new Date(fechaFin);
-  switch (periodo) {
-    case 'semana': fin.setDate(fin.getDate() - 7); break;
-    case 'mes': fin.setMonth(fin.getMonth() - 1); break;
-    case 'trimestre': fin.setMonth(fin.getMonth() - 3); break;
-    case 'año': fin.setFullYear(fin.getFullYear() - 1); break;
+  if (data.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center">
+        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm text-xl">💳</div>
+        <p className="text-[10px] font-black text-neutral-300 uppercase tracking-[0.2em] mt-4">Sin cortes registrados</p>
+      </div>
+    );
   }
-  return fin.toISOString().split('T')[0];
-}
 
+  return (
+    <div className="flex-1 flex flex-row items-center pt-14">
+      <div className="w-1/2 h-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" nameKey="name" paddingAngle={2}>
+              {data.map((_, i) => <Cell key={i} fill={COLORES_CATEGORIAS[i % COLORES_CATEGORIAS.length]} />)}
+            </Pie>
+            <Tooltip formatter={(v: any) => [formatMXN(v), '']} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="w-1/2 flex flex-col justify-center space-y-2 pr-2">
+        {data.map((d, i) => (
+          <div key={d.name} className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORES_CATEGORIAS[i % COLORES_CATEGORIAS.length] }} />
+              <span className="text-[10px] font-black text-neutral-600 uppercase">{d.name}</span>
+            </div>
+            <span className="text-[10px] font-black text-neutral-900">{formatMXN(d.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const GastosCategoriaChart = ({ fechaInicio, fechaFin }: { fechaInicio: string; fechaFin: string }) => {
+  const [data, setData] = useState<{ name: string; value: number }[]>([]);
+
+  useEffect(() => {
+    invoke<any[]>('get_gastos_por_categoria', { fecha_inicio: fechaInicio, fecha_fin: fechaFin })
+      .then(cats => setData(cats.filter(c => c.monto > 0).map(c => ({ name: c.categoria, value: c.monto }))))
+      .catch(() => setData([]));
+  }, [fechaInicio, fechaFin]);
+
+  if (data.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center">
+        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm text-xl">🍩</div>
+        <p className="text-[10px] font-black text-neutral-300 uppercase tracking-[0.2em] mt-4">Sin gastos registrados</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-row items-center pt-14">
+      <div className="w-1/2 h-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" nameKey="name" paddingAngle={2}>
+              {data.map((_, i) => <Cell key={i} fill={COLORES_CATEGORIAS[i % COLORES_CATEGORIAS.length]} />)}
+            </Pie>
+            <Tooltip formatter={(v: any) => [formatMXN(v), '']} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="w-1/2 flex flex-col justify-center space-y-2 pr-2">
+        {data.map((d, i) => (
+          <div key={d.name} className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORES_CATEGORIAS[i % COLORES_CATEGORIAS.length] }} />
+              <span className="text-[10px] font-black text-neutral-600 uppercase">{d.name}</span>
+            </div>
+            <span className="text-[10px] font-black text-neutral-900">{formatMXN(d.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export { AlertaItem };
 export default FinanzasDashboard;

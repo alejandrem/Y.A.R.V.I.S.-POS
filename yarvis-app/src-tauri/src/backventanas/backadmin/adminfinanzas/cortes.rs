@@ -1,5 +1,7 @@
 use sqlx::SqlitePool;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
+use sqlx::Row;
+use serde::{Serialize, Deserialize};
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)

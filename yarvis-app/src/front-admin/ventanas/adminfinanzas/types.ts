@@ -251,24 +251,24 @@ export const TURNOS_CORTE: { value: TurnoCorte; label: string }[] = [
 ];
 
 export const COLORES_CATEGORIAS = [
-  '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+  '#000000', '#171717', '#262626', '#404040', '#525252',
+  '#737373', '#a3a3a3', '#d4d4d4', '#e5e5e5', '#ef4444',
 ];
 
 export const COLORES_SEVERIDAD: Record<SeveridadAlerta, { bg: string; text: string; border: string; icon: string }> = {
   rojo: { bg: 'bg-red-500', text: 'text-white', border: 'border-red-200', icon: '🔴' },
-  amarillo: { bg: 'bg-amber-500', text: 'text-white', border: 'border-amber-200', icon: '🟡' },
-  verde: { bg: 'bg-green-500', text: 'text-white', border: 'border-green-200', icon: '🟢' },
+  amarillo: { bg: 'bg-neutral-500', text: 'text-white', border: 'border-neutral-200', icon: '🟡' },
+  verde: { bg: 'bg-neutral-800', text: 'text-white', border: 'border-neutral-600', icon: '⚪' },
 };
 
 export const COLORES_ESTADO_PAGO: Record<EstadoPago, { bg: string; text: string; dot: string }> = {
-  pendiente: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
-  pagado: { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500' },
-  proximo_vencer: { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-500' },
+  pendiente: { bg: 'bg-neutral-50', text: 'text-neutral-700', dot: 'bg-neutral-500' },
+  pagado: { bg: 'bg-neutral-50', text: 'text-neutral-700', dot: 'bg-neutral-500' },
+  proximo_vencer: { bg: 'bg-neutral-100', text: 'text-neutral-800', dot: 'bg-neutral-600' },
   vencido: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500' },
 };
 
 export const COLORES_TIPO_CORTE: Record<TipoCorte, { bg: string; text: string }> = {
-  X: { bg: 'bg-blue-50', text: 'text-blue-700' },
-  Z: { bg: 'bg-purple-50', text: 'text-purple-700' },
+  X: { bg: 'bg-neutral-100', text: 'text-neutral-700' },
+  Z: { bg: 'bg-neutral-800', text: 'text-white' },
 };

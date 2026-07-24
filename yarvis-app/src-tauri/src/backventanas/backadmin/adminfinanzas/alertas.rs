@@ -1,6 +1,8 @@
 use sqlx::SqlitePool;
 use chrono::Duration;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
+use sqlx::Row;
+use chrono::Datelike;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -59,6 +61,10 @@ pub async fn marcar_todas_alertas_leidas(state: tauri::State<'_, SqlitePool>) ->
 
 #[tauri::command]
 pub async fn generar_alertas_automaticas(state: tauri::State<'_, SqlitePool>) -> Result<Vec<AlertaFinanciera>, String> {
+    generar_alertas_automaticas_impl(&*state).await
+}
+
+pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<AlertaFinanciera>, String> {
     let hoy = chrono::Local::now().date_naive();
     let en_3_dias = hoy + Duration::days(3);
     let en_7_dias = hoy + Duration::days(7);
@@ -310,7 +316,7 @@ fn calcular_proxima_fecha_simple(fecha_inicio: &str, frecuencia: &str, dia_pago:
             Some(fecha)
         }
         "quincenal" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 15);
+            let dia = dia_pago.unwrap_or(1).clamp(1, 15) as u32;
             let mut fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), desde.month(), dia)?;
             if fecha <= desde {
                 if desde.month() == 12 {
@@ -322,7 +328,7 @@ fn calcular_proxima_fecha_simple(fecha_inicio: &str, frecuencia: &str, dia_pago:
             Some(fecha)
         }
         "mensual" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 28);
+            let dia = dia_pago.unwrap_or(1).clamp(1, 28) as u32;
             let mut fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), desde.month(), dia)?;
             if fecha <= desde {
                 if desde.month() == 12 {
@@ -334,7 +340,7 @@ fn calcular_proxima_fecha_simple(fecha_inicio: &str, frecuencia: &str, dia_pago:
             Some(fecha)
         }
         "trimestral" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 28);
+            let dia = dia_pago.unwrap_or(1).clamp(1, 28) as u32;
             let mes_base = ((desde.month() - 1) / 3) * 3 + 1;
             let mut fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), mes_base + 3, dia)?;
             if fecha.month() > 12 {
@@ -363,13 +369,13 @@ fn calcular_proxima_fecha_simple(fecha_inicio: &str, frecuencia: &str, dia_pago:
 }
 
 // Background job para ejecutar alertas automáticas cada hora
-pub async fn iniciar_job_alertas(state: tauri::State<'_, SqlitePool>) {
+pub fn iniciar_job_alertas(pool: SqlitePool) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hora
         loop {
             interval.tick().await;
-            let _ = generar_alertas_automaticas(state.clone()).await;
-            let _ = crate::backventanas::backadmin::adminfinanzas::gastos::actualizar_estados_gastos(state.clone()).await;
+            let _ = generar_alertas_automaticas_impl(&pool).await;
+            let _ = crate::backventanas::backadmin::adminfinanzas::gastos::actualizar_estados_gastos_impl(&pool).await;
         }
     });
 }

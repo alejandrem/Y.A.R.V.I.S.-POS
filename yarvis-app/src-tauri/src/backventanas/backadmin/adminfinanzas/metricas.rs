@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
 use chrono::NaiveDate;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
+use sqlx::Row;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -251,7 +252,7 @@ pub async fn get_punto_equilibrio(state: tauri::State<'_, SqlitePool>) -> Result
     let fecha_fin = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
     let fecha_inicio = (chrono::Local::now().date_naive() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
 
-    let resumen = get_resumen_periodo(state, fecha_inicio, fecha_fin).await?;
+    let resumen = get_resumen_periodo(state.clone(), fecha_inicio.clone(), fecha_fin.clone()).await?;
     
     // Calcular gastos fijos mensuales (promedio de últimos 30 días * 30/30)
     let gastos_fijos_mensuales = resumen.total_gastos_operativos;
