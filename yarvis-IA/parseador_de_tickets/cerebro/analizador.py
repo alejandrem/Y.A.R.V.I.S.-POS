@@ -6,8 +6,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 import re
 
-from ..parser_excel import parsear_excel
-from ..parser_txt import parsear_catalogo_visual
+from ..formatos.lector_excel import parsear_excel
+from ..formatos.lector_txt import parsear_catalogo_visual
 from .filtrador import limpiar_producto
 
 router = APIRouter()
@@ -156,7 +156,7 @@ async def analizar_ticket_endpoint(request: AnalizarTicketRequest):
     Recibe: { "texto": "contenido del ticket .txt" }
     Retorna: { "status": "ok", "mapeo": {...}, "fecha_ticket": "...", "hora_ticket": "...", "confianza": 0.95 }
     """
-    from modelos.qwen.parser_llm import analizar_ticket, descargar_modelos
+    from parseador_de_tickets.llm.analizador_llm import analizar_ticket, descargar_modelos
     try:
         resultado = analizar_ticket(request.texto)
     finally:

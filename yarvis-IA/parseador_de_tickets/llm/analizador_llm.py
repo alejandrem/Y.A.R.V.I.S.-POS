@@ -10,7 +10,7 @@ import json
 import re
 from llama_cpp import Llama
 
-from modelos.qwen.rutas import qwen0_5, qwen0_8, qwen1_7
+from parseador_de_tickets.llm.rutas_modelos import qwen0_5, qwen0_8, qwen1_7
 
 _llm_0_5 = None
 _llm_0_8 = None

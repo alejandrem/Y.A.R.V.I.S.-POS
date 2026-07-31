@@ -2,7 +2,7 @@
 Parser de catálogos en formato CSV (.csv, .tsv).
 Detecta separadores automáticamente (, o ;).
 """
-from .cerebro_parseo.filtrador import limpiar_producto
+from ..cerebro.filtrador import limpiar_producto
 
 
 def _detectar_separador_csv(linea: str) -> str | None:

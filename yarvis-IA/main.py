@@ -2,12 +2,12 @@ from fastapi import FastAPI
 import uvicorn
 import sys
 
-from endpoints.embeddings import router as embeddings_router
-from modelos.profeta.predictions import router as predictions_router
-from parser_py.cerebro_parseo.parser import router as parser_router
-from parser_py.cerebro_parseo.carpeta import router as carpeta_router
-from endpoints.chat import router as chat_router
-from parser_py.cerebro_parseo.matching import router as matching_router
+from chatbot.embeddings.endpoints import router as embeddings_router
+from profeta.endpoints import router as predictions_router
+from parseador_de_tickets.cerebro.analizador import router as parser_router
+from parseador_de_tickets.cerebro.lote import router as carpeta_router
+from chatbot.motor_chat import router as chat_router
+from parseador_de_tickets.cerebro.vinculador import router as matching_router
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 app = FastAPI(title="Y.A.R.V.I.S. IA Engine")
