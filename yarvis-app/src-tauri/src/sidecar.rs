@@ -164,16 +164,17 @@ pub fn start_python(port: u16) -> Result<Child, String> {
     );
 
     // Buscar libs CUDA de LM Studio para LD_LIBRARY_PATH
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/ale".to_string());
     let cuda_lib_paths = [
-        // LM Studio CUDA 12 vendor libs
-        "/home/alesito/.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1",
-        "../../.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1",
-        "../../../.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1",
+        // LM Studio CUDA 12 vendor libs (dynamic home)
+        format!("{}/.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1", home),
+        "../../.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1".to_string(),
+        "../../../.lmstudio/extensions/backends/vendor/linux-llama-cuda12-vendor-v1".to_string(),
         // nvidia pip package paths (cu12)
-        "../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cublas/lib",
-        "../../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cublas/lib",
-        "../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cuda_runtime/lib",
-        "../../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cuda_runtime/lib",
+        "../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cublas/lib".to_string(),
+        "../../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cublas/lib".to_string(),
+        "../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cuda_runtime/lib".to_string(),
+        "../../../yarvis-IA/.venv/lib/python3.14/site-packages/nvidia/cuda_runtime/lib".to_string(),
     ];
 
     let mut extra_libs = Vec::new();

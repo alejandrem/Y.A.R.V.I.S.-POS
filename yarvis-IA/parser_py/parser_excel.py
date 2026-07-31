@@ -4,7 +4,7 @@ Detecta automáticamente columnas por nombre o posición.
 """
 import io
 from fastapi import HTTPException
-from core.utils import limpiar_producto, es_categoria
+from .cerebro_parseo.filtrador import limpiar_producto, es_categoria
 
 try:
     import openpyxl

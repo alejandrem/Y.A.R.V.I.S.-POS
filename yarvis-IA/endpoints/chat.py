@@ -325,19 +325,33 @@ def _obtener_contexto_inteligente(role: str, pregunta: str) -> str:
     return "\n".join(partes) if partes else "Sin datos disponibles."
 
 
+def _limpiar_think(texto: str) -> str:
+    """Elimina bloques <think>...</think> de la respuesta del modelo."""
+    import re
+    texto = re.sub(r'<think>.*?</think>', '', texto, flags=re.DOTALL)
+    texto = re.sub(r'<think>.*', '', texto, flags=re.DOTALL)
+    return texto.strip()
+
+
 def _build_system_prompt(contexto_db: str, tienda_info: dict) -> str:
     nombre = tienda_info.get("nombre", "la tienda")
     ubic = tienda_info.get("ubicacion", "")
-    return f"""Eres Y.A.R.V.I.S., asistente de "{nombre}"{f' en {ubic}' if ubic else ''}.
+    return f"""Eres Y.A.R.V.I.S., el asistente inteligente de "{nombre}"{f' en {ubic}' if ubic else ''}.
 
-Responde usando SOLO los datos de abajo. Sé breve (2-4 oraciones). Usa markdown.
+Sé amable, profesional y cercano. Habla como un buen empleado de confianza, no como un robot.
 
-Ejemplo:
-Pregunta: ¿qué shampoo hay?
-Datos: SHAMPOO H S 200ML | stock: 720 | $55
-Respuesta: **SHAMPOO H S 200ML** — Stock: 720 unidades — $55
+REGLAS:
+- Si el usuario solo saluda o hace plática casual, responde de forma amable y breve. No exijas datos de la tienda.
+- Si pregunta por productos, ventas o inventario, responde con los datos de abajo.
+- Sé conciso (2-4 oraciones máximo). Usa markdown cuando ayude.
+- NUNCA escribas bloques <think>. Solo escribe la respuesta final directa.
 
-DATOS:
+EJEMPLOS DE SALUDOS:
+- "Hola, ¿en qué te puedo ayudar?"
+- "Hey! Aquí estoy para lo que necesites."
+- "¡Hola! Pregúntame lo que quieras sobre la tienda."
+
+DATOS DE LA TIENDA:
 {contexto_db}"""
 
 
@@ -359,12 +373,10 @@ def _get_system_ram_gb() -> float:
 
 def _can_load_model(model_key: str) -> tuple[bool, str]:
     ram_gb = _get_system_ram_gb()
-    requirements = {"0.5B": 1.0, "0.8B": 1.5, "1.7B": 3.5}
+    requirements = {"0.5B": 0.0, "0.8B": 1.0, "1.7B": 4.0}
     needed = requirements.get(model_key, 2.0)
     if ram_gb < needed:
-        return False, f"RAM insuficiente: {ram_gb:.1f}GB disponibles, {model_key} necesita ~{needed}GB"
-    if model_key == "1.7B" and ram_gb < 4.0:
-        return False, f"RAM insuficiente para 1.7B: {ram_gb:.1f}GB (mínimo 4GB)"
+        return False, f"RAM insuficiente: {ram_gb:.1f}GB disponibles, {model_key} necesita ≥{needed}GB"
     return True, f"OK ({ram_gb:.1f}GB disponibles)"
 
 
@@ -430,11 +442,12 @@ def _es_pregunta_compleja(texto: str) -> bool:
 def _ejecutar_chat(model: Llama, messages: list, max_words: int) -> str:
     respuesta = model.create_chat_completion(
         messages=messages,
-        temperature=0.1,
+        temperature=0.6,
         max_tokens=max_words * 4,
-        top_p=0.7,
+        top_p=0.85,
     )
     contenido = respuesta["choices"][0]["message"]["content"]
+    contenido = _limpiar_think(contenido)
     words = contenido.split()
     if len(words) > max_words:
         truncated = " ".join(words[:max_words])
@@ -447,9 +460,27 @@ def _ejecutar_chat(model: Llama, messages: list, max_words: int) -> str:
     return contenido
 
 
+def _obtener_tienda_info() -> dict:
+    """Obtiene nombre y ubicación de la tienda desde la DB."""
+    db_path = _find_db_path()
+    if not db_path:
+        return {"nombre": "la tienda", "ubicacion": ""}
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT tienda, ubicacion FROM usuarios WHERE rol = 'admin' LIMIT 1")
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return {"nombre": row[0] or "la tienda", "ubicacion": row[1] or ""}
+    except Exception:
+        pass
+    return {"nombre": "la tienda", "ubicacion": ""}
+
+
 def _build_chat_messages(role: str, messages: list, ultimo: str):
     contexto_db = _obtener_contexto_inteligente(role, ultimo)
-    tienda = {"nombre": "la tienda"}
+    tienda = _obtener_tienda_info()
     system_prompt = _build_system_prompt(contexto_db, tienda)
     chat_messages = [{"role": "system", "content": system_prompt}]
     for m in messages:
@@ -595,20 +626,39 @@ async def chat_stream(request: ChatRequest):
         try:
             stream = llm.create_chat_completion(
                 messages=chat_messages,
-                temperature=0.1,
+                temperature=0.6,
                 max_tokens=max_w * 4,
-                top_p=0.7,
+                top_p=0.85,
                 stream=True,
             )
             word_count = 0
+            in_think = False
+            buffer = ""
             for chunk in stream:
                 delta = chunk["choices"][0].get("delta", {})
                 content = delta.get("content", "")
                 if content:
-                    word_count += len(content.split())
-                    if word_count > max_w:
-                        break
-                    yield f"data: {json.dumps({'token': content, 'model': model_key})}\n\n"
+                    buffer += content
+                    if "<think>" in buffer:
+                        in_think = True
+                        buffer = buffer.split("<think>")[0]
+                        content = buffer
+                        buffer = ""
+                    elif "</think>" in buffer and in_think:
+                        in_think = False
+                        buffer = buffer.split("</think>", 1)[1]
+                        content = buffer
+                        buffer = ""
+                    elif in_think:
+                        continue
+                    else:
+                        content = buffer
+                        buffer = ""
+                    if content:
+                        word_count += len(content.split())
+                        if word_count > max_w:
+                            break
+                        yield f"data: {json.dumps({'token': content, 'model': model_key})}\n\n"
             yield f"data: {json.dumps({'done': True, 'model': model_key})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import sqlite3
 import re
 
-from core.embeddings import texto_a_embedding, cosine_similarity, blob_a_embedding
+from modelos.qwen.embeddings import texto_a_embedding, cosine_similarity, blob_a_embedding
 
 router = APIRouter()
 

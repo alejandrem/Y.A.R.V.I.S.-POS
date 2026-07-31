@@ -12,7 +12,7 @@ class PredictionRequest(BaseModel):
 @router.post("/recalcular_predicciones")
 async def recalcular_predicciones(request: PredictionRequest):
     """Ejecuta Prophet y devuelve predicciones para los proximos N dias."""
-    from modelos.profeta.predictor import run_prediction
+    from .predictor import run_prediction
 
     result = run_prediction(request.db_path, request.days)
     if "error" in result:

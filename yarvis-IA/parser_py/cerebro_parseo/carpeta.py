@@ -7,7 +7,7 @@ import os
 import glob
 import asyncio
 
-from endpoints.parser import MapeoColumnas, _parsear_linea as parsear_linea, _extraer_fecha_hora_regex, _extraer_metodo_pago
+from .parser import MapeoColumnas, _parsear_linea as parsear_linea, _extraer_fecha_hora_regex, _extraer_metodo_pago
 from modelos.qwen.parser_llm import descargar_modelos
 
 router = APIRouter()

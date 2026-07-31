@@ -10,7 +10,7 @@ Soporta múltiples formatos:
   - Formato de tabla: Producto  CANT  $VTA  $CST (sin separador)
 """
 import re
-from core.utils import limpiar_producto, es_categoria
+from .cerebro_parseo.filtrador import limpiar_producto, es_categoria
 
 # Patrón flexible: nombre + separador + precio1 + precio2
 _PATRON_PRODUCTO = re.compile(

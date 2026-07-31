@@ -6,9 +6,9 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 import re
 
-from parser_py.parser_excel import parsear_excel
-from parser_py.parser_txt import parsear_catalogo_visual
-from core.utils import limpiar_producto
+from ..parser_excel import parsear_excel
+from ..parser_txt import parsear_catalogo_visual
+from .filtrador import limpiar_producto
 
 router = APIRouter()
 
