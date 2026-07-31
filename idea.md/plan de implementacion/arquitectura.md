@@ -162,34 +162,36 @@ Y.A.R.V.I.S.-POS/
 │                       ├── yarvis.rs  
 │                       └── mod.rs     
 │
-└── yarvis-IA/                         # BACKEND IA: Motor de Inteligencia Artificial (Python).
-    ├── main.py                        # Servidor FastAPI: Punto de entrada, expone endpoints (/chat, etc).
-    ├── requirements.txt               # Dependencias de Python.
-    ├── clean_all.sh                   # Script para limpiar cachés y temporales de IA.
-    ├── core/                          # Lógica central.
-    │   ├── embeddings.py              # Inferencia del modelo "all-MiniLM-L6-v2" para búsqueda semántica.
-    │   ├── utils.py                   # Utilidades generales de la IA.
-    │   └── __init__.py                
-    ├── endpoints/                     # Controladores de la API FastAPI.
-    │   ├── chat.py                    # Interacción con LLM chatbot.
-    │   ├── embeddings.py              # Vectorización de texto.
-    │   ├── matching.py                # Búsqueda de similitud (Vector Search).
-    │   ├── parser.py                  # Extracción de datos de documentos.
-    │   ├── predictions.py             # Predicciones de Prophet.
-    │   └── __init__.py                
-    ├── modelos/                       # Modelos ML.
-    │   ├── profeta/                   
-    │   │   ├── predictor.py           # Inferencia usando Meta Prophet.
-    │   │   └── .gitkeep               
-    │   └── qwen/                      
-    │       ├── rutas.py               # Configuración de rutas a archivos .gguf en LM Studio.
-    │       ├── parser_llm.py          # Lógica para extraer JSON usando Qwen.
-    │       └── .gitkeep               
-    └── parser_py/                     # Procesadores de documentos en Python.
-        ├── parser_csv.py              # Analizador de CSV.
-        ├── parser_excel.py            # Analizador de XLSX.
-        ├── parser_txt.py              # Analizador de texto plano.
-        └── __init__.py                
+yarvis-IA/
+├── main.py
+├── requirements.txt
+│
+├── 🔮 profeta/
+│   ├── __init__.py
+│   ├── predictor.py          ← Prophet + consultas DB
+│   └── endpoints.py          ← ruta HTTP /recalcular_predicciones
+│
+├── 📄 parseador_de_tickets/
+│   ├── __init__.py
+│   ├── cerebro/              ← lógica core + endpoints HTTP
+│   │   ├── analizador.py     ← /analizar_ticket, /parsear_con_mapeo
+│   │   ├── lote.py           ← /parsear_carpeta (batch + stream)
+│   │   ├── vinculador.py     ← /vincular_inventario, /guardar_vinculacion
+│   │   └── filtrador.py      ← limpiar nombres de productos
+│   ├── formatos/             ← lectores por tipo de archivo
+│   │   ├── lector_csv.py
+│   │   ├── lector_excel.py
+│   │   └── lector_txt.py
+│   └── llm/                  ← motor Qwen para analizar tickets
+│       ├── analizador_llm.py ← escalada automática 0.5B→0.8B→1.7B
+│       └── rutas_modelos.py  ← rutas a los archivos .gguf
+│
+└── 💬 chatbot/
+    ├── motor_chat.py         ← /chat, /chat_stream, /load_model
+    └── embeddings/
+        ├── modelo.py         ← all-MiniLM-L6-v2 + cosine similarity
+        └── endpoints.py      ← /generar_embedding, /buscar_similar
+
 ```
 
 ---
