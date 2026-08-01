@@ -33,6 +33,33 @@ router = APIRouter()
 # de /chat_stream lo consultan entre tokens para cortar la generación.
 _cancel_event = threading.Event()
 
+# Auto-desactivación por inactividad: si no se habla con el chat en
+# _INACTIVIDAD_SEGUNDOS, se descargan los modelos Qwen de la RAM.
+_INACTIVIDAD_SEGUNDOS = 300  # 5 minutos
+_timer_inactividad = None  # threading.Timer activo, o None si no hay
+
+
+def _descargar_por_inactividad():
+    """Descarga los modelos Qwen de la RAM tras 5 min sin actividad."""
+    print("[YARVIS-CHAT] 5 min de inactividad: descargando modelos de la RAM.")
+    for key in ("0.5B", "0.8B", "1.7B"):
+        descargar_modelo(key)
+    global _timer_inactividad
+    _timer_inactividad = None
+
+
+def _registrar_actividad():
+    """Marca actividad en el chat: reinicia el timer de 5 min.
+
+    Se llama en cada /chat, /chat_stream y /load_model.
+    """
+    global _timer_inactividad
+    if _timer_inactividad is not None:
+        _timer_inactividad.cancel()
+    _timer_inactividad = threading.Timer(_INACTIVIDAD_SEGUNDOS, _descargar_por_inactividad)
+    _timer_inactividad.daemon = True
+    _timer_inactividad.start()
+
 
 # ============================================================
 # MODELOS PYDANTIC
@@ -125,6 +152,7 @@ async def model_status():
 
 @router.post("/load_model")
 async def load_model(request: LoadModelRequest):
+    _registrar_actividad()
     model_key = request.model.upper().replace("B", "B")
     if model_key not in ("0.5B", "0.8B", "1.7B"):
         raise HTTPException(status_code=400, detail=f"Modelo no válido: {request.model}")
@@ -155,6 +183,7 @@ async def unload_model(request: LoadModelRequest):
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
+    _registrar_actividad()
     if not request.messages:
         raise HTTPException(status_code=400, detail="No hay mensajes")
     ultimo = request.messages[-1].content
@@ -192,6 +221,7 @@ async def chat(request: ChatRequest):
 
 @router.post("/chat_stream")
 async def chat_stream(request: ChatRequest):
+    _registrar_actividad()
     if not request.messages:
         raise HTTPException(status_code=400, detail="No hay mensajes")
     ultimo = request.messages[-1].content

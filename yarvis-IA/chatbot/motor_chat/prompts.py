@@ -14,24 +14,11 @@ import re
 from .cache import obtener_contexto_inteligente
 from .consultas_db import obtener_tienda_info
 
-COMPLEX_KEYWORDS = [
-    "anomal", "reembolso", "estornad", "comparar", "tendencia",
-    "predicc", "analizar", "análisis", "promedio", "estadístic",
-    "rentabilidad", "utilidad", "margen", "ganancia", "pérdida",
-    "robo", "sospech", "inusual", "raro", "diferente",
-]
-
-
 def limpiar_think(texto: str) -> str:
     """Elimina bloques <think>...</think> de la respuesta del modelo."""
     texto = re.sub(r'<think>.*?</think>', '', texto, flags=re.DOTALL)
     texto = re.sub(r'<think>.*', '', texto, flags=re.DOTALL)
     return texto.strip()
-
-
-def es_pregunta_compleja(texto: str) -> bool:
-    """Detecta si la pregunta requiere un modelo más grande."""
-    return any(kw in texto.lower() for kw in COMPLEX_KEYWORDS)
 
 
 def construir_system_prompt(contexto_db: str, tienda_info: dict) -> str:

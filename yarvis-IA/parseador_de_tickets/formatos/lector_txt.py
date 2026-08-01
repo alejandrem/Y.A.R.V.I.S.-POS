@@ -264,7 +264,7 @@ def parsear_catalogo_visual(texto: str) -> list[dict]:
     - CSV (con , o ; como separador)
     - Formato visual (con --, -, =, > como separador)
     """
-    from parser_py.parser_csv import _detectar_separador_csv, parsear_csv
+    from .lector_csv import _detectar_separador_csv, parsear_csv
     
     if not texto or not texto.strip():
         return []

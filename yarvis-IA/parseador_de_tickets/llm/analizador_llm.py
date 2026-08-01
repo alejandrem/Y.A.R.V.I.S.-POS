@@ -12,9 +12,13 @@ from llama_cpp import Llama
 
 from parseador_de_tickets.llm.rutas_modelos import qwen0_5, qwen0_8, qwen1_7
 
-_llm_0_5 = None
-_llm_0_8 = None
-_llm_1_7 = None
+_MODELOS_LLM: dict[str, Llama | None] = {"0.5B": None, "0.8B": None, "1.7B": None}
+
+_NOMBRES_MODELO = {
+    "0.5B": "Qwen 2.5 0.5B",
+    "0.8B": "Qwen 3.5 0.8B",
+    "1.7B": "Qwen 3 1.7B",
+}
 
 SYSTEM_PROMPT = """Eres un experto en parseo de tickets de punto de venta mexicano.
 Analiza el siguiente ticket de texto plano y extrae la estructura.
@@ -67,66 +71,47 @@ FORMATO DE RESPUESTA:
 }"""
 
 
-def _cargar_modelo_0_5() -> Llama:
-    global _llm_0_5
-    if _llm_0_5 is None:
-        print("[YARVIS-IA] Cargando Qwen 2.5 0.5B para parseo de tickets...")
-        _llm_0_5 = Llama(
-            model_path=qwen0_5,
+
+_RUTAS_MODELO = {
+    "0.5B": qwen0_5,
+    "0.8B": qwen0_8,
+    "1.7B": qwen1_7,
+}
+
+
+def _cargar_modelo(key: str) -> Llama:
+    """Carga el modelo Qwen indicado (0.5B / 0.8B / 1.7B) o devuelve el ya cargado."""
+    if _MODELOS_LLM[key] is None:
+        nombre = _NOMBRES_MODELO[key]
+        print(f"[YARVIS-IA] Cargando {nombre} para parseo de tickets...")
+        _MODELOS_LLM[key] = Llama(
+            model_path=_RUTAS_MODELO[key],
             n_ctx=4096,
             n_gpu_layers=-1,
             n_threads=4,
-            verbose=False
+            verbose=False,
         )
-        print("[YARVIS-IA] Qwen 2.5 0.5B listo.")
-    return _llm_0_5
+        print(f"[YARVIS-IA] {nombre} listo.")
+    return _MODELOS_LLM[key]
 
 
-def _cargar_modelo_0_8() -> Llama:
-    global _llm_0_8
-    if _llm_0_8 is None:
-        print("[YARVIS-IA] Cargando Qwen 3.5 0.8B para parseo de tickets (confianza media)...")
-        _llm_0_8 = Llama(
-            model_path=qwen0_8,
-            n_ctx=4096,
-            n_gpu_layers=-1,
-            n_threads=4,
-            verbose=False
-        )
-        print("[YARVIS-IA] Qwen 3.5 0.8B listo.")
-    return _llm_0_8
-
-
-def _cargar_modelo_1_7() -> Llama:
-    global _llm_1_7
-    if _llm_1_7 is None:
-        print("[YARVIS-IA] Cargando Qwen 3 1.7B para parseo de tickets (confianza baja)...")
-        _llm_1_7 = Llama(
-            model_path=qwen1_7,
-            n_ctx=4096,
-            n_gpu_layers=-1,
-            n_threads=4,
-            verbose=False
-        )
-        print("[YARVIS-IA] Qwen 3 1.7B listo.")
-    return _llm_1_7
+def _liberar(model):
+    """Libera un modelo llama.cpp de RAM/VRAM (close() libera la memoria nativa)."""
+    if model is None:
+        return
+    try:
+        model.close()
+    except Exception:
+        pass
 
 
 def descargar_modelos():
-    global _llm_0_5, _llm_0_8, _llm_1_7
     count = 0
-    if _llm_0_5 is not None:
-        del _llm_0_5
-        _llm_0_5 = None
-        count += 1
-    if _llm_0_8 is not None:
-        del _llm_0_8
-        _llm_0_8 = None
-        count += 1
-    if _llm_1_7 is not None:
-        del _llm_1_7
-        _llm_1_7 = None
-        count += 1
+    for key in list(_MODELOS_LLM):
+        if _MODELOS_LLM[key] is not None:
+            _liberar(_MODELOS_LLM[key])
+            _MODELOS_LLM[key] = None
+            count += 1
     gc.collect()
     if count > 0:
         print(f"[YARVIS-IA] {count} modelo(s) descargado(s) de VRAM.")
@@ -181,7 +166,7 @@ def analizar_ticket(texto_ticket: str) -> dict:
 
     try:
         # Intento 1: Qwen 2.5 0.5B
-        model_0_5 = _cargar_modelo_0_5()
+        model_0_5 = _cargar_modelo("0.5B")
         resultado = _ejecutar_analisis(model_0_5, texto_ticket)
 
         if resultado and "mapeo" in resultado:
@@ -191,7 +176,7 @@ def analizar_ticket(texto_ticket: str) -> dict:
             # Intento 2: Si confianza < 0.8, usar 0.8B
             if confianza < 0.8:
                 print(f"[YARVIS-IA] Confianza baja ({confianza}), reintentando con Qwen 3.5 0.8B...")
-                model_0_8 = _cargar_modelo_0_8()
+                model_0_8 = _cargar_modelo("0.8B")
                 resultado_0_8 = _ejecutar_analisis(model_0_8, texto_ticket)
 
                 if resultado_0_8 and "mapeo" in resultado_0_8:
@@ -203,7 +188,7 @@ def analizar_ticket(texto_ticket: str) -> dict:
 
                 # Intento 3: Si confianza sigue < 0.8, usar 1.7B
                 print(f"[YARVIS-IA] Confianza aún baja ({confianza}), reintentando con Qwen 3 1.7B...")
-                model_1_7 = _cargar_modelo_1_7()
+                model_1_7 = _cargar_modelo("1.7B")
                 resultado_1_7 = _ejecutar_analisis(model_1_7, texto_ticket)
 
                 if resultado_1_7 and "mapeo" in resultado_1_7:
@@ -218,7 +203,7 @@ def analizar_ticket(texto_ticket: str) -> dict:
 
         # Si el 0.5B no devolvió JSON válido, intentar directo con 0.8B
         print("[YARVIS-IA] Qwen 0.5B no pudo analizar, usando Qwen 3.5 0.8B directamente...")
-        model_0_8 = _cargar_modelo_0_8()
+        model_0_8 = _cargar_modelo("0.8B")
         resultado_0_8 = _ejecutar_analisis(model_0_8, texto_ticket)
 
         if resultado_0_8 and "mapeo" in resultado_0_8:
@@ -229,7 +214,7 @@ def analizar_ticket(texto_ticket: str) -> dict:
 
         # Si el 0.8B tampoco, intentar con 1.7B
         print("[YARVIS-IA] Qwen 0.8B no pudo analizar, usando Qwen 3 1.7B directamente...")
-        model_1_7 = _cargar_modelo_1_7()
+        model_1_7 = _cargar_modelo("1.7B")
         resultado_1_7 = _ejecutar_analisis(model_1_7, texto_ticket)
 
         if resultado_1_7 and "mapeo" in resultado_1_7:

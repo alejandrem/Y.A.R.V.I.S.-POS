@@ -76,6 +76,10 @@ const AdminYarvis = () => {
 
   useEffect(() => {
     fetchModelStatus();
+    const interval = window.setInterval(() => {
+      if (mountedRef.current) fetchModelStatus();
+    }, 5000);
+    return () => window.clearInterval(interval);
   }, [fetchModelStatus]);
 
   const refreshModelStatus = async () => {
@@ -281,9 +285,17 @@ const AdminYarvis = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50"></div>
-              <span className="text-[11px] font-black text-neutral-600 uppercase tracking-widest">En línea</span>
+            <div className={`flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm ${loadingModel ? "opacity-100" : "opacity-90"}`}>
+              <div className={`w-2.5 h-2.5 rounded-full ${loadingModel
+                ? "bg-amber-500 animate-pulse"
+                : activeCloud.provider
+                  ? "bg-blue-500 animate-pulse shadow-lg shadow-blue-500/50"
+                  : Object.values(loadedModels).some(Boolean)
+                    ? "bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50"
+                    : "bg-neutral-300"}`}></div>
+              <span className="text-[11px] font-black text-neutral-600 uppercase tracking-widest">
+                {loadingModel ? "Cargando..." : activeCloud.provider ? "API en línea" : Object.values(loadedModels).some(Boolean) ? "Activado" : "Desactivado"}
+              </span>
             </div>
           </div>
         </header>

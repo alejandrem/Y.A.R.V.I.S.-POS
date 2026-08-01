@@ -77,19 +77,18 @@ def cargar_modelo(model_key: str) -> Llama:
 
 
 def descargar_modelo(model_key: str):
-    """Descarga un modelo Qwen de la RAM y libera memoria."""
+    """Descarga un modelo Qwen de la RAM/VRAM y libera memoria."""
     global _llm_0_5, _llm_0_8, _llm_1_7
-    if model_key == "0.5B" and _llm_0_5 is not None:
-        del _llm_0_5
-        _llm_0_5 = None
-    elif model_key == "0.8B" and _llm_0_8 is not None:
-        del _llm_0_8
-        _llm_0_8 = None
-    elif model_key == "1.7B" and _llm_1_7 is not None:
-        del _llm_1_7
-        _llm_1_7 = None
-    gc.collect()
-    print(f"[YARVIS-CHAT] Qwen {model_key} descargado.")
+    attr = {"0.5B": "_llm_0_5", "0.8B": "_llm_0_8", "1.7B": "_llm_1_7"}.get(model_key)
+    model = globals().get(attr)
+    if model is not None:
+        try:
+            model.close()
+        except Exception:
+            pass
+        globals()[attr] = None
+        gc.collect()
+        print(f"[YARVIS-CHAT] Qwen {model_key} descargado.")
 
 
 def estado_modelos() -> dict:

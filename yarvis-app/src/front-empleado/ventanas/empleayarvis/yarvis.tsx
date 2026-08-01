@@ -50,6 +50,10 @@ export default function Yarvis() {
 
   useEffect(() => {
     fetchModelStatus();
+    const interval = window.setInterval(() => {
+      fetchModelStatus();
+    }, 5000);
+    return () => window.clearInterval(interval);
   }, [fetchModelStatus]);
 
   const handleModelSelect = async (model: ModelKey) => {
