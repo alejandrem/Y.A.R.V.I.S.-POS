@@ -10,6 +10,7 @@ No contiene lógica de negocio ni consultas SQL.
 """
 
 import json
+import threading
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -27,6 +28,10 @@ from .gestion_hardware import (
 from .prompts import construir_mensajes
 
 router = APIRouter()
+
+# Evento global de cancelación: se setea al llamar /stop y los generadores
+# de /chat_stream lo consultan entre tokens para cortar la generación.
+_cancel_event = threading.Event()
 
 
 # ============================================================
@@ -62,6 +67,53 @@ def _estado_completo() -> dict:
     return estado
 
 
+def _separar_think(textos, max_w):
+    """Separa los bloques <think> del texto final.
+
+    Recibe texto crudo por trozos y emite ('token'|'think', texto):
+    - 'think': razonamiento del modelo (se muestra sombreado).
+    - 'token': respuesta final (texto real).
+    """
+    word_count = 0
+    in_think = False
+    buffer = ""
+    for content in textos:
+        if not content:
+            continue
+        buffer += content
+        while buffer:
+            if not in_think:
+                idx = buffer.find("<think>")
+                if idx == -1:
+                    word_count += len(buffer.split())
+                    if word_count > max_w:
+                        return
+                    yield "token", buffer
+                    buffer = ""
+                    break
+                pre = buffer[:idx]
+                if pre:
+                    word_count += len(pre.split())
+                    if word_count > max_w:
+                        return
+                    yield "token", pre
+                buffer = buffer[idx + len("<think>"):]
+                in_think = True
+            else:
+                idx = buffer.find("</think>")
+                if idx == -1:
+                    yield "think", buffer
+                    buffer = ""
+                    break
+                pre = buffer[:idx]
+                if pre:
+                    yield "think", pre
+                buffer = buffer[idx + len("</think>"):]
+                in_think = False
+    if buffer:
+        yield ("think" if in_think else "token"), buffer
+
+
 # ============================================================
 # ENDPOINTS
 # ============================================================
@@ -83,6 +135,13 @@ async def load_model(request: LoadModelRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al cargar {model_key}: {e}")
+
+
+@router.post("/stop")
+async def stop():
+    """Detiene la generación en curso (local o nube)."""
+    _cancel_event.set()
+    return {"status": "stopped"}
 
 
 @router.post("/unload_model")
@@ -139,6 +198,8 @@ async def chat_stream(request: ChatRequest):
     if not ultimo or not ultimo.strip():
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
+    _cancel_event.clear()
+
     chat_messages = construir_mensajes(request.role, request.messages, ultimo)
 
     if request.provider:
@@ -147,15 +208,15 @@ async def chat_stream(request: ChatRequest):
 
         def generate_cloud():
             try:
-                total_words = 0
-                for token, display in generar_stream(
+                textos = (token for token, _ in generar_stream(
                     request.provider, request.api_key, request.model, chat_messages
-                ):
-                    total_words += len(token.split())
-                    if total_words > max_w:
+                ))
+                for kind, text in _separar_think(textos, max_w):
+                    if _cancel_event.is_set():
                         break
-                    yield f"data: {json.dumps({'token': token, 'model': display})}\n\n"
-                yield f"data: {json.dumps({'done': True, 'model': cloud_display})}\n\n"
+                    yield f"data: {json.dumps({kind: text, 'model': cloud_display})}\n\n"
+                if not _cancel_event.is_set():
+                    yield f"data: {json.dumps({'done': True, 'model': cloud_display})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
@@ -193,35 +254,13 @@ async def chat_stream(request: ChatRequest):
                 top_p=0.85,
                 stream=True,
             )
-            word_count = 0
-            in_think = False
-            buffer = ""
-            for chunk in stream:
-                delta = chunk["choices"][0].get("delta", {})
-                content = delta.get("content", "")
-                if content:
-                    buffer += content
-                    if "<think>" in buffer:
-                        in_think = True
-                        buffer = buffer.split("<think>")[0]
-                        content = buffer
-                        buffer = ""
-                    elif "</think>" in buffer and in_think:
-                        in_think = False
-                        buffer = buffer.split("</think>", 1)[1]
-                        content = buffer
-                        buffer = ""
-                    elif in_think:
-                        continue
-                    else:
-                        content = buffer
-                        buffer = ""
-                    if content:
-                        word_count += len(content.split())
-                        if word_count > max_w:
-                            break
-                        yield f"data: {json.dumps({'token': content, 'model': model_key})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'model': model_key})}\n\n"
+            deltas = (c["choices"][0].get("delta", {}).get("content", "") for c in stream)
+            for kind, text in _separar_think(deltas, max_w):
+                if _cancel_event.is_set():
+                    break
+                yield f"data: {json.dumps({kind: text, 'model': model_key})}\n\n"
+            if not _cancel_event.is_set():
+                yield f"data: {json.dumps({'done': True, 'model': model_key})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 

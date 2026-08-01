@@ -57,6 +57,20 @@ pub async fn load_chat_model(
     resp.json().await.map_err(|e| e.to_string())
 }
 
+/// Detiene la generación en curso (local o nube) en el motor de IA.
+#[tauri::command]
+pub async fn stop_chat_stream(
+    sidecar: tauri::State<'_, Arc<AiSidecar>>,
+) -> Result<String, String> {
+    let base_url = sidecar.base_url()
+        .ok_or("El motor de IA no está disponible")?;
+    let resp = sidecar.http_client
+        .post(format!("{}/stop", base_url))
+        .send().await
+        .map_err(|e| format!("Error al detener: {}", e))?;
+    resp.text().await.map_err(|e| e.to_string())
+}
+
 /// Descarga un modelo para liberar RAM.
 #[tauri::command]
 pub async fn unload_chat_model(
@@ -185,6 +199,18 @@ pub async fn send_chat_stream(
                             .to_string();
                         let _ = app.emit("chat-token", serde_json::json!({
                             "token": token,
+                            "model": model_used,
+                        }));
+                    }
+                    if let Some(think) = data.get("think").and_then(|t| t.as_str()) {
+                        if model_used == "unknown" {
+                            model_used = data.get("model")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                        }
+                        let _ = app.emit("chat-think", serde_json::json!({
+                            "token": think,
                             "model": model_used,
                         }));
                     }
