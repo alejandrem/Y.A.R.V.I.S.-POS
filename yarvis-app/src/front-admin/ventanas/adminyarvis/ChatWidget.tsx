@@ -4,17 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+const STREAM_TIMEOUT_MS = 180_000;
+
 interface Message {
   role: "user" | "assistant";
   content: string;
   model?: string;
   timestamp: number;
-}
-
-interface ChatWidgetProps {
-  role: "admin" | "empleado";
-  userId: string;
-  suggestions: string[];
 }
 
 export type ModelKey = "0.5B" | "0.8B" | "1.7B";
@@ -24,6 +20,45 @@ export const MODEL_OPTIONS: { key: ModelKey; label: string; desc: string; minRam
   { key: "0.8B", label: "0.8B", desc: "Balance ideal", minRam: 1.0 },
   { key: "0.5B", label: "0.5B", desc: "Rápido y ligero", minRam: 0 },
 ];
+
+export const CLOUD_PROVIDERS: { id: string; display: string; defaultModel: string }[] = [
+  { id: "openai", display: "ChatGPT", defaultModel: "gpt-4o-mini" },
+  { id: "anthropic", display: "Claude", defaultModel: "claude-3-5-haiku-latest" },
+  { id: "google", display: "Gemini", defaultModel: "gemini-2.0-flash" },
+  { id: "mistral", display: "Mistral", defaultModel: "mistral-small-latest" },
+  { id: "groq", display: "Groq", defaultModel: "llama-3.3-70b-versatile" },
+  { id: "deepseek", display: "DeepSeek", defaultModel: "deepseek-chat" },
+  { id: "ollama", display: "Ollama", defaultModel: "llama3" },
+];
+
+export interface ActiveCloud {
+  provider: string;
+  apiKey: string;
+  display: string;
+  model: string;
+}
+
+export function getActiveCloud(): ActiveCloud {
+  const empty: ActiveCloud = { provider: "", apiKey: "", display: "", model: "" };
+  try {
+    const raw = localStorage.getItem("yarvis_api_keys");
+    if (!raw) return empty;
+    const keys = JSON.parse(raw) as Record<string, string>;
+    for (const p of CLOUD_PROVIDERS) {
+      if ((keys[p.id] || "").trim()) {
+        return { provider: p.id, apiKey: keys[p.id].trim(), display: p.display, model: p.defaultModel };
+      }
+    }
+  } catch { /* ignore */ }
+  return empty;
+}
+
+function modelDotClass(model: string): string {
+  if (model === "1.7B") return "bg-emerald-500";
+  if (model === "0.8B") return "bg-amber-500";
+  if (model === "0.5B") return "bg-neutral-400";
+  return "bg-blue-500";
+}
 
 interface ModelPickerState {
   selectedModel: ModelKey;
@@ -59,6 +94,14 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingTextRef = useRef("");
+  const unlistenRef = useRef<(() => void)[]>([]);
+
+  useEffect(() => {
+    return () => {
+      unlistenRef.current.forEach((fn) => fn());
+      unlistenRef.current = [];
+    };
+  }, []);
 
   const storageKey = `yarvis_chat_${userId}`;
 
@@ -121,19 +164,23 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
     setStreamingText("");
     streamingTextRef.current = "";
 
-    const unlistenToken = await listen<{ token: string; model: string }>("chat-token", (event) => {
-      streamingTextRef.current += event.payload.token;
-      setStreamingText(streamingTextRef.current);
-      setStreamingModel(event.payload.model);
-    });
+    let settled = false;
+    let timeoutId = 0;
 
-    const unlistenDone = await listen<{ model: string }>("chat-done", () => { });
+    const cleanupListeners = () => {
+      unlistenRef.current.forEach((fn) => fn());
+      unlistenRef.current = [];
+    };
 
-    const unlistenComplete = await listen<{ response: string; model: string }>("chat-complete", (event) => {
+    const finish = (response: string, model: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      cleanupListeners();
       const assistantMessage: Message = {
         role: "assistant",
-        content: event.payload.response,
-        model: event.payload.model,
+        content: response,
+        model,
         timestamp: Date.now(),
       };
       const finalMessages = [...updatedMessages, assistantMessage];
@@ -143,36 +190,51 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
       setIsStreaming(false);
       setStreamingText("");
       setStreamingModel("");
-      unlistenToken();
-      unlistenDone();
-      unlistenError();
-    });
+    };
 
-    const unlistenError = await listen<{ error: string }>("chat-error", (event) => {
-      setError(event.payload.error);
+    const fail = (errorMessage: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      cleanupListeners();
+      saveHistory(updatedMessages);
+      setError(errorMessage);
       setIsLoading(false);
       setIsStreaming(false);
       setStreamingText("");
-      unlistenToken();
-      unlistenDone();
-      unlistenComplete();
-    });
+      setStreamingModel("");
+    };
+
+    timeoutId = window.setTimeout(() => {
+      fail("El motor de IA tardó demasiado en responder. Inténtalo de nuevo.");
+    }, STREAM_TIMEOUT_MS);
 
     try {
+      unlistenRef.current.push(await listen<{ token: string; model: string }>("chat-token", (event) => {
+        if (settled) return;
+        streamingTextRef.current += event.payload.token;
+        setStreamingText(streamingTextRef.current);
+        setStreamingModel(event.payload.model);
+      }));
+
+      unlistenRef.current.push(await listen<{ response: string; model: string }>("chat-complete", (event) => {
+        finish(event.payload.response, event.payload.model);
+      }));
+
+      unlistenRef.current.push(await listen<{ error: string }>("chat-error", (event) => {
+        fail(event.payload.error);
+      }));
+
+      const cloud = getActiveCloud();
       await invoke("send_chat_stream", {
         messages: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
         role,
-        model: selectedModel,
+        model: cloud.provider ? cloud.model : selectedModel,
+        provider: cloud.provider,
+        apiKey: cloud.apiKey,
       });
     } catch (err) {
-      setError(String(err));
-      setIsLoading(false);
-      setIsStreaming(false);
-      setStreamingText("");
-      unlistenToken();
-      unlistenDone();
-      unlistenComplete();
-      unlistenError();
+      fail(String(err));
     }
   };
 
@@ -211,8 +273,8 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
               )}
               {msg.role === "assistant" && msg.model && (
                 <div className="mt-2 pt-2 border-t border-neutral-200/50 flex items-center gap-1.5">
-                  <div className={`w-2 h-2 rounded-full ${msg.model === "1.7B" ? "bg-emerald-500" : msg.model === "0.8B" ? "bg-amber-500" : "bg-neutral-400"}`}></div>
-                  <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Qwen {msg.model}</span>
+                  <div className={`w-2 h-2 rounded-full ${modelDotClass(msg.model)}`}></div>
+                  <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">{msg.model}</span>
                 </div>
               )}
             </div>
@@ -228,9 +290,9 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
                 <span className="inline-block w-1.5 h-4 bg-neutral-900 ml-0.5 animate-pulse rounded-sm align-middle"></span>
               </div>
               <div className="mt-2 pt-2 border-t border-neutral-200/50 flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full animate-pulse ${streamingModel === "1.7B" ? "bg-emerald-500" : streamingModel === "0.8B" ? "bg-amber-500" : "bg-blue-500"}`}></div>
+                <div className={`w-2 h-2 rounded-full animate-pulse ${modelDotClass(streamingModel)}`}></div>
                 <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">
-                  Qwen {streamingModel || "..."} generando
+                  {streamingModel || "..."} generando
                 </span>
               </div>
             </div>
@@ -271,7 +333,10 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              if (error) setError("");
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Pregúntale a Y.A.R.V.I.S..."
             rows={1}

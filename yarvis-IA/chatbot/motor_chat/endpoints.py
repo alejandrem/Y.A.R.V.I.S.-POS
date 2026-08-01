@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from .apis_cloud import generar_completo, generar_stream, nombre_proveedor
 from .cache import cantidad_productos_cache, iniciar_cache
 from .gestion_hardware import (
     WORD_LIMITS,
@@ -41,6 +42,8 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     role: str
     model: str = "auto"
+    provider: str = ""
+    api_key: str = ""
     tienda_info: dict = {}
 
 
@@ -100,6 +103,14 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
     chat_messages = construir_mensajes(request.role, request.messages, ultimo)
+
+    if request.provider:
+        try:
+            respuesta = generar_completo(request.provider, request.api_key, request.model, chat_messages)
+            return {"response": respuesta, "model_used": nombre_proveedor(request.provider)}
+        except Exception as e:
+            return {"response": f"Error: {e}", "model_used": "none"}
+
     selected = request.model.lower()
 
     if selected in ("0.5b", "0.8b", "1.7b"):
@@ -129,6 +140,27 @@ async def chat_stream(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
     chat_messages = construir_mensajes(request.role, request.messages, ultimo)
+
+    if request.provider:
+        cloud_display = nombre_proveedor(request.provider)
+        max_w = 1000
+
+        def generate_cloud():
+            try:
+                total_words = 0
+                for token, display in generar_stream(
+                    request.provider, request.api_key, request.model, chat_messages
+                ):
+                    total_words += len(token.split())
+                    if total_words > max_w:
+                        break
+                    yield f"data: {json.dumps({'token': token, 'model': display})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'model': cloud_display})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return StreamingResponse(generate_cloud(), media_type="text/event-stream")
+
     selected = request.model.lower()
 
     llm = None

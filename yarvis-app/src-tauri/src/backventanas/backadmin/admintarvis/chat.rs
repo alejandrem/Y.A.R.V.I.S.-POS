@@ -82,6 +82,8 @@ pub async fn send_chat_message(
     messages: Vec<serde_json::Value>,
     role: String,
     model: String,
+    provider: Option<String>,
+    api_key: Option<String>,
 ) -> Result<ChatResponse, String> {
     let base_url = sidecar.base_url()
         .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
@@ -94,6 +96,8 @@ pub async fn send_chat_message(
         "messages": messages,
         "role": role,
         "model": model,
+        "provider": provider.unwrap_or_default(),
+        "api_key": api_key.unwrap_or_default(),
         "tienda_info": {
             "nombre": tienda_info.nombre,
             "ubicacion": tienda_info.ubicacion,
@@ -123,6 +127,8 @@ pub async fn send_chat_stream(
     messages: Vec<serde_json::Value>,
     role: String,
     model: String,
+    provider: Option<String>,
+    api_key: Option<String>,
 ) -> Result<String, String> {
     let base_url = sidecar.base_url()
         .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
@@ -135,6 +141,8 @@ pub async fn send_chat_stream(
         "messages": messages,
         "role": role,
         "model": model,
+        "provider": provider.unwrap_or_default(),
+        "api_key": api_key.unwrap_or_default(),
         "tienda_info": {
             "nombre": tienda_info.nombre,
             "ubicacion": tienda_info.ubicacion,

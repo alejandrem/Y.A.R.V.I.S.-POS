@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import ChatWidget, { type ModelKey, MODEL_OPTIONS } from "./ChatWidget";
+import ChatWidget, { type ModelKey, MODEL_OPTIONS, getActiveCloud } from "./ChatWidget";
 
 const API_PROVIDERS = [
   { id: "openai", name: "OpenAI", placeholder: "sk-..." },
@@ -20,7 +20,15 @@ function pickBestModel(ramGb: number): ModelKey {
 
 const AdminYarvis = () => {
   const [showApiModal, setShowApiModal] = useState(false);
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}");
+    } catch {
+      return {};
+    }
+  });
+
+  const activeCloud = getActiveCloud();
 
   const [selectedModel, setSelectedModel] = useState<ModelKey>("0.5B");
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -34,6 +42,18 @@ const AdminYarvis = () => {
   const [ramWarning, setRamWarning] = useState("");
 
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const retryTimeoutRef = useRef<number>(0);
+  const ramWarningTimeoutRef = useRef<number>(0);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      window.clearTimeout(retryTimeoutRef.current);
+      window.clearTimeout(ramWarningTimeoutRef.current);
+    };
+  }, []);
 
   const fetchModelStatus = useCallback(async () => {
     try {
@@ -45,12 +65,30 @@ const AdminYarvis = () => {
         setSelectedModel(best);
         setModelAutoSelected(true);
       }
-    } catch { /* ignore */ }
+    } catch {
+      if (mountedRef.current) {
+        retryTimeoutRef.current = window.setTimeout(() => {
+          if (mountedRef.current) fetchModelStatus();
+        }, 5000);
+      }
+    }
   }, [modelAutoSelected]);
 
   useEffect(() => {
     fetchModelStatus();
   }, [fetchModelStatus]);
+
+  const refreshModelStatus = async () => {
+    try {
+      const status = await invoke<{ models: Record<string, boolean>; ram_gb: number }>("get_model_status");
+      setLoadedModels(status.models);
+      setRamGb(status.ram_gb);
+      const loaded = (["1.7B", "0.8B", "0.5B"] as ModelKey[]).find((m) => status.models[m]);
+      setSelectedModel(loaded || "0.5B");
+    } catch {
+      setSelectedModel("0.5B");
+    }
+  };
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -75,7 +113,8 @@ const AdminYarvis = () => {
     const needed = MODEL_RAM[model];
     if (ramGb > 0 && ramGb < needed) {
       setRamWarning(`RAM insuficiente para Qwen ${model}: tienes ${ramGb.toFixed(1)}GB, necesitas ≥${needed}GB`);
-      setTimeout(() => setRamWarning(""), 5000);
+      window.clearTimeout(ramWarningTimeoutRef.current);
+      ramWarningTimeoutRef.current = window.setTimeout(() => setRamWarning(""), 5000);
       return;
     }
 
@@ -93,7 +132,7 @@ const AdminYarvis = () => {
         setLoadedModels(result.models);
         setRamGb(result.ram_gb);
       } catch {
-        setSelectedModel("0.5B");
+        await refreshModelStatus();
       } finally {
         setLoadingModel(null);
       }
@@ -109,7 +148,7 @@ const AdminYarvis = () => {
         setLoadedModels(result.models);
         setRamGb(result.ram_gb);
       } catch {
-        setSelectedModel("0.5B");
+        await refreshModelStatus();
       } finally {
         setLoadingModel(null);
       }
@@ -159,9 +198,9 @@ const AdminYarvis = () => {
                 disabled={!!loadingModel}
                 className="flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm hover:bg-white hover:shadow-md transition-all disabled:opacity-50"
               >
-                <div className={`w-2.5 h-2.5 rounded-full ${loadingModel ? "bg-amber-500 animate-pulse" : selectedModel === "1.7B" ? "bg-emerald-500" : selectedModel === "0.8B" ? "bg-amber-500" : "bg-neutral-400"}`}></div>
+                <div className={`w-2.5 h-2.5 rounded-full ${loadingModel ? "bg-amber-500 animate-pulse" : activeCloud.provider ? "bg-blue-500" : selectedModel === "1.7B" ? "bg-emerald-500" : selectedModel === "0.8B" ? "bg-amber-500" : "bg-neutral-400"}`}></div>
                 <span className="text-[11px] font-black text-neutral-600 uppercase tracking-widest">
-                  {loadingModel ? `Cargando Qwen ${loadingModel}...` : `Qwen ${currentModel.label}`}
+                  {loadingModel ? `Cargando...` : activeCloud.provider ? activeCloud.display : `Qwen ${currentModel.label}`}
                 </span>
                 {!loadingModel && (
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><path d="m6 9 6 6 6-6" /></svg>
@@ -227,7 +266,12 @@ const AdminYarvis = () => {
                         </button>
                       );
                     })}
-                    <div className="px-4 py-2.5 border-t border-neutral-100 mt-1">
+                    <div className="px-4 py-2.5 border-t border-neutral-100 mt-1 space-y-0.5">
+                      <p className="text-[10px] font-black text-neutral-500">
+                        {activeCloud.provider
+                          ? `Usando API: ${activeCloud.display}`
+                          : `Modelo local: Qwen ${currentModel.label}`}
+                      </p>
                       <p className="text-[10px] font-bold text-neutral-400">
                         RAM: {ramGb > 0 ? `${ramGb.toFixed(1)}GB` : "..."}
                       </p>
