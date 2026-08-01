@@ -161,30 +161,29 @@ yarvis-IA/
 ├── main.py                           # Entry point FastAPI
 ├── requirements.txt                  # Dependencias Python
 │
-├── endpoints/
-│   ├── embeddings.py                 # /generar_embedding, /buscar_similar
-│   ├── predictions.py                # /recalcular_predicciones (Prophet)
-│   ├── parser.py                     # /analizar_ticket, /parsear_con_mapeo, /parsear_excel
-│   ├── carpeta.py                    # /parsear_carpeta, /parsear_carpeta_stream (SSE)
-│   ├── matching.py                   # /vincular_inventario, /guardar_vinculacion
-│   └── chat.py                       # /chat, /load_llm, /unload_llm
+├── chatbot/                          # Chat y Búsqueda Semántica
+│   ├── motor_chat/                   # Lógica central del asistente RAG
+│   │   ├── endpoints.py              # /chat, /chat_stream, /load_model
+│   │   ├── gestion_hardware.py       # Decide entre 0.5B, 0.8B y 1.7B según RAM
+│   │   └── motor_rag.py              # Retrieval-Augmented Generation
+│   └── embeddings/                   # Motor vectorial
+│       ├── modelo.py                 # all-MiniLM-L6-v2
+│       └── endpoints.py              # /generar_embedding, /buscar_similar
 │
-├── core/
-│   ├── embeddings.py                 # Motor de embeddings (MiniLM)
-│   └── utils.py                      # limpiar_producto(), es_categoria()
+├── parseador_de_tickets/             # Importación Masiva e IA Visual
+│   ├── cerebro/
+│   │   ├── analizador.py             # Puente entre LLM y lectores
+│   │   ├── lote.py                   # Procesamiento en lote (batch streaming)
+│   │   └── vinculador.py             # Match con inventario existente
+│   ├── formatos/                     # Lectores puros
+│   │   └── lector_csv.py, lector_txt.py, lector_excel.py
+│   └── llm/
+│       ├── analizador_llm.py         # LLM de extracción (0.5B -> 0.8B -> 1.7B)
+│       └── rutas_modelos.py
 │
-├── parser_py/
-│   ├── __init__.py                   # Re-exports de parsers
-│   ├── parser_excel.py               # Parser Excel (openpyxl)
-│   ├── parser_csv.py                 # Parser CSV auto-detect
-│   └── parser_txt.py                 # Parser visual de formato de tabla
-│
-└── modelos/
-    ├── qwen/
-    │   ├── rutas.py                  # Rutas a modelos GGUF
-    │   └── parser_llm.py            # Parser LLM: Qwen 0.5B → 1.7B fallback
-    └── profeta/
-        └── predictor.py             # Predictor de ventas con Prophet
+└── profeta/                          # Machine Learning Tradicional
+    ├── predictor.py                  # Facebook Prophet para proyecciones
+    └── endpoints.py                  # /recalcular_predicciones
 ```
 
 ---
@@ -405,132 +404,91 @@ pub struct DbPath(pub String)  // Ruta de la DB, managed state
 ### 6.1 `main.py` — Entry Point
 
 ```python
-# Registra 6 routers:
-# - embeddings (/generar_embedding, /buscar_similar, /insertar_knowledge)
-# - predictions (/recalcular_predicciones)
-# - parser (/analizar_ticket, /parsear_con_mapeo, /parsear_excel, etc.)
-# - carpeta (/parsear_carpeta, /parsear_carpeta_stream)
-# - matching (/vincular_inventario, /guardar_vinculacion)
-# - chat (/chat, /load_llm, /unload_llm)
+# Registra Routers Modulares:
+# - chatbot/motor_chat/endpoints.py
+# - chatbot/embeddings/endpoints.py
+# - parseador_de_tickets/cerebro/analizador.py
+# - parseador_de_tickets/cerebro/lote.py
+# - profeta/endpoints.py
 
 PORT = int(sys.argv[1])  # Recibe puerto de Rust
 uvicorn.run(app, host="127.0.0.1", port=PORT)
 ```
 
-**15 endpoints totales.**
-
-### 6.2 `endpoints/parser.py` — Endpoints de Parseo
+### 6.2 `parseador_de_tickets/cerebro/analizador.py` — Endpoints de Parseo
 
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
-| `/analizar_ticket` | POST | Recibe `{"texto": "..."}`, llama al LLM, retorna mapeo + ejemplo_parseado. **Descarga modelos al terminar.** |
-| `/parsear_con_mapeo` | POST | Parsea texto usando mapeo de columnas del usuario (sin LLM) |
-| `/parsear_catalogo_visual` | POST | Parsea catálogo en formato visual de tabla |
+| `/analizar_ticket` | POST | Recibe `{"texto": "..."}`, llama a Qwen, retorna mapeo + ejemplo_parseado JSON. **Descarga modelos al terminar.** |
+| `/parsear_con_mapeo` | POST | Parsea texto usando mapeo de columnas confirmado por el usuario (sin LLM) |
 | `/parsear_excel` | POST | Recibe bytes de Excel, retorna productos detectados |
 
-### 6.3 `endpoints/carpeta.py` — Procesamiento por Lotes
+### 6.3 `parseador_de_tickets/cerebro/lote.py` — Procesamiento Masivo
 
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
-| `/parsear_carpeta` | POST | Procesa carpeta sincrónicamente, retorna stats |
-| `/parsear_carpeta_stream` | POST | Procesa carpeta con SSE streaming (batches de 50) |
+| `/parsear_carpeta_stream` | POST | Procesa carpeta con SSE streaming asíncrono. |
 
 **Descarga modelos de VRAM antes de empezar** para liberar memoria.
 
 **Flujo de `/parsear_carpeta_stream`:**
 1. Carga estado de productos existentes de la DB
-2. Procesa archivos en batches de 50
-3. Para cada archivo: lee texto, parsea lineas, inserta venta en SQLite
-4. Yield de eventos SSE con progreso después de cada batch
-5. Evento final con estadísticas completas
+2. Procesa archivos en batches optimizados
+3. Yield de eventos SSE con progreso después de cada batch
+4. Evento final con estadísticas completas
 
-### 6.4 `endpoints/embeddings.py` — Embeddings
+### 6.4 `chatbot/embeddings/endpoints.py` — Vectores Semánticos
 
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
 | `/generar_embedding` | POST | `{"texto": "..."}` → vector 384d → base64 |
 | `/buscar_similar` | POST | Búsqueda por cosine similarity en knowledge_base |
-| `/insertar_knowledge` | POST | Inserta item en knowledge_base |
 
-### 6.5 `endpoints/chat.py` — Chat y Modelos
-
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/chat` | POST | Placeholder para chatbot |
-| `/load_llm` | POST | Placeholder para cargar modelo |
-| `/unload_llm` | POST | **Descarga modelos Qwen de VRAM** via `descargar_modelos()` |
-
-### 6.6 `endpoints/matching.py` — Vinculación de Productos
+### 6.5 `chatbot/motor_chat/endpoints.py` — Chat y Cerebro LLM
 
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
-| `/vincular_inventario` | POST | Vincula productos parseados con inventario (exact match + embeddings) |
-| `/guardar_vinculacion` | POST | Guarda las vinculaciones en detalle_ventas |
-
-**Algoritmo de vinculación:**
-1. Match exacto por nombre normalizado + precio
-2. Si no hay match exacto, usa embedding similarity (umbral 0.85)
-3. Retorna productos vinculados y sin vincular
+| `/chat` | POST | Inferencia con RAG y SQL tools |
+| `/load_llm` | POST | Carga modelo de forma dinámica basada en memoria RAM libre |
+| `/unload_llm` | POST | Libera RAM manualmente |
 
 ---
 
 ## 7. Modelos de IA
 
-### 7.1 Qwen LLM (`modelos/qwen/parser_llm.py`)
+### 7.1 LLM del Parseador (`parseador_de_tickets/llm/analizador_llm.py`)
 
-**Modelos:**
-- **Qwen 2.5 0.5B** (Q4_K_M GGUF) — Modelo principal, rápido
-- **Qwen 3 1.7B** (Q4_K_M GGUF) — Modelo de respaldo, más preciso
+**Modelos (Escalada por Confianza):**
+- **Qwen 2.5 0.5B** — Primer intento, ultra ligero (0.0 GB RAM req).
+- **Qwen 3.5 0.8B** — Segundo intento (1.0 GB RAM req).
+- **Qwen 3 1.7B** — Tercer intento, artillería pesada (4.0 GB RAM req).
 
 **Flujo de análisis:**
-1. Intenta con Qwen 0.5B
-2. Si confianza < 0.8, reintenta con Qwen 1.7B
-3. Si 0.5B falla, usa 1.7B directamente
-4. **Descarga modelos después de cada análisis** para liberar VRAM
-
-**Parámetros de carga:**
-```python
-Llama(
-    model_path=...,
-    n_ctx=4096,
-    n_gpu_layers=-1,  # Todos los layers en GPU
-    n_threads=4,
-    verbose=False
-)
-```
-
-**Función `descargar_modelos()`:**
-```python
-def descargar_modelos():
-    global _llm_0_5, _llm_1_7
-    if _llm_0_5 is not None:
-        del _llm_0_5
-        _llm_0_5 = None
-    if _llm_1_7 is not None:
-        del _llm_1_7
-        _llm_1_7 = None
-    gc.collect()
-```
+1. Intenta parsear con 0.5B.
+2. Si la confianza es < 0.80, descarga modelo y reintenta con 0.8B.
+3. Si la confianza sigue siendo < 0.80, descarga modelo y reintenta con 1.7B.
+4. **Descarga modelos siempre al finalizar** para no secuestrar RAM del POS.
 
 **Prompt del sistema:**
 Le pide a la IA que analice un ticket y retorne JSON con:
-- `mapeo.columnas` — Índices de cada columna detectada
-- `ejemplo_parseado` — Items parseados de ejemplo
+- `mapeo.columnas` — Índices de cada columna
+- `ejemplo_parseado` — Items parseados
 - `confianza` — Nivel de confianza (0-1)
-- `notas` — Observaciones
 
-### 7.2 Embeddings (`core/embeddings.py`)
+### 7.2 LLM del Chatbot (`chatbot/motor_chat/gestion_hardware.py`)
+
+A diferencia del parseador, el chatbot NO escala de esta manera. Calcula la RAM del sistema en su arranque y **activa un único modelo (Lazy Loading)** permanentemente mientras la pestaña del chat esté abierta, para asegurar velocidad y respuesta conversacional fluida.
+
+### 7.3 Embeddings (`chatbot/embeddings/modelo.py`)
 
 **Modelo:** all-MiniLM-L6-v2 (sentence-transformers)
 - Dimensiones: 384
 - Normalización: L2
-- Uso: Búsqueda semántica de productos
+- Uso: Base de Conocimiento (RAG) y coincidencia de inventarios
 
 **Funciones:**
 - `texto_a_embedding(texto)` → vector 384d
-- `embedding_a_blob(vec)` → bytes para SQLite
-- `blob_a_embedding(blob)` → vector 384d
-- `cosine_similarity(a, b)` → float
+- `embedding_a_blob(vec)` → bytes base64 para SQLite
 
 ### 7.3 Prophet (`modelos/profeta/predictor.py`)
 

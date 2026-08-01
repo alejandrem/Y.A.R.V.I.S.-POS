@@ -21,24 +21,23 @@
 > * **Validación**: Zod + React Hook Form.
 
 ## Backend (Motor de Alto Rendimiento en Rust)
-- Framework Web: Axum.
+- Comunicación con Frontend: Tauri IPC (Comandos `invoke`), sin necesidad de frameworks web.
 - Runtime Asíncrono: Tokio.
 - Serialización: Serde.
 - ORM/Query Builder: SQLx (con soporte para SQLite).
-- Middleware: Tower & Tower-HTTP.
 - Logging/Tracing: Tracing.
 - Manejo de Errores: Anyhow & Thiserror.
 - Seguridad: Argon2 (Hashing) & Jsonwebtoken (JWT).
-- Detección de Hardware: sysinfo (detecta RAM disponible para seleccionar el modelo de IA correcto).
+- Control de Procesos: Sistema de Sidecar Nativo de Tauri para administrar el ciclo de vida del backend en Python.
 
 ## IA y Ciencia de Datos (Cerebro en Python)
 - Predicción de Ventas: Meta Prophet.
 - Inferencia de LLM Local: llama-cpp-python (modo CPU exclusivo, sin GPU para máxima portabilidad).
-- Modelo local a usar: Qwen 2.5 en formato GGUF. Se selecciona 1.7B o 0.5B según la RAM detectada.
-- Orquestación de IA: Usaremos solo llama-cpp (ya no se usarán frameworks pesados como LangChain o LlamaIndex debido a su alto consumo de RAM).
+- Modelos locales a usar: Familia Qwen (2.5 0.5B, 3.5 0.8B, 3 1.7B) en formato GGUF.
+- Detección de Hardware: Python usa librerías nativas (`psutil` o `/proc/meminfo`) para detectar la RAM disponible y escalar los modelos automáticamente.
+- Orquestación de IA: Usaremos scripts propios y directos (ya no se usarán frameworks pesados como LangChain o LlamaIndex debido a su alto consumo de RAM).
 - Procesamiento de Datos: Pandas, NumPy, Scikit-learn.
 - Servidor de IA Interno: FastAPI + Uvicorn.
-Excel/CSV y TXT en Fase 1.
 
 ## El Cerebro de IA (RAG + Prophet + SQL)
 
@@ -66,21 +65,20 @@ Excel/CSV y TXT en Fase 1.
 - Comunicación: HTTP Local vía FastAPI en puerto dinámico (seleccionado por Rust al inicio para evitar colisiones).
 
 ### Selección Adaptativa de IA (Semaforización de RAM Libre)
-- >= 2.5GB RAM libre: Carga Qwen 2.5 1.7B GGUF en cuantización Q6 (Cerebro Inteligente).
-- < 2.5GB RAM libre: Carga Qwen 2.5 0.5B GGUF en cuantización Q6 (Cerebro Ligero).
-
-if ram_libre >= 2.5 { cargar(1.7B_Q6) } else { cargar(0.5B_Q6) }.
+La decisión del modelo la toma el módulo `gestion_hardware.py` de Python midiendo la RAM libre (OS agnostic):
+- **Cerebro Pesado (Qwen 1.7B)**: Si hay más de 4 GB de RAM libre.
+- **Cerebro Intermedio (Qwen 0.8B)**: Si hay más de 1 GB de RAM libre.
+- **Cerebro Ligero (Qwen 0.5B)**: Fallback para computadoras de muy bajos recursos.
 
 ### Lazy Loading del LLM
-Para lograr un Lazy Loading real, Rust arranca a Python en segundo plano pero **sin cargar ningún LLM** pesado. El consumo de memoria es mínimo. 
-Justo en el instante en que el usuario intenta abrir el Chatbot, Rust verifica una variable interna (ej. `llm_estado`). Solo si el estado es 'descargado', Rust mide la memoria RAM libre en ese momento, toma la decisión del modelo (1.7B o 0.5B) y le envía una petición HTTP a Python: "Carga el modelo X ahora" (ej. `POST /load_llm`). Si ya estaba cargado, omite medir la RAM para evitar colapsos.
-Nota: A diferencia de Qwen, el pequeño modelo de embeddings de 40MB (`all-MiniLM`) sí se carga al iniciar el sistema, ya que si el cajero da de alta un "nuevo producto", Python necesita crear su vector numérico en segundo plano sin importar si el Chatbot está abierto o no.
+Para lograr un Lazy Loading real, el sidecar de Python arranca en segundo plano pero **sin cargar ningún LLM** pesado en memoria (a excepción de los embeddings ligeros de 40MB). 
+Justo en el instante en que el usuario intenta interactuar con un módulo que requiere inteligencia (como el Chatbot o el Parseador), Python evalúa qué tanta RAM le queda a Windows y carga dinámicamente el modelo más pesado que la computadora soporte sin congelarse.
+Nota: Una vez cargado el Chatbot, el modelo permanece en memoria para fluidez conversacional. En el caso del Parseador, el modelo hace su trabajo y luego se destruye de la RAM automáticamente (auto-unload) para que el Punto de Venta siga siendo ultraligero.
 
-### Empaquetamiento y Produccion
+### Empaquetamiento y Producción
 
 1. Para empaquetar el Frontend y Rust:
    - Utilizar Tauri (`npm run tauri build`). Esta herramienta compila el frontend (TypeScript/Vite) y el backend de Rust automáticamente en un solo ejecutable `.exe`.
-   - sysinfo: para detectar la ram del usuario (incluido en el código de Rust).
 
 2. Para empaquetar la IA y python:
    - PyInstaller: La herramienta principal para convertir los scripts de IA y todas sus librerías en un solo archivo .exe.

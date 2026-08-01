@@ -8,7 +8,7 @@ Profeta es la joya de la corona, siendo una libreria muy potente para predecir e
 
 el RAG + sqlite-vec: aquí es donde Python usa la IA para entender el inventario. Cuando el cajero crea un producto, Rust lo guarda y le envía un HTTP POST a Python (`/generar_embedding`). Python convierte la descripción en un "vector numérico" y se lo devuelve a Rust para que este lo guarde en sqlite-vec (respetando la Regla de Oro). Cuando el dueño pregunta al chatbot "qué productos de limpieza son aptos para madera", el bibliotecario (Python) solo lee la base de datos y busca no por palabras exactas sino por significado.
 
-cuando el cliente llega con sus 12,000 tickets viejos en excel o txt, python tiene herramientas para masticar miles de datos en segundos, limpia nombres duplicados, arregla precios mal escritos y deja la base de datos reluciente para que rust pueda empezar a vender. este proceso debe hacerse en una laptop del creador del software. (Nota Técnica: Como este proceso de "Onboarding" se hace fuera del Punto de Venta y con el sistema apagado, aquí se hace una excepción a la "Regla de Oro": este script especial de Python sí escribe directamente en yarvis.db porque no hay riesgo de chocar con Rust).
+Parseador de Tickets Integrado: cuando el cliente llega con sus 12,000 tickets viejos en excel o txt, el sistema cuenta con un procesamiento por lotes (Batch Processor) impulsado por Qwen. Desde la misma interfaz, se pueden mapear columnas visualmente, extraer datos con IA estructurada (JSON) e inyectarlos directamente en la base de datos para arrancar el sistema al instante. Todo esto corre de forma local y asíncrona.
 
 y como rust y python hablan distintos idiomas, python levanta un pequeño puesto de traduccion. Su trabajo es escuchar las peticiones de rust via HTTP. Con esto recibe un mensaje de rust diciendo `get prediccion`, corre prophet y le devuelve a rust un json sencillo con los resultados.
 
@@ -114,12 +114,11 @@ El "PROMPT ENGINEERING" + Tools: Como usaremos modelos Qwen, que son muy buenos 
 
 Compatibilidad de CPU: Debemos configurar la IA para que use solo el procesador (CPU). Si intentamos usar tarjetas gráficas (GPU), el .exe se volvería muy frágil y dejaría de ser portable (porque no todas las tiendas tienen una GPU compatible).
 
-Detección automática de RAM para la ejecución del LLM: Rust primero verifica su variable interna `llm_estado`. Solo si el estado es 'descargado', mide la RAM libre para evitar el ciclo infinito de carga si el usuario cierra y abre el chat rápidamente.
+Detección automática de RAM para la ejecución del LLM: Rust notifica la apertura del chat. Es el motor de Python (`gestion_hardware.py`) el encargado de leer `/proc/meminfo` o similar para medir la memoria y tomar la decisión, evitando un ciclo de recargas si se abre/cierra la ventana.
 
-- Si tiene 2.5GB o más libres (>= 2.5GB): Carga el modelo de 1.7B en Q6 (Qwen 2.5 1.7B). Es muy inteligente y razona casi como un humano.
-- Si tiene menos de 2.5GB libres (< 2.5GB): Carga el modelo de 0.5B en Q6 (Qwen 2.5 0.5B). Es más rápido y ligero, ideal para no "ahogar" una laptop viejita.
-
-if ram_libre >= 2.5 { cargar(1.7B_Q6) } else { cargar(0.5B_Q6) }.
+- RAM >= 4.0 GB: Carga Qwen 3 1.7B. Es muy inteligente y razona casi como humano.
+- RAM >= 1.0 GB: Carga Qwen 3.5 0.8B. Rápido y eficiente.
+- RAM >= 0.0 GB: Carga Qwen 2.5 0.5B. Fallback ultra-ligero para no asfixiar a computadoras viejas.
 
 
 NUEVO - Lazy Loading del LLM: El motor de Python arranca junto con el sistema, pero NO carga el LLM a la RAM hasta que el usuario abra la pestaña del "Chatbot". Si el cajero solo está cobrando todo el día, la IA no consume ni 1 MB de memoria. Si no le hablan a la IA en 15 minutos, Python descarga el modelo de la RAM automáticamente.
@@ -204,7 +203,7 @@ El ejecutable de Rust (yarvis-app.exe) actúa como el orquestador principal y el
 5. Lanzamiento del Empleado (Sin LLM): Rust ejecuta en segundo plano el archivo `./engine/ai_service.exe`, pasándole los puertos y ordenando cargar SOLO el modelo de embeddings pequeño: `--embed-only`. (El LLM de Qwen NO se carga aún).
 6. Verificación de Salud: Rust espera a que el servidor local de FastAPI responda "OK" en GET /health y lanza el Ping de predicciones si fue necesario en el Paso 3.
 7. Se abre la interfaz de usuario para el cajero (Modo Punto de Venta normal).
-8. Lazy Loading (Solo al usar IA): Cuando el usuario abre la pestaña del Chatbot, Rust primero revisa su `llm_estado`. Si está descargado, usa `sysinfo` para medir la RAM, elige el modelo y hace la petición HTTP (`POST /load_llm`).
+8. Lazy Loading (Solo al usar IA): Cuando el usuario abre la pestaña del Chatbot, Rust manda la orden de carga. Es Python (`gestion_hardware.py`) quien revisa en tiempo real la RAM disponible para escoger la cuantización ideal sin que Rust tenga que estar leyendo el hardware, delegando la responsabilidad por completo al lado de la IA.
 
 ## 2. Flujo de Comunicación (Protocolo HTTP Local)
 
@@ -212,19 +211,26 @@ Toda la comunicación entre el Frontend, el Backend de Rust y el Motor de IA se 
 
 Origen                  | Destino                | Método     | Propósito
 Frontend (Vite/TS)      | Rust (Tauri)           | IPC/invoke | Registro de ventas, Inventario, Interfaz nativa.
-Rust (Axum)             | Python (FastAPI)       | REST API   | Consultas al Chatbot, Predicción de ventas.
-Rust (Axum)             | Python (FastAPI)       | HTTP POST  | Ping de venta nueva: "actualiza tus gráficas".
+Rust (Tauri IPC)        | Python (FastAPI)       | REST API   | Consultas al Chatbot, Predicción de ventas.
+Rust (Tauri IPC)        | Python (FastAPI)       | HTTP POST  | Ping de venta nueva: "actualiza tus gráficas".
 Python (IA)             | SQLite (yarvis.db)     | SQL Directo| Solo LECTURA: historial para Prophet y RAG.
-Python (FastAPI)        | Rust (Axum)            | HTTP POST  | Escritura indirecta: Python pide a Rust que inserte embeddings.
+Python (FastAPI)        | Rust (Tauri IPC)       | HTTP POST  | Escritura indirecta: Python pide a Rust que inserte embeddings.
 
-## 3. Lógica de Selección Adaptativa de IA
+## 3. Lógica de Selección Adaptativa de IA (Gestión Dinámica de Hardware)
 
-- Perfil A (Moderno): >= 2.5GB RAM Libre -> Carga Qwen-2.5-1.7B (Q6).
-- Perfil B (Legacy): < 2.5GB RAM Libre -> Carga Qwen-2.5-0.5B (Q6).
+El sistema ya no usa un umbral fijo estático. En su lugar, el módulo `gestion_hardware.py` lee constantemente la memoria disponible del sistema operativo (`/proc/meminfo` o equivalente) para asegurar que el sistema tenga RAM libre, eligiendo o validando el modelo de forma escalonada:
 
-if ram_libre >= 2.5 { cargar(1.7B_Q6) } else { cargar(0.5B_Q6) }.
+- **Qwen 3 1.7B**: Requiere >= 4.0 GB de RAM Libre.
+- **Qwen 3.5 0.8B**: Requiere >= 1.0 GB de RAM Libre.
+- **Qwen 2.5 0.5B**: Fallback ultra-ligero (para equipos de gama baja).
 
-IMPORTANTE: Si el motor de IA falla o la laptop es demasiado antigua para el LLM, el POS seguirá funcionando en modo "Venta Clásica", desactivando solo el Chatbot para no bloquear la caja.
+El Chatbot utiliza estos umbrales para saber qué modelo puede cargar de manera segura sin saturar la máquina.
+Por otro lado, el Parseador de Tickets (`analizador_llm.py`) utiliza una **escalada automática basada en confianza**:
+1. Intenta parsear con 0.5B.
+2. Si la confianza es menor a `0.80`, descarga el modelo y reintenta con 0.8B.
+3. Si la confianza sigue siendo baja, descarga y reintenta con el pesado 1.7B.
+
+IMPORTANTE: Si el motor de IA falla o la laptop es demasiado antigua para el LLM, el POS seguirá funcionando en modo "Venta Clásica", desactivando solo el Chatbot y funciones pesadas para no bloquear la caja registradora.
 
 ## 4. Gestión de Rutas Portables
 
@@ -235,11 +241,12 @@ Para evitar errores al mover la USB, el sistema usará std::env::current_exe() p
 - MODELS_PATH   = <directorio del exe>/engine/models/
 
 
-## 5. Parseador de tickts mediante script
+## 5. Parseador Masivo Integrado (Procesamiento por Lotes)
 
-Tenemoos 1 sola forma de parsear los tickets es primero subir un archivo en txt donde se muestre la arquitectura del ticket con la opcion de que el instalador del software mapee las columnas visualmente desde la interfaz del sistema (esto para evitar errores) ademas desde desde la interfaz el modelo debe mostrar que columnas son precio que columnas son producto etc y despues el que use el sistema tiene que validar esta informacion (Ej: "Selecciona qué columna es el Producto y cuál es el Precio").
-
-y de ahi se escribira un script para adapar la forma definitiva del ticket por naturalidad todos seran de la misma forma solo cambiarian los productos  precios descuentos y alguna que otra cosa entonces primero parseamos 1 ticket dejamos que el LLM escriba el script de como es el formato del ticket y despues parseamos los otros 11,999 de esta manera podriamos parsear los 12,000 en solo unos 15 minutos o menos el parseo de los tickets sera en la laptop personal del creador del software para usar el modelo mas alto uno de para que a la hora de parsear los tickets sea de manera segura.
+El parseador evolucionó: ya no requiere scripts personalizados de un desarrollador. Ahora funciona nativamente en la Interfaz (React) conectada a Python:
+1. **Mapeo Visual e IA (analizador_llm.py)**: Se sube un archivo (TXT, CSV, Excel). El sistema le pasa las primeras 20 líneas a Qwen para que deduzca qué columna es "Producto", cuál es "Precio" y devuelva un JSON.
+2. **Validación**: La UI muestra las columnas deducidas por la IA al usuario para que confirme si están bien.
+3. **Procesamiento Masivo (lote.py)**: Una vez confirmada la estructura, el motor de Python (usando hilos en background) tritura los 12,000 tickets restantes, limpia los nombres y estandariza los datos para integrarlos al POS sin depender del creador del software. Todo corre de manera local.
 
 ## la facturacion electronica
 el sistema podra conectarse a internet para poder predecir cosas o para poder hacer la facturacion electronica para intercambuar XML con un PAC 

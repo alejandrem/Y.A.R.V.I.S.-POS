@@ -15,7 +15,7 @@ El objetivo de esta ola es que el Punto de Venta pueda funcionar en "Modo Clási
 **Paso 1.1: El Esqueleto del Workspace**
 - Inicializarás el proyecto usando Tauri + Vite + React + TypeScript.
 - Configurarás `tailwind.css` y `shadcn/ui` para empezar a construir la interfaz.
-- En la carpeta `src-tauri`, prepararás tu `Cargo.toml` con las librerías críticas: `sqlx`, `tokio`, `serde`, y `sysinfo`.
+- En la carpeta `src-tauri`, prepararás tu `Cargo.toml` con las librerías críticas: `sqlx`, `tokio`, y `serde`.
 usando como principal socio al comando `npm create tauri-app@latest`. con este comando se aplicaran los cambios indemadiatamente
 aqui los comandos 
 alee@alee-Vivobook-Go-E1404FA-E1404FA:~/Documentos/Y.A.R.V.I.S. POS$ npm create tauri-app@latest
@@ -89,9 +89,9 @@ Aquí es donde entra la magia del "Sidecar". Vas a crear el motor de Python aisl
 
 Es hora de enseñar a Y.A.R.V.I.S. a ver el futuro.
 
-**Paso 3.1: El Parseador Premium (Fuera del Sistema)**
-- Crearás un script de Python independiente (en tu laptop de desarrollador).
-- Este script tragará los 12,000 tickets históricos del cliente en formato TXT/Excel, limpiará nombres y guardará todo directamente en `yarvis.db` (la excepción a la Regla de Oro, pues esto se hace offline).
+**Paso 3.1: El Parseador Integrado (Batch Processing)**
+- Rust mandará los tickets desde la interfaz a través de la carpeta seleccionada usando SSE.
+- Python traga los 12,000 tickets históricos y devuelve progreso asíncrono al POS sin congelarlo.
 
 **Paso 3.2: El Corte Z y el Ping del Futuro**
 - En Rust, cuando el cajero presione "Hacer Corte de Caja", Rust primero hará un `HTTP GET` a la API de clima (ej. OpenWeather), guardará la temperatura del día en la tabla de ventas, y cerrará la caja.
@@ -107,9 +107,9 @@ Aquí el usuario finalmente sentirá la inteligencia del sistema.
 
 **Paso 4.1: Semaforización de RAM y Lazy Loading**
 - En React, el usuario da clic en la pestaña "Consultar Y.A.R.V.I.S.".
-- Rust captura el clic, revisa su variable `llm_estado`. Si dice "descargado", Rust usa `sysinfo` para revisar la RAM libre.
-- ¿Hay 2.5GB libres? Rust manda `POST /load_llm {"model": "1.7B_Q6"}`. ¿Hay menos de 2.5GB libres? Manda `{"model": "0.5B_Q6"}`.
-- Rust actualiza `llm_estado = "cargado"`. El chat se abre.
+- Rust captura el clic y le pide a Python (FastAPI) que despierte el Chatbot.
+- Python, a través de `gestion_hardware.py`, revisa la RAM libre en el SO nativo y decide cargar el modelo correspondiente (0.5B, 0.8B o 1.7B).
+- El chat se abre y el modelo se queda cargado permanentemente para no alentar la conversación (Lazy Loading).
 
 **Paso 4.2: RAG y Function Calling**
 - Crearás el *System Prompt* en Python explicándole los límites a Qwen ("Si te preguntan cruces muy complejos, sé educado y di que no puedes").

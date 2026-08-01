@@ -8,34 +8,38 @@ Sistema de parseo de productos y catálogos para el módulo de importación inte
 
 ## 1. Estructura Modular de Parsers
 
-### **Python (`parser_py/`)**
+### **Python (`yarvis-IA/parseador_de_tickets/`)**
+
+El módulo original `parser_py/` fue refactorizado y dividido en subcarpetas para separar lógicas:
 
 ```
-parser_py/
-├── __init__.py          # Endpoints FastAPI
-├── parser_txt.py        # Parseo de tickets TXT
-├── parser_csv.py        # Parseo de catálogos CSV
-├── parser_excel.py      # Parseo de catálogos Excel
-└── utils.py             # Funciones compartidas
+parseador_de_tickets/
+├── cerebro/             # Lógica de negocio y procesamiento masivo
+│   ├── analizador.py
+│   ├── filtrador.py
+│   ├── lote.py
+│   └── vinculador.py
+├── formatos/            # Lectores específicos por formato de archivo
+│   ├── lector_csv.py
+│   ├── lector_excel.py
+│   └── lector_txt.py
+└── llm/                 # Inteligencia Artificial
+    ├── analizador_llm.py
+    └── rutas_modelos.py
 ```
 
-#### **`__init__.py`**
-- Registro de endpoints `/parsear_excel` y `/parsear_catalogo_visual`
-- **Cambio:** Endpoints duplicados eliminados (antes existían también en `parser_txt.py`)
+#### **`formatos/` (Lectores)**
+- Contiene `lector_csv.py`, `lector_excel.py` y `lector_txt.py`.
+- Su trabajo es puramente mecánico: extraer el texto plano de los archivos. No toman decisiones inteligentes.
 
-#### **`parser_txt.py`**
-- `parsear_archivo(ruta)`: Parsea archivos TXT línea por línea
-- `parsear_linea(linea)`: Extrae producto y precio de una línea
+#### **`llm/` (Modelos)**
+- **`analizador_llm.py`**: Motor central que envía las líneas de texto al modelo Qwen. Implementa la lógica de escalada de confianza (0.5B → 0.8B → 1.7B).
+- **`rutas_modelos.py`**: Contiene las constantes con las rutas absolutas a los archivos `.gguf`.
 
-#### **`parser_csv.py`**
-- `parsear_csv(ruta)`: Parsea archivos CSV con detección automática de delimitador
-
-#### **`parser_excel.py`**
-- `parsear_excel(ruta)`: Parsea archivos Excel (.xlsx, .xls)
-
-#### **`utils.py`**
-- `limpiar_producto(texto)`: Limpia caracteres especiales de nombres de producto
-- `es_categoria(linea)`: Determina si una línea es categoría (no producto)
+#### **`cerebro/` (Orquestadores)**
+- **`lote.py`**: Antes conocido como `carpeta.py` o `BatchProcessor`. Se encarga de procesar miles de tickets de forma asíncrona enviando eventos SSE (Server-Sent Events) al frontend.
+- **`analizador.py`**: El puente principal para la API que unifica el lector con el LLM.
+- **`filtrador.py` / `vinculador.py`**: Funciones de limpieza de caracteres y cruce de datos.
 
 ---
 
@@ -226,25 +230,25 @@ def descargar_modelos():
 
 ### **Auto-unload en 2 puntos**
 
-#### **1. Antes de batch processing (`carpeta.py`)**
+#### **1. Antes de batch processing (`cerebro/lote.py`)**
 ```python
 @app.post("/parsear_carpeta_stream")
 async def parsear_carpeta_stream(carpeta_data: CarpetaData):
-    # Descarga modelos antes de empezar
+    # Descarga modelos antes de empezar para liberar RAM
     descargar_modelos()
     
-    # Procesa carpeta...
+    # Procesa carpeta de forma asíncrona...
 ```
 
-#### **2. Después de ticket analysis (`parser.py`)**
+#### **2. Después de ticket analysis (`cerebro/analizador.py`)**
 ```python
 @app.post("/analizar_ticket")
 async def analizar_ticket(ticket: TicketRequest):
     try:
-        # Analiza ticket...
+        # Analiza ticket usando analizador_llm.py...
         return resultado
     finally:
-        # Descarga modelos después de analizar
+        # Descarga modelos después de analizar para no bloquear al cajero
         descargar_modelos()
 ```
 
@@ -340,11 +344,14 @@ pub fn limpiar_precio(precio_str: &str) -> f64 {
 - `top_p`: 0.9
 
 ### **Modelos utilizados**
-- **Qwen 0.5B:** Para parseo inicial de tickets
-- **Qwen 1.7B:** Para parseo de catálogos complejos
+- **Qwen 2.5 0.5B:** Para parseo inicial ultra-rápido de tickets.
+- **Qwen 3.5 0.8B:** Modelo intermedio para tickets con formato extraño.
+- **Qwen 3 1.7B:** Modelo pesado para catálogos altamente complejos.
 
-### **Fallback automático**
-- Si Qwen 0.5B tiene confianza < 0.8 → retry con Qwen 1.7B
+### **Fallback automático (Escalada de Confianza)**
+- 1. Qwen 0.5B analiza el ticket.
+- 2. Si la confianza es < 0.80 → descarga modelo y reintenta con Qwen 0.8B.
+- 3. Si la confianza sigue siendo < 0.80 → descarga modelo y saca la artillería pesada (Qwen 1.7B).
 
 ---
 
@@ -402,15 +409,16 @@ interface Producto {
 
 ### **Flujo de Parseo de Ticket**
 ```
-1. Usuario selecciona archivo TXT
+1. Usuario selecciona archivo TXT/CSV/Excel
 2. Frontend envía a `/analizar_ticket`
-3. Python parsea archivo con Qwen 0.5B
-4. Si confianza < 0.8 → retry con Qwen 1.7B
-5. Retorna LLMAnalysis con ejemplo_parseado
-6. Frontend muestra preview en ColumnMapper
-7. Usuario ajusta mapeo de columnas
-8. Click "Guardar Ticket" → persiste en DB
-9. Modelos se descargan de VRAM
+3. Python lee el archivo con el `lector_*` correspondiente.
+4. Python (`analizador_llm.py`) parsea 20 líneas con Qwen 0.5B.
+5. Si confianza < 0.80 → retry con Qwen 0.8B. Si falla → retry con Qwen 1.7B.
+6. Retorna LLMAnalysis con ejemplo_parseado JSON.
+7. Frontend muestra preview visual en ColumnMapper.
+8. Usuario ajusta mapeo de columnas.
+9. Click "Guardar Ticket" → persiste en DB.
+10. Modelos se descargan de VRAM (auto-unload).
 ```
 
 ### **Flujo de Parseo de Catálogo**

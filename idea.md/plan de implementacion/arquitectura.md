@@ -49,14 +49,24 @@ Y.A.R.V.I.S.-POS/
 │   │   │       │   ├── modalMetas.tsx # Modal de metas del empleado.
 │   │   │       │   └── modalTurnos.tsx# Modal de turnos del empleado.
 │   │   │       ├── adminfinanzas/
-│   │   │       │   └── finanzas.tsx   # Vista de contabilidad y reportes financieros.
+│   │   │       │   ├── AlertasPanel.tsx # Panel de alertas financieras (ej. gastos inusuales).
+│   │   │       │   ├── CortesManager.tsx # Gestión detallada de cortes de caja.
+│   │   │       │   ├── FinanzasDashboard.tsx # Dashboard principal de métricas financieras.
+│   │   │       │   ├── finanzas.tsx   # Contenedor y vista principal de contabilidad.
+│   │   │       │   ├── GastosManager.tsx # Registro y control de gastos operativos.
+│   │   │       │   ├── GraficasPanel.tsx # Panel de visualización de gráficas de utilidades.
+│   │   │       │   ├── hooks.ts       # Hooks personalizados para carga de datos financieros.
+│   │   │       │   ├── types.ts       # Tipos TypeScript específicos de finanzas.
+│   │   │       │   └── utils.ts       # Utilidades para formato y cálculos financieros.
 │   │   │       ├── admininventario/
 │   │   │       │   └── inventario.tsx # Gestión de productos, alertas de stock y CRUD.
 │   │   │       ├── adminticket/
+│   │   │       │   ├── graficas.tsx   # Gráficas de volumen de tickets y métodos de pago.
 │   │   │       │   └── tickets.tsx    # Historial de ventas y cortes de caja.
 │   │   │       ├── adminventas/
 │   │   │       │   └── ventas.tsx     # Reporte y métricas de ventas.
 │   │   │       ├── adminyarvis/
+│   │   │       │   ├── ChatWidget.tsx # Widget modular del chat.
 │   │   │       │   └── yarvis.tsx     # Interfaz directa con la IA administrativa.
 │   │   │       └── parseadodetickets/
 │   │   │           ├── BatchProcessor.tsx # Procesamiento en lote de archivos.
@@ -67,6 +77,8 @@ Y.A.R.V.I.S.-POS/
 │   │       ├── EmployeeDashboard.tsx  # Interfaz principal de la caja registradora.
 │   │       └── ventanas/
 │   │           ├── emplea_new_venta/
+│   │           │   ├── modalticket.tsx # Modal para previsualizar el ticket antes de cobrar.
+│   │           │   ├── modalventa.tsx # Modal para confirmar método de pago y monto recibido.
 │   │           │   └── nueva_venta.tsx# Carrito de compras, búsqueda por código e integración de IA.
 │   │           ├── empleaajustes/
 │   │           │   └── ajustes.tsx    # Configuración básica del perfil del empleado.
@@ -111,7 +123,14 @@ Y.A.R.V.I.S.-POS/
 │               │   │   ├── modalturnos.rs # Comandos para modal de turnos.
 │               │   │   └── mod.rs     
 │               │   ├── adminfinanzas/ 
-│               │   │   ├── finanzas.rs
+│               │   │   ├── alertas.rs # Comandos para alertas y notificaciones financieras.
+│               │   │   ├── cortes.rs  # Comandos para gestión de cortes de caja.
+│               │   │   ├── export.rs  # Exportación de datos a PDF o Excel.
+│               │   │   ├── finanzas.rs # Endpoints principales de contabilidad.
+│               │   │   ├── gastos.rs  # Comandos CRUD para gastos.
+│               │   │   ├── graficas.rs # Generación de datos estadísticos para gráficas.
+│               │   │   ├── metricas.rs # Cálculo de métricas como utilidad bruta y neta.
+│               │   │   ├── models.rs  # Estructuras de datos para los módulos financieros.
 │               │   │   └── mod.rs     
 │               │   ├── admininventory/
 │               │   │   ├── inventory.rs # Comandos CRUD de inventario.
@@ -125,6 +144,7 @@ Y.A.R.V.I.S.-POS/
 │               │   │   └── mod.rs     
 │               │   ├── admintarvis/   
 │               │   │   ├── ai.rs      # Conexión directa del Admin con endpoints de IA.
+│               │   │   ├── chat.rs    # Comandos específicos para comunicarse con el chatbot.
 │               │   │   └── mod.rs     
 │               │   ├── admintickets/  
 │               │   │   ├── tickets.rs # Comandos de Tauri para historial de tickets.
@@ -187,7 +207,14 @@ yarvis-IA/
 │       └── rutas_modelos.py  ← rutas a los archivos .gguf
 │
 └── 💬 chatbot/
-    ├── motor_chat.py         ← /chat, /chat_stream, /load_model
+    ├── motor_chat/           ← Motor central del chatbot (Modularizado)
+    │   ├── apis_cloud.py     ← Integración con APIs externas si el hardware local no da abasto.
+    │   ├── cache.py          ← Sistema de caché para respuestas repetitivas.
+    │   ├── consultas_db.py   ← Lógica para leer bases de datos SQLite desde el chatbot.
+    │   ├── endpoints.py      ← /chat, /chat_stream, /load_model
+    │   ├── gestion_hardware.py ← Medición de VRAM/RAM y selección de cuantización dinámica.
+    │   ├── motor_rag.py      ← Retrieval-Augmented Generation para buscar en embeddings antes de responder.
+    │   └── prompts.py        ← Plantillas de sistema, ejemplos y comportamiento de la IA.
     └── embeddings/
         ├── modelo.py         ← all-MiniLM-L6-v2 + cosine similarity
         └── endpoints.py      ← /generar_embedding, /buscar_similar
@@ -230,5 +257,5 @@ yarvis-IA/
 ```
 
 - **Frontend ↔ Rust**: Comunicación ultrarrápida usando IPC nativo de Tauri (`invoke()`).
-- **Rust ↔ SQLite**: Interacción directa con `sqlx` en modo asíncrono para asegurar que la UI nunca se congele.
+- **Rust ↔ SQLite**: Interacción directa con `sqlx` en modo asíncrono para asegurar que la UI nunca se congele. **Se utiliza el Modo WAL (Write-Ahead Logging)**, lo cual permite lecturas y escrituras simultáneas y evita bloqueos (locks) de la base de datos, mejorando masivamente el rendimiento en operaciones de alta concurrencia.
 - **Rust ↔ Python (IA)**: Rust inicia y apaga el servidor de Python como un proceso hijo (Sidecar). Rust o React se comunican con Python enviando peticiones HTTP REST a un puerto asignado dinámicamente en `localhost`.
