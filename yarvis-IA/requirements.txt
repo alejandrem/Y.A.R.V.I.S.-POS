@@ -1,12 +1,22 @@
+# --- Repositorios Extra ---
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# --- API y Servidor (Backend) ---
 fastapi
 uvicorn
 pydantic
-prophet
-pandas
-numpy
-llama-cpp-python
-requests
 python-multipart
+requests
+
+# --- Procesamiento de Datos y Predicciones ---
+numpy
+pandas
+prophet
+
+# --- Inteligencia Artificial y Modelos ---
+llama-cpp-python
 sentence-transformers
-torch --index-url https://download.pytorch.org/whl/cpu
+torch
+
+# --- Base de Datos Vectorial ---
 sqlite-vec
