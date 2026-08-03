@@ -150,7 +150,7 @@ def obtener_cancelaciones_por_cajero(dias: int = 7) -> list[dict]:
         conn.close()
 
 
-def obtener_reembolsos_por_producto(dias: int = 7) -> list[dict]:
+def obtener_reembolsos_por_producto(dias: int = 30) -> list[dict]:
     """Productos más devueltos (ventas canceladas) en los últimos N días."""
     conn = _conectar()
     if conn is None:
@@ -165,6 +165,35 @@ def obtener_reembolsos_por_producto(dias: int = 7) -> list[dict]:
             (fecha,)
         ).fetchall()
         return [{"producto": r["producto_nombre"], "reembolsos": r["n"]} for r in rows]
+    finally:
+        conn.close()
+
+
+def obtener_productos_mas_vendidos(dias: int = 30, top: int = 8) -> list[dict]:
+    """Productos más vendidos (por cantidad) en los últimos N días."""
+    conn = _conectar()
+    if conn is None:
+        return []
+    try:
+        fecha = (datetime.now() - timedelta(days=dias)).strftime("%Y-%m-%d")
+        rows = conn.execute(
+            "SELECT dv.producto_nombre, SUM(dv.cantidad) as cantidad, "
+            "       SUM(dv.subtotal) as total "
+            "FROM detalle_ventas dv JOIN ventas v ON dv.venta_id = v.id "
+            "WHERE v.estado != 'cancelada' "
+            "      AND (DATE(v.fecha) >= ? OR substr(v.fecha, 7, 4) || '-' || "
+            "           substr(v.fecha, 4, 2) || '-' || substr(v.fecha, 1, 2) >= ?) "
+            "GROUP BY dv.producto_nombre ORDER BY cantidad DESC LIMIT ?",
+            (fecha, fecha, top)
+        ).fetchall()
+        return [
+            {
+                "producto": r["producto_nombre"],
+                "cantidad": r["cantidad"],
+                "total": r["total"] or 0.0,
+            }
+            for r in rows
+        ]
     finally:
         conn.close()
 

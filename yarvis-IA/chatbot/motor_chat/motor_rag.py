@@ -1,9 +1,11 @@
 """
-🔍 motor_rag.py — Motor de búsqueda semántica (RAG).
+🔍 motor_rag.py — Motor de búsqueda semántica (RAG) con sqlite-vec.
 
 Se encarga de:
-    - Convertir textos en vectores (usa el modelo compartido de embeddings).
-    - Buscar los productos más parecidos por similitud de coseno.
+    - Convertir texto en embedding (all-MiniLM-L6-v2, compartido).
+    - Buscar los registros más similares en knowledge_base usando
+      vec_distance_cosine() de sqlite-vec (el motor de SQLite hace
+      la matemática en C, no Python).
     - Formatear productos de forma compacta para inyectarlos al prompt.
 
 El modelo all-MiniLM-L6-v2 se carga UNA sola vez en
@@ -11,51 +13,61 @@ chatbot/embeddings/modelo.py y se comparte con todo el sistema;
 aquí NO se duplica en memoria.
 """
 
-import numpy as np
+import sqlite3
 
-from ..embeddings.modelo import get_embedding_model
-
-
-def codificar_lista(textos: list[str]) -> list[list[float]]:
-    """Convierte una lista de textos en una lista de vectores."""
-    if not textos:
-        return []
-    return get_embedding_model().encode(textos, show_progress_bar=False).tolist()
+from ..embeddings.modelo import texto_a_embedding, embedding_a_blob
 
 
-def codificar_texto(texto: str) -> list[float]:
-    """Convierte un texto en un vector de 384 dimensiones."""
-    return get_embedding_model().encode(texto).tolist()
-
-
-def buscar_similares(
+def buscar_semantico(
+    db_path: str,
     query: str,
-    embeddings: list[tuple[str, list[float]]],
-    top_k: int = 8,
-) -> list[tuple[str, float]]:
-    """Busca los 'top_k' productos más parecidos por similitud de coseno.
+    top_k: int = 5,
+    categoria: str | None = None,
+) -> list[dict]:
+    """Busca los 'top_k' registros más similares en knowledge_base con sqlite-vec.
 
-    Recibe los pares (nombre, vector) ya calculados; devuelve (nombre, score).
+    La similitud de coseno la calcula SQLite en C vía vec_distance_cosine().
+    Devuelve [{id, contenido, categoria, score}] ordenado por score desc.
+    Lanza RuntimeError si la extensión sqlite-vec no está disponible.
     """
-    if not embeddings:
-        return []
+    query_blob = embedding_a_blob(texto_a_embedding(query))
 
-    q_np = np.array(codificar_texto(query))
-    q_norm = np.linalg.norm(q_np)
-    if q_norm == 0:
-        return []
+    conn = sqlite3.connect(db_path)
+    conn.enable_load_extension(True)
+    try:
+        import sqlite_vec
+        sqlite_vec.load(conn)
+    except Exception as e:
+        conn.close()
+        raise RuntimeError(
+            f"sqlite-vec no disponible: {e}. Instálalo con: pip install sqlite-vec"
+        ) from e
+    conn.enable_load_extension(False)
 
-    scored = []
-    for nombre, vec in embeddings:
-        v_np = np.array(vec)
-        v_norm = np.linalg.norm(v_np)
-        if v_norm == 0:
-            continue
-        sim = float(np.dot(q_np, v_np) / (q_norm * v_norm))
-        scored.append((nombre, sim))
+    sql = (
+        "SELECT id, contenido, categoria, "
+        "       vec_distance_cosine(embedding, ?) AS dist "
+        "FROM knowledge_base"
+    )
+    params: list = [query_blob]
+    if categoria:
+        sql += " WHERE categoria = ?"
+        params.append(categoria)
+    sql += " ORDER BY dist ASC LIMIT ?"
+    params.append(top_k)
 
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return scored[:top_k]
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": row_id,
+            "contenido": contenido,
+            "categoria": categoria_row,
+            "score": round(1 - dist, 4),
+        }
+        for row_id, contenido, categoria_row, dist in rows
+    ]
 
 
 def formatear_producto_compacto(nombre: str, info: dict) -> str:
