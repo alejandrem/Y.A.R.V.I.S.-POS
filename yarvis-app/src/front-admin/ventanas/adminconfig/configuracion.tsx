@@ -32,6 +32,8 @@ const Configuracion = ({
   const { theme, setTheme } = useThemeContext();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showBatchProcessor, setShowBatchProcessor] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState("");
 
   const {
     parsedItems, setParsedItems,
@@ -239,6 +241,30 @@ const Configuracion = ({
     }
   };
 
+  const handleSyncEmbeddings = async () => {
+    setIsSyncing(true);
+    setSyncResult("");
+    try {
+      const result = await invoke("backfill_embeddings") as {
+        status: string;
+        total_productos: number;
+        insertados: number;
+        omitidos: number;
+      };
+      setSyncResult(
+        `✓ Sincronización completa: ${result.insertados} embeddings generados, ${result.omitidos} ya existentes (${result.total_productos} productos).`
+      );
+    } catch (error) {
+      console.error("Error sincronizando embeddings:", error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setSyncResult(errorMsg.includes("no está listo")
+        ? "El motor de IA no está listo aún. Espera un momento e inténtalo de nuevo."
+        : `Error: ${errorMsg}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="flex-1 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
       <header className="mb-8 text-left relative">
@@ -431,7 +457,8 @@ const Configuracion = ({
             colorClass = "bg-green-50 text-green-600";
             dotClass = "bg-green-500";
           }
-          return (
+
+  return (
             <div className={`mx-8 mt-6 px-5 py-3 rounded-2xl flex items-center gap-3 ${colorClass}`}>
               <div className={`w-2 h-2 rounded-full ${dotClass}`}></div>
               <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
@@ -624,6 +651,26 @@ const Configuracion = ({
 
                 {parserMode === 'catalogo' && (
                   <CatalogosParseados />
+                )}
+
+                {parserMode === 'catalogo' && (
+                  <div className="pt-2">
+                    <button
+                      disabled={isSyncing}
+                      onClick={handleSyncEmbeddings}
+                      className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.3em] transition-all shadow-2xl flex items-center justify-center gap-3 ${
+                        !isSyncing
+                          ? 'bg-blue-600 text-white hover:scale-[1.02] active:scale-95 shadow-blue-200'
+                          : 'bg-neutral-100 text-neutral-300 cursor-wait shadow-none'
+                      }`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg>
+                      {isSyncing ? 'Sincronizando...' : 'Sincronizar embeddings del catálogo'}
+                    </button>
+                    {syncResult && (
+                      <p className="text-[10px] font-bold text-neutral-600 text-center pt-3">{syncResult}</p>
+                    )}
+                  </div>
                 )}
 
                 {parserMode !== 'entrenar IA' && (

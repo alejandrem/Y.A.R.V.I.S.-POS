@@ -403,6 +403,59 @@ pub async fn buscar_producto_similar(
     Ok(resp.results)
 }
 
+// ============================================================
+// BACKFILL: Genera embeddings para TODOS los productos
+// ============================================================
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct BackfillResult {
+    pub status: String,
+    pub total_productos: usize,
+    pub insertados: usize,
+    pub omitidos: usize,
+}
+
+/// Ejecuta el backfill llamando al sidecar Python (reutilizable desde el
+/// comando Tauri o desde el disparo automático al arrancar).
+pub async fn run_backfill(
+    sidecar: &AiSidecar,
+    db_path: &str,
+) -> Result<BackfillResult, String> {
+    let base_url = sidecar.base_url()
+        .ok_or("Motor de IA no disponible".to_string())?;
+
+    let payload = serde_json::json!({ "db_path": db_path });
+
+    let response = sidecar.http_client
+        .post(format!("{}/backfill", base_url))
+        .json(&payload)
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await
+        .map_err(|e| format!("Error de conexión con Python: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Python retornó error: {}", response.status()));
+    }
+
+    let resp: BackfillResult = response.json().await
+        .map_err(|e| format!("Error decodificando respuesta: {}", e))?;
+
+    Ok(resp)
+}
+
+#[tauri::command]
+pub async fn backfill_embeddings(
+    sidecar: tauri::State<'_, Arc<AiSidecar>>,
+    db_path_state: tauri::State<'_, DbPath>,
+) -> Result<BackfillResult, String> {
+    sidecar.check_process_alive();
+    if sidecar.get_status() != AiStatus::Ready {
+        return Err("Motor de IA no está listo".to_string());
+    }
+    run_backfill(&sidecar, &db_path_state.0).await
+}
+
 #[tauri::command]
 pub async fn get_catalogos_importados(
     state: tauri::State<'_, SqlitePool>,

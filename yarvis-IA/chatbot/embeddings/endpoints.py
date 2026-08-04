@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import sqlite3
 import base64
 
-from chatbot.embeddings.modelo import texto_a_embedding, embedding_a_blob
+from chatbot.embeddings.modelo import texto_a_embedding, textos_a_embeddings, embedding_a_blob
 from chatbot.motor_chat.motor_rag import buscar_semantico
 
 router = APIRouter()
@@ -47,6 +47,70 @@ async def buscar_similar(request: SearchRequest):
             request.db_path, request.query, request.top_k, request.categoria
         )
         return {"status": "ok", "results": resultados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BackfillRequest(BaseModel):
+    db_path: str
+
+
+@router.post("/backfill")
+async def backfill(request: BackfillRequest):
+    """Genera embeddings para TODOS los productos sin embedding en knowledge_base.
+
+    Recorre la tabla `productos`, genera el embedding (nombre + descripción +
+    categoría) y lo inserta en knowledge_base. Omite los que ya tienen uno
+    (comparando por contenido). Devuelve el conteo de insertados/omitidos.
+    """
+    try:
+        conn = sqlite3.connect(request.db_path)
+        conn.row_factory = sqlite3.Row
+
+        # Contenidos ya existentes en knowledge_base (para no duplicar)
+        existentes = {
+            r["contenido"]
+            for r in conn.execute("SELECT contenido FROM knowledge_base").fetchall()
+        }
+
+        # Todos los productos
+        productos = conn.execute(
+            "SELECT id, nombre, descripcion, precio_venta, stock, categoria FROM productos"
+        ).fetchall()
+
+        pendientes = []
+        for p in productos:
+            contenido = f"{p['nombre']} | ${p['precio_venta']:.2f} | stock: {p['stock']:.0f}"
+            if contenido in existentes:
+                continue
+            texto = " ".join(
+                t for t in [p["nombre"], p["descripcion"], p["categoria"]] if t
+            )
+            pendientes.append((contenido, p["categoria"] or "producto", texto))
+
+        insertados = 0
+        if pendientes:
+            blobs = [
+                embedding_a_blob(v)
+                for v in textos_a_embeddings([p[2] for p in pendientes])
+            ]
+            conn.executemany(
+                "INSERT INTO knowledge_base (contenido, categoria, embedding) VALUES (?, ?, ?)",
+                [
+                    (contenido, categoria, blob)
+                    for (contenido, categoria, _), blob in zip(pendientes, blobs)
+                ],
+            )
+            conn.commit()
+            insertados = len(pendientes)
+
+        conn.close()
+        return {
+            "status": "ok",
+            "total_productos": len(productos),
+            "insertados": insertados,
+            "omitidos": len(productos) - insertados,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

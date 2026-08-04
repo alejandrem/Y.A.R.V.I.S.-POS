@@ -22,13 +22,29 @@ pub fn run() {
         .setup(move |app| {
             let (pool, db_path_str) = backventanas::db::db::initialize_db(app.handle());
             app.manage(pool);
-            app.manage(backventanas::db::db::DbPath(db_path_str));
+            app.manage(backventanas::db::db::DbPath(db_path_str.clone()));
 
             app.manage(Arc::clone(&sidecar_for_setup));
 
             let sidecar_task = Arc::clone(&sidecar_for_setup);
+            let db_path_for_backfill = db_path_str.clone();
             tauri::async_runtime::spawn(async move {
-                sidecar::launch_ai_engine(sidecar_task).await;
+                sidecar::launch_ai_engine(sidecar_task.clone()).await;
+
+                // Cuando el motor de IA esté listo, poblara knowledge_base con
+                // los embeddings de todos los productos que aún no tengan uno.
+                if sidecar_task.get_status() == sidecar::AiStatus::Ready {
+                    println!("[YARVIS-SIDECAR] Motor listo. Generando embeddings del catálogo...");
+                    match backventanas::backadmin::admininventory::inventory::run_backfill(
+                        &sidecar_task, &db_path_for_backfill,
+                    ).await {
+                        Ok(r) => println!(
+                            "[YARVIS-SIDECAR] Backfill completado: {} insertados, {} omitidos ({} productos)",
+                            r.insertados, r.omitidos, r.total_productos
+                        ),
+                        Err(e) => println!("[YARVIS-SIDECAR] Backfill falló: {}", e),
+                    }
+                }
             });
 
             Ok(())
@@ -57,6 +73,7 @@ pub fn run() {
             backventanas::backadmin::admininventory::inventory::delete_inventory_item,
             backventanas::backadmin::admininventory::inventory::importar_catalogo,
             backventanas::backadmin::admininventory::inventory::buscar_producto_similar,
+            backventanas::backadmin::admininventory::inventory::backfill_embeddings,
             backventanas::backadmin::admininventory::inventory::get_catalogos_importados,
             backventanas::backadmin::admininventory::inventory::get_productos_por_catalogo,
             // Parser

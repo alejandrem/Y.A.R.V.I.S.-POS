@@ -148,6 +148,12 @@ def obtener_contexto_inteligente(role: str, pregunta: str) -> str:
         "producto", "stock", "artículo", "articulo", "categoria",
         "categoría", "hay", "tengo", "cuántos", "cuantos", "falta",
         "agotad", "surtir", "comprar", "pedido", "inventario",
+        # Términos de categorías del catálogo (para no confundirlos con ventas)
+        "dulce", "bebida", "sabrit", "fritura", "gaseos", "cerveza",
+        "refresco", "galleta", "chocolate", "mascota", "juguete",
+        "pan", "leche", "agua", "botana", "cafe", "café", "té",
+        "precio", "cuanto cuesta", "cuánto cuesta", "cuesta", "vale",
+        "existe",
     ])
     es_venta = any(k in preg for k in [
         "venta", "vendí", "vendi", "vende", "venden", "vendidos", "vendidas",
@@ -162,6 +168,16 @@ def obtener_contexto_inteligente(role: str, pregunta: str) -> str:
     es_anomalia = any(k in preg for k in [
         "anomal", "raro", "sospech", "inusual", "robo", "estornad",
         "reembolso", "cancelación", "cancelacion", "fraude",
+    ])
+
+    # Categorías específicas del catálogo: si el usuario las menciona, la
+    # pregunta es de PRODUCTOS, aunque use palabras como "venden"/"hay".
+    es_categoria_producto = any(k in preg for k in [
+        "sabrit", "dulce", "fritura", "galleta", "chocolate", "cerveza",
+        "gaseos", "refresco", "bebida", "agua", "leche", "pan", "cafe",
+        "café", "té", "te ", "mascota", "juguete", "botana", "chicles",
+        "cigarro", "lata", "pastel", "jabón", "shampoo", "champu",
+        "papel", "tortill", "queso", "yogurt", "helado",
     ])
 
     # Preguntas sobre qué puede hacer Y.A.R.V.I.S.
@@ -195,7 +211,13 @@ def obtener_contexto_inteligente(role: str, pregunta: str) -> str:
     ])
 
     # Saludos y mensajes cortos no necesitan productos
-    es_saludo = len(preg.split()) <= 2 and not any([es_producto, es_venta, es_empleado, es_anomalia, es_capacidades])
+    es_saludo = len(preg.split()) <= 2 and not any([es_producto, es_venta, es_empleado, es_anomalia, es_capacidades, es_categoria_producto])
+
+    # Si menciona una categoría concreta del catálogo, la pregunta es de productos
+    # (aunque use palabras de venta como "venden" o "hay").
+    if es_categoria_producto:
+        es_producto = True
+        es_venta = False
 
     # Si la pregunta es sobre qué puede hacer Y.A.R.V.I.S., responder capacidades
     if es_capacidades and not es_saludo:

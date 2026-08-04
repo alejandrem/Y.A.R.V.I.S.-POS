@@ -45,15 +45,15 @@ def buscar_semantico(
     conn.enable_load_extension(False)
 
     sql = (
-        "SELECT id, contenido, categoria, "
-        "       vec_distance_cosine(embedding, ?) AS dist "
+        "SELECT contenido, categoria, "
+        "       MIN(vec_distance_cosine(embedding, ?)) AS dist "
         "FROM knowledge_base"
     )
     params: list = [query_blob]
     if categoria:
         sql += " WHERE categoria = ?"
         params.append(categoria)
-    sql += " ORDER BY dist ASC LIMIT ?"
+    sql += " GROUP BY contenido ORDER BY dist ASC LIMIT ?"
     params.append(top_k)
 
     rows = conn.execute(sql, params).fetchall()
@@ -61,12 +61,12 @@ def buscar_semantico(
 
     return [
         {
-            "id": row_id,
+            "id": None,
             "contenido": contenido,
             "categoria": categoria_row,
             "score": round(1 - dist, 4),
         }
-        for row_id, contenido, categoria_row, dist in rows
+        for contenido, categoria_row, dist in rows
     ]
 
 

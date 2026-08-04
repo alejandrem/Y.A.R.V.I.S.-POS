@@ -459,15 +459,36 @@ uvicorn.run(app, host="127.0.0.1", port=PORT)
 ### 7.1 LLM del Parseador (`parseador_de_tickets/llm/analizador_llm.py`)
 
 **Modelos (Escalada por Confianza):**
-- **Qwen 2.5 0.5B** — Primer intento, ultra ligero (0.0 GB RAM req).
-- **Qwen 3.5 0.8B** — Segundo intento (1.0 GB RAM req).
-- **Qwen 3 1.7B** — Tercer intento, artillería pesada (4.0 GB RAM req).
 
 **Flujo de análisis:**
-1. Intenta parsear con 0.5B.
-2. Si la confianza es < 0.80, descarga modelo y reintenta con 0.8B.
-3. Si la confianza sigue siendo < 0.80, descarga modelo y reintenta con 1.7B.
-4. **Descarga modelos siempre al finalizar** para no secuestrar RAM del POS.
+1. Intenta con Qwen 0.5B
+2. Si confianza < 0.8, reintenta con Qwen 1.7B
+3. Si 0.5B falla, usa 1.7B directamente
+4. **Descarga modelos después de cada análisis** para liberar VRAM
+
+**Parámetros de carga:**
+```python
+Llama(
+    model_path=...,
+    n_ctx=4096,
+    n_gpu_layers=-1,  # Todos los layers en GPU
+    n_threads=4,
+    verbose=False
+)
+```
+
+**Función `descargar_modelos()`:**
+```python
+def descargar_modelos():
+    global _llm_0_5, _llm_1_7
+    if _llm_0_5 is not None:
+        del _llm_0_5
+        _llm_0_5 = None
+    if _llm_1_7 is not None:
+        del _llm_1_7
+        _llm_1_7 = None
+    gc.collect()
+```
 
 **Prompt del sistema:**
 Le pide a la IA que analice un ticket y retorne JSON con:

@@ -21,6 +21,13 @@ def texto_a_embedding(texto: str) -> list:
     return vec.tolist()
 
 
+def textos_a_embeddings(textos: list[str]) -> list[list]:
+    """Convierte una lista de textos a vectores en batch (más rápido)."""
+    model = get_embedding_model()
+    vecs = model.encode(textos, batch_size=64)
+    return [v.tolist() for v in vecs]
+
+
 def embedding_a_blob(vec: list) -> bytes:
     """Serializa un vector a BLOB (384 floats, little-endian)."""
     return struct.pack(f"<{len(vec)}f", *vec)
