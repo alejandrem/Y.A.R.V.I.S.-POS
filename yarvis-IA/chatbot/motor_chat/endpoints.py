@@ -159,7 +159,7 @@ async def model_status():
 @router.post("/load_model")
 async def load_model(request: LoadModelRequest):
     _registrar_actividad()
-    model_key = request.model.upper().replace("B", "B")
+    model_key = request.model.upper()
     if model_key not in ("0.5B", "0.8B", "1.7B"):
         raise HTTPException(status_code=400, detail=f"Modelo no válido: {request.model}")
     try:
@@ -180,7 +180,7 @@ async def stop():
 
 @router.post("/unload_model")
 async def unload_model(request: LoadModelRequest):
-    model_key = request.model.upper().replace("B", "B")
+    model_key = request.model.upper()
     if model_key not in ("0.5B", "0.8B", "1.7B"):
         raise HTTPException(status_code=400, detail=f"Modelo no válido: {request.model}")
     descargar_modelo(model_key)

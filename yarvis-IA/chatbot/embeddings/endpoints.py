@@ -30,7 +30,6 @@ async def generar_embedding(request: EmbeddingRequest):
 
 class SearchRequest(BaseModel):
     query: str
-    db_path: str
     top_k: int = 5
     categoria: str | None = None
 
@@ -43,9 +42,7 @@ async def buscar_similar(request: SearchRequest):
     vec_distance_cosine() ordena los embeddings por distancia de coseno.
     """
     try:
-        resultados = buscar_semantico(
-            request.db_path, request.query, request.top_k, request.categoria
-        )
+        resultados = buscar_semantico(request.query, request.top_k, request.categoria)
         return {"status": "ok", "results": resultados}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

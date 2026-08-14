@@ -1,6 +1,5 @@
 """
-Wrapper para compatibilidad con endpoints existentes.
-Importa las funciones desde los nuevos módulos parser_py.
+Endpoints de análisis de tickets y catálogos.
 """
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel

@@ -55,7 +55,7 @@ def _extraer_cajero(texto: str) -> str:
     return "SISTEMA"
 
 
-def _insertar_venta(conn: sqlite3.Connection, items: list[dict], cajero: str, archivo: str, fecha_iso: str = None, metodo_pago: str = "efectivo") -> int:
+def _insertar_venta(conn: sqlite3.Connection, items: list[dict], cajero: str, fecha_iso: str = None, metodo_pago: str = "efectivo") -> int:
     subtotal = _calcular_subtotal(items)
     iva = round(subtotal * 0.16, 2)
     total = round(subtotal + iva, 2)
@@ -183,7 +183,7 @@ def _procesar_carpeta_impl(archivos: list[str], mapeo: dict, db_path: str) -> di
                     conn = sqlite3.connect(db_path)
                     cajero = _extraer_cajero(texto)
                     metodo_pago = _extraer_metodo_pago(texto)
-                    venta_id = _insertar_venta(conn, items, cajero, archivo, fecha_iso, metodo_pago)
+                    venta_id = _insertar_venta(conn, items, cajero, fecha_iso, metodo_pago)
                     conn.commit()
                     conn.close()
 
@@ -337,7 +337,7 @@ async def parsear_carpeta_stream(request: ParseCarpetaRequest):
 
                                     cajero = _extraer_cajero(texto)
                                     metodo_pago = _extraer_metodo_pago(texto)
-                                    _insertar_venta(conn, items, cajero, archivo, fecha_iso, metodo_pago)
+                                    _insertar_venta(conn, items, cajero, fecha_iso, metodo_pago)
                                     exitosos += 1
                                     ventas_creadas += 1
                                     items_insertados += len(items)

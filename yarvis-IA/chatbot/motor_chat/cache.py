@@ -33,6 +33,39 @@ CACHE_REFRESH_INTERVAL = 60  # segundos
 _inventory_cache: dict = {}
 _cache_lock = threading.Lock()
 _cache_last_refresh: float = 0
+_cache_stop_event = threading.Event()
+
+# Palabras clave derivadas de los datos reales (catálogo y empleados), que se
+# regeneran en cada refresco. Evitan hardcodear nombres/categorías en el código.
+_catalogo_keywords: set = set()
+_empleado_keywords: set = set()
+
+# Palabras estructurales del idioma para detectar el tipo de pregunta.
+# NO incluyen nombres de productos ni empleados (eso viene de la DB).
+_PALABRAS_EMPLEADO = {
+    "empleado", "cajero", "turno", "salario", "meta", "reembolso",
+    "cancelación", "cancelacion",
+}
+
+# Stopwords para extraer palabras significativas de nombres/categorías.
+_STOPWORDS = {
+    "que", "para", "con", "los", "las", "una", "unas", "unos", "el", "la",
+    "de", "del", "en", "y", "a", "o", "por", "se",
+    "tiene", "tienen", "hay", "como", "cual", "cuál", "cuáles", "cuanto",
+    "cuánto", "estan", "están", "son", "quiero", "quien", "quién", "dame",
+    "me", "se", "por", "sabor", "sabores",
+}
+
+
+def _extraer_palabras(texto: str) -> set:
+    """Extrae tokens significativos (min 4 letras, sin stopwords) de un texto."""
+    if not texto:
+        return set()
+    tokens = set()
+    for word in re.findall(r"[a-záéíóúñü]{3,}", texto.lower()):
+        if len(word) >= 4 and word not in _STOPWORDS:
+            tokens.add(word)
+    return tokens
 
 
 # ============================================================
@@ -40,8 +73,8 @@ _cache_last_refresh: float = 0
 # ============================================================
 
 def _refresh_inventory_cache():
-    """Carga todos los productos del catálogo."""
-    global _inventory_cache, _cache_last_refresh
+    """Carga todos los productos del catálogo y deriva keywords de datos reales."""
+    global _inventory_cache, _cache_last_refresh, _catalogo_keywords, _empleado_keywords
     try:
         productos = cargar_productos()
         if productos is None:
@@ -59,11 +92,28 @@ def _refresh_inventory_cache():
             for p in productos
         }
 
+        # Keywords del catálogo: palabras de nombres + categorías reales.
+        cat_kw: set = set()
+        for p in productos:
+            cat_kw |= _extraer_palabras(p["nombre"])
+            cat_kw |= _extraer_palabras(p["categoria"])
+
+        # Keywords de empleados: nombres reales.
+        emp_kw: set = set()
+        try:
+            for e in obtener_empleados():
+                emp_kw |= _extraer_palabras(e["nombre"])
+        except Exception as e:
+            print(f"[YARVIS-CHAT] Error obteniendo empleados para keywords: {e}")
+
         with _cache_lock:
             _inventory_cache = new_cache
+            _catalogo_keywords = cat_kw
+            _empleado_keywords = emp_kw
             _cache_last_refresh = time.time()
 
-        print(f"[YARVIS-CHAT] Cache actualizado: {len(new_cache)} productos.")
+        print(f"[YARVIS-CHAT] Cache actualizado: {len(new_cache)} productos, "
+              f"{len(cat_kw)} keywords catálogo, {len(emp_kw)} keywords empleados.")
     except Exception as e:
         print(f"[YARVIS-CHAT] Error refrescando cache: {e}")
 
@@ -77,9 +127,18 @@ def _ensure_cache():
 
 def _scheduled_refresh():
     """Hilo de fondo: refresca la caché cada CACHE_REFRESH_INTERVAL segundos."""
-    while True:
-        time.sleep(CACHE_REFRESH_INTERVAL)
-        _refresh_inventory_cache()
+    while not _cache_stop_event.is_set():
+        if _cache_stop_event.wait(CACHE_REFRESH_INTERVAL):
+            break
+        try:
+            _refresh_inventory_cache()
+        except Exception as e:
+            print(f"[YARVIS-CHAT] Error en refresco programado: {e}")
+
+
+def detener_cache():
+    """Detiene el hilo de refresco programado (se usa al cerrar la app)."""
+    _cache_stop_event.set()
 
 
 def iniciar_cache():
@@ -100,21 +159,16 @@ def _buscar_productos(pregunta: str, top_k: int = 5) -> list[str]:
     """Busca productos relevantes: primero RAG (sqlite-vec) y si la base de
     conocimiento está vacía, respaldo por palabras clave en el catálogo."""
     db_path = find_db_path()
+    palabras: list[str] = []
     if db_path:
         try:
-            hits = buscar_semantico(db_path, pregunta, top_k=top_k)
+            hits = buscar_semantico(pregunta, top_k=top_k)
             if hits:
                 return [h["contenido"] for h in hits]
         except Exception:
             pass
 
-    _STOPWORDS = {
-        "que", "para", "con", "los", "las", "una", "unas", "unos",
-        "tiene", "tienen", "hay", "en", "de", "del", "como", "cual",
-        "cuál", "cuáles", "cuanto", "cuánto", "estan", "están", "son",
-        "quiero", "quien", "quién", "dame", "me", "se", "por",
-    }
-    palabras = [w.lower().strip("¿?.,¡!") for w in pregunta.split()
+        palabras = [w.lower().strip("¿?.,¡!") for w in pregunta.split()
                 if len(w) > 3 and w.lower() not in _STOPWORDS]
     if not palabras:
         return []
@@ -144,27 +198,21 @@ def obtener_contexto_inteligente(role: str, pregunta: str) -> str:
     partes = []
 
     # --- Detectar tipo de pregunta ---
+    # Términos estructurales (no dependen del catálogo) + keywords reales (DB).
     es_producto = any(k in preg for k in [
         "producto", "stock", "artículo", "articulo", "categoria",
         "categoría", "hay", "tengo", "cuántos", "cuantos", "falta",
         "agotad", "surtir", "comprar", "pedido", "inventario",
-        # Términos de categorías del catálogo (para no confundirlos con ventas)
-        "dulce", "bebida", "sabrit", "fritura", "gaseos", "cerveza",
-        "refresco", "galleta", "chocolate", "mascota", "juguete",
-        "pan", "leche", "agua", "botana", "cafe", "café", "té",
         "precio", "cuanto cuesta", "cuánto cuesta", "cuesta", "vale",
         "existe",
-    ])
+    ]) or any(k in preg for k in _catalogo_keywords)
     es_venta = any(k in preg for k in [
         "venta", "vendí", "vendi", "vende", "venden", "vendidos", "vendidas",
         "gananc", "ingreso", "cobr", "dinero", "efectivo", "tarjeta",
         "transferencia", "ticket", "hoy", "ayer", "semana", "mes", "total",
         "caja", "corte",
     ])
-    es_empleado = any(k in preg for k in [
-        "empleado", "cajero", "juan", "maría", "maria", "turno",
-        "salario", "meta", "reembolso", "cancelación", "cancelacion",
-    ])
+    es_empleado = any(k in preg for k in _PALABRAS_EMPLEADO) or any(k in preg for k in _empleado_keywords)
     es_anomalia = any(k in preg for k in [
         "anomal", "raro", "sospech", "inusual", "robo", "estornad",
         "reembolso", "cancelación", "cancelacion", "fraude",
@@ -172,13 +220,7 @@ def obtener_contexto_inteligente(role: str, pregunta: str) -> str:
 
     # Categorías específicas del catálogo: si el usuario las menciona, la
     # pregunta es de PRODUCTOS, aunque use palabras como "venden"/"hay".
-    es_categoria_producto = any(k in preg for k in [
-        "sabrit", "dulce", "fritura", "galleta", "chocolate", "cerveza",
-        "gaseos", "refresco", "bebida", "agua", "leche", "pan", "cafe",
-        "café", "té", "te ", "mascota", "juguete", "botana", "chicles",
-        "cigarro", "lata", "pastel", "jabón", "shampoo", "champu",
-        "papel", "tortill", "queso", "yogurt", "helado",
-    ])
+    es_categoria_producto = any(k in preg for k in _catalogo_keywords)
 
     # Preguntas sobre qué puede hacer Y.A.R.V.I.S.
     es_capacidades = any(k in preg for k in [
@@ -218,6 +260,7 @@ def obtener_contexto_inteligente(role: str, pregunta: str) -> str:
     if es_categoria_producto:
         es_producto = True
         es_venta = False
+        busca_mas_vendidos = False
 
     # Si la pregunta es sobre qué puede hacer Y.A.R.V.I.S., responder capacidades
     if es_capacidades and not es_saludo:

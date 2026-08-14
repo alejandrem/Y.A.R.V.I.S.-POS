@@ -86,7 +86,6 @@ def vincular_con_inventario(productos_parseados: list[dict], db_path: str, umbra
     for parseado in productos_parseados:
         nombre_parseado = parseado.get("producto", "")
         nombre_norm = _normalizar(nombre_parseado)
-        precio_parseado = parseado.get("precio_unitario", 0)
 
         # 1. Coincidencia exacta
         if nombre_norm in indice_nombre:
@@ -112,11 +111,10 @@ def vincular_con_inventario(productos_parseados: list[dict], db_path: str, umbra
                 mejor_match = None
 
                 for prod_inv in inventario_con_embedding:
-                    if prod_inv["embedding"]:
-                        score = cosine_similarity(emb_parseado, prod_inv["embedding"])
-                        if score > mejor_score:
-                            mejor_score = score
-                            mejor_match = prod_inv
+                    score = cosine_similarity(emb_parseado, prod_inv["embedding"])
+                    if score > mejor_score:
+                        mejor_score = score
+                        mejor_match = prod_inv
 
                 if mejor_match and mejor_score >= umbral_similitud:
                     vinculados.append({

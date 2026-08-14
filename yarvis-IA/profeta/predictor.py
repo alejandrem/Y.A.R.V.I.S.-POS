@@ -155,10 +155,3 @@ def run_prediction(db_path: str, days: int = 30) -> dict:
     except Exception as e:
         print(f"[YARVIS-PROFETA] ❌ Error: {e}")
         return {"error": str(e)}
-
-
-if __name__ == "__main__":
-    db_test = os.path.join(
-        os.path.expanduser("~"), ".local", "share", "com.yarvis.app", "yarvis.db"
-    )
-    print(run_prediction(db_test))

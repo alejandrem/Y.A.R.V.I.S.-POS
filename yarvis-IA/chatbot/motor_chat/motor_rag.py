@@ -13,13 +13,11 @@ chatbot/embeddings/modelo.py y se comparte con todo el sistema;
 aquí NO se duplica en memoria.
 """
 
-import sqlite3
-
 from ..embeddings.modelo import texto_a_embedding, embedding_a_blob
+from .consultas_db import _conectar
 
 
 def buscar_semantico(
-    db_path: str,
     query: str,
     top_k: int = 5,
     categoria: str | None = None,
@@ -27,22 +25,17 @@ def buscar_semantico(
     """Busca los 'top_k' registros más similares en knowledge_base con sqlite-vec.
 
     La similitud de coseno la calcula SQLite en C vía vec_distance_cosine().
-    Devuelve [{id, contenido, categoria, score}] ordenado por score desc.
-    Lanza RuntimeError si la extensión sqlite-vec no está disponible.
+    Devuelve [{contenido, categoria, score}] ordenado por score desc.
+
+    Usa la conexión SQLite reutilizada del hilo (consultas_db._conectar).
+    La extensión sqlite-vec se carga UNA vez al conectar (ver
+    consultas_db._cargar_extension_vec); aquí solo se ejecuta la consulta.
     """
     query_blob = embedding_a_blob(texto_a_embedding(query))
 
-    conn = sqlite3.connect(db_path)
-    conn.enable_load_extension(True)
-    try:
-        import sqlite_vec
-        sqlite_vec.load(conn)
-    except Exception as e:
-        conn.close()
-        raise RuntimeError(
-            f"sqlite-vec no disponible: {e}. Instálalo con: pip install sqlite-vec"
-        ) from e
-    conn.enable_load_extension(False)
+    conn = _conectar()
+    if conn is None:
+        return []
 
     sql = (
         "SELECT contenido, categoria, "
@@ -57,11 +50,9 @@ def buscar_semantico(
     params.append(top_k)
 
     rows = conn.execute(sql, params).fetchall()
-    conn.close()
 
     return [
         {
-            "id": None,
             "contenido": contenido,
             "categoria": categoria_row,
             "score": round(1 - dist, 4),
