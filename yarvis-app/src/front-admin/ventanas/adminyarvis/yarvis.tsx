@@ -1,15 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import ChatWidget, { type ModelKey, MODEL_OPTIONS, getActiveCloud } from "./ChatWidget";
+import ChatWidget, { type ModelKey, CLOUD_PROVIDERS, MODEL_OPTIONS, getActiveCloud } from "./ChatWidget";
 
 const API_PROVIDERS = [
-  { id: "openai", name: "OpenAI", placeholder: "sk-..." },
-  { id: "anthropic", name: "Anthropic", placeholder: "sk-ant-..." },
   { id: "google", name: "Google AI", placeholder: "AIza..." },
-  { id: "mistral", name: "Mistral", placeholder: "mistral-..." },
-  { id: "groq", name: "Groq", placeholder: "gsk_..." },
-  { id: "deepseek", name: "DeepSeek", placeholder: "sk-..." },
-  { id: "ollama", name: "Ollama (Local)", placeholder: "http://localhost:11434" },
+  { id: "opencode", name: "OpenCode", placeholder: "sk-..." },
 ];
 
 function pickBestModel(ramGb: number): ModelKey {
@@ -27,6 +22,10 @@ const AdminYarvis = () => {
       return {};
     }
   });
+
+  const [cloudModels, setCloudModels] = useState<{ id: string; name: string }[]>([]);
+  const [cloudModel, setCloudModel] = useState("");
+  const [cloudModelsLoading, setCloudModelsLoading] = useState(false);
 
   const activeCloud = getActiveCloud();
 
@@ -164,6 +163,58 @@ const AdminYarvis = () => {
   const handleSaveApiKeys = () => {
     localStorage.setItem("yarvis_api_keys", JSON.stringify(apiKeys));
     setShowApiModal(false);
+    const first = CLOUD_PROVIDERS.find((p) => (apiKeys[p.id] || "").trim());
+    refreshCloudModels(first ? first.id : undefined, first ? apiKeys[first.id] : undefined);
+  };
+
+  const refreshCloudModels = async (provider?: string, apiKey?: string) => {
+    const p = provider ?? activeCloud.provider;
+    const k = apiKey ?? activeCloud.apiKey;
+    if (!p) {
+      setCloudModels([]);
+      setCloudModel("");
+      return;
+    }
+    setCloudModelsLoading(true);
+    try {
+      const res = await invoke<{ models: { id: string; name: string }[] }>("get_cloud_models", {
+        provider: p,
+        apiKey: k,
+      });
+      setCloudModels(res.models);
+      let stored: { provider?: string; model?: string } | null = null;
+      try {
+        stored = JSON.parse(localStorage.getItem("yarvis_cloud_model") || "null");
+      } catch { /* ignore */ }
+      const selected =
+        stored && stored.provider === p && stored.model
+          ? stored.model
+          : activeCloud.provider === p
+            ? activeCloud.model
+            : res.models[0]?.id ?? "";
+      setCloudModel(selected);
+    } catch {
+      /* ignore */
+    } finally {
+      setCloudModelsLoading(false);
+    }
+  };
+
+  const selectCloudModel = (model: string) => {
+    setCloudModel(model);
+    try {
+      localStorage.setItem(
+        "yarvis_cloud_model",
+        JSON.stringify({ provider: activeCloud.provider, model })
+      );
+    } catch { /* ignore */ }
+  };
+
+  const toggleModelPicker = () => {
+    setShowModelPicker((prev) => {
+      if (!prev && activeCloud.provider && cloudModels.length === 0) refreshCloudModels();
+      return !prev;
+    });
   };
 
   return (
@@ -198,7 +249,7 @@ const AdminYarvis = () => {
 
             <div ref={modelPickerRef} className="relative">
               <button
-                onClick={() => setShowModelPicker(!showModelPicker)}
+                onClick={toggleModelPicker}
                 disabled={!!loadingModel}
                 className="flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm hover:bg-white hover:shadow-md transition-all disabled:opacity-50"
               >
@@ -217,6 +268,46 @@ const AdminYarvis = () => {
                     <p className="px-4 py-2 text-[10px] font-black text-neutral-400 uppercase tracking-widest">
                       Seleccionar modelo
                     </p>
+                    {activeCloud.provider && (
+                      <div className="mb-1">
+                        <div className="px-4 py-2 flex items-center justify-between">
+                          <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">
+                            Modelo de {activeCloud.display}
+                          </p>
+                          <button
+                            onClick={() => refreshCloudModels()}
+                            title="Actualizar lista de modelos"
+                            className="flex items-center gap-1 text-[9px] font-black text-neutral-500 uppercase tracking-widest hover:text-neutral-900 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={cloudModelsLoading ? "animate-spin" : ""}><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+                            {cloudModelsLoading ? "..." : "Actualizar"}
+                          </button>
+                        </div>
+                        <div className="px-2 pb-1 max-h-40 overflow-y-auto custom-scrollbar space-y-1">
+                          {cloudModels.length === 0 && !cloudModelsLoading && (
+                            <p className="px-3 py-2 text-[10px] font-bold text-neutral-400">
+                              Sin modelos cargados. Pulsa Actualizar.
+                            </p>
+                          )}
+                          {cloudModels.map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => selectCloudModel(m.id)}
+                              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${cloudModel === m.id ? "bg-neutral-900 text-white" : "hover:bg-neutral-50 text-neutral-700"}`}
+                            >
+                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cloudModel === m.id ? "bg-white" : "bg-blue-500"}`}></div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-black truncate">{m.name}</p>
+                                <p className={`text-[9px] font-bold truncate ${cloudModel === m.id ? "text-white/50" : "text-neutral-400"}`}>{m.id}</p>
+                              </div>
+                              {cloudModel === m.id && (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white flex-shrink-0"><polyline points="20 6 9 17 4 12" /></svg>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {MODEL_OPTIONS.map((opt) => {
                       const isLoaded = loadedModels[opt.key];
                       const isLoadingThis = loadingModel === opt.key;
@@ -273,7 +364,7 @@ const AdminYarvis = () => {
                     <div className="px-4 py-2.5 border-t border-neutral-100 mt-1 space-y-0.5">
                       <p className="text-[10px] font-black text-neutral-500">
                         {activeCloud.provider
-                          ? `Usando API: ${activeCloud.display}`
+                          ? `Usando API: ${activeCloud.display}${cloudModel ? ` · ${cloudModel}` : ""}`
                           : `Modelo local: Qwen ${currentModel.label}`}
                       </p>
                       <p className="text-[10px] font-bold text-neutral-400">
@@ -369,7 +460,7 @@ const AdminYarvis = () => {
                     {provider.name}
                   </label>
                   <input
-                    type={provider.id === "ollama" ? "text" : "password"}
+                    type="password"
                     value={apiKeys[provider.id] || ""}
                     onChange={(e) => setApiKeys({ ...apiKeys, [provider.id]: e.target.value })}
                     placeholder={provider.placeholder}

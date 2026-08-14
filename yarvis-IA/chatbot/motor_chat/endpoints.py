@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .apis_cloud import generar_completo, generar_stream, nombre_proveedor
+from .apis_cloud import generar_completo, generar_stream, listar_modelos, nombre_proveedor
 from .cache import cantidad_productos_cache, iniciar_cache
 from .gestion_hardware import (
     WORD_LIMITS,
@@ -26,6 +26,7 @@ from .gestion_hardware import (
     estado_modelos,
 )
 from .prompts import construir_mensajes
+from .prompts_api import construir_mensajes_api
 
 router = APIRouter()
 
@@ -77,6 +78,11 @@ class ChatRequest(BaseModel):
     provider: str = ""
     api_key: str = ""
     tienda_info: dict = {}
+
+
+class CloudModelsRequest(BaseModel):
+    provider: str
+    api_key: str = ""
 
 
 class LoadModelRequest(BaseModel):
@@ -181,6 +187,15 @@ async def unload_model(request: LoadModelRequest):
     return {"status": "ok", "model": model_key, "message": f"Qwen {model_key} descargado", **_estado_completo()}
 
 
+@router.post("/cloud_models")
+async def cloud_models(request: CloudModelsRequest):
+    """Lista los modelos disponibles de un proveedor de nube (dinámico)."""
+    try:
+        return {"models": listar_modelos(request.provider, request.api_key)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/chat")
 async def chat(request: ChatRequest):
     _registrar_actividad()
@@ -190,15 +205,16 @@ async def chat(request: ChatRequest):
     if not ultimo or not ultimo.strip():
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
-    chat_messages = construir_mensajes(request.role, request.messages, ultimo)
-
     if request.provider:
         try:
+            chat_messages = construir_mensajes_api(request.messages)
             respuesta = generar_completo(request.provider, request.api_key, request.model, chat_messages)
             return {"response": respuesta, "model_used": nombre_proveedor(request.provider)}
         except Exception as e:
+            print(f"[YARVIS-CHAT] Error proveedor ({request.provider}): {e}")
             return {"response": f"Error: {e}", "model_used": "none"}
 
+    chat_messages = construir_mensajes(request.role, request.messages, ultimo)
     selected = request.model.lower()
 
     if selected in ("0.5b", "0.8b", "1.7b"):
@@ -230,28 +246,36 @@ async def chat_stream(request: ChatRequest):
 
     _cancel_event.clear()
 
-    chat_messages = construir_mensajes(request.role, request.messages, ultimo)
-
     if request.provider:
+        chat_messages = construir_mensajes_api(request.messages)
         cloud_display = nombre_proveedor(request.provider)
         max_w = 1000
 
         def generate_cloud():
             try:
+                usage: dict = {}
+                total_chars = sum(len(m.get("content") or "") for m in chat_messages)
+                print(f"[YARVIS-CHAT] Cloud: {len(chat_messages)} msgs, {total_chars} chars (~{total_chars // 4} tok est)")
                 textos = (token for token, _ in generar_stream(
-                    request.provider, request.api_key, request.model, chat_messages
+                    request.provider, request.api_key, request.model, chat_messages,
+                    usage=usage,
                 ))
                 for kind, text in _separar_think(textos, max_w):
                     if _cancel_event.is_set():
                         break
                     yield f"data: {json.dumps({kind: text, 'model': cloud_display})}\n\n"
+                if usage:
+                    print(f"[YARVIS-CHAT] Usage real del proveedor: {usage.get('prompt_tokens')} prompt + {usage.get('completion_tokens')} completion = {usage.get('total_tokens')} total")
+                    yield f"data: {json.dumps({'usage': usage, 'model': cloud_display})}\n\n"
                 if not _cancel_event.is_set():
                     yield f"data: {json.dumps({'done': True, 'model': cloud_display})}\n\n"
             except Exception as e:
+                print(f"[YARVIS-CHAT] Error proveedor ({cloud_display}): {e}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         return StreamingResponse(generate_cloud(), media_type="text/event-stream")
 
+    chat_messages = construir_mensajes(request.role, request.messages, ultimo)
     selected = request.model.lower()
 
     llm = None
@@ -284,7 +308,7 @@ async def chat_stream(request: ChatRequest):
                 top_p=0.85,
                 stream=True,
             )
-            deltas = (c["choices"][0].get("delta", {}).get("content", "") for c in stream)
+            deltas = (((c.get("choices") or [{}])[0].get("delta") or {}).get("content", "") for c in stream)
             for kind, text in _separar_think(deltas, max_w):
                 if _cancel_event.is_set():
                     break

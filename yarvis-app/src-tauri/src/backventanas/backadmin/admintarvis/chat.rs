@@ -57,6 +57,27 @@ pub async fn load_chat_model(
     resp.json().await.map_err(|e| e.to_string())
 }
 
+/// Lista los modelos disponibles de un proveedor de nube (dinámico).
+#[tauri::command]
+pub async fn get_cloud_models(
+    sidecar: tauri::State<'_, Arc<AiSidecar>>,
+    provider: String,
+    api_key: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let base_url = sidecar.base_url()
+        .ok_or("El motor de IA no está disponible")?;
+    let resp = sidecar.http_client
+        .post(format!("{}/cloud_models", base_url))
+        .json(&serde_json::json!({"provider": provider, "api_key": api_key.unwrap_or_default()}))
+        .send().await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(text);
+    }
+    resp.json().await.map_err(|e| e.to_string())
+}
+
 /// Detiene la generación en curso (local o nube) en el motor de IA.
 #[tauri::command]
 pub async fn stop_chat_stream(
@@ -213,6 +234,17 @@ pub async fn send_chat_stream(
                             "token": think,
                             "model": model_used,
                         }));
+                    }
+                    if let Some(usage) = data.get("usage").and_then(|u| u.as_object()) {
+                        if !usage.is_empty() {
+                            model_used = data.get("model")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or(&model_used)
+                                .to_string();
+                            let _ = app.emit("chat-usage", serde_json::json!({
+                                "usage": usage,
+                            }));
+                        }
                     }
                     if data.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
                         model_used = data.get("model")

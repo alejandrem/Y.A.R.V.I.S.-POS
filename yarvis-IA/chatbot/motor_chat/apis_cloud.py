@@ -1,5 +1,5 @@
 """
-☁️ apis_cloud.py — Respuestas por API de proveedores de IA (OpenAI, Claude, Gemini, etc.).
+☁️ apis_cloud.py — Respuestas por API de proveedores de IA (Gemini y OpenCode Zen).
 
 Se encarga de:
     - Definir la configuración de cada proveedor (URL base, modelo por defecto, formato).
@@ -14,40 +14,15 @@ import json
 import httpx
 
 PROVIDERS = {
-    "openai": {
-        "name": "ChatGPT",
-        "base_url": "https://api.openai.com/v1",
-        "default_model": "gpt-4o-mini",
-    },
-    "anthropic": {
-        "name": "Claude",
-        "base_url": "https://api.anthropic.com/v1",
-        "default_model": "claude-3-5-haiku-latest",
-    },
     "google": {
         "name": "Gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "default_model": "gemini-2.0-flash",
     },
-    "mistral": {
-        "name": "Mistral",
-        "base_url": "https://api.mistral.ai/v1",
-        "default_model": "mistral-small-latest",
-    },
-    "groq": {
-        "name": "Groq",
-        "base_url": "https://api.groq.com/openai/v1",
-        "default_model": "llama-3.3-70b-versatile",
-    },
-    "deepseek": {
-        "name": "DeepSeek",
-        "base_url": "https://api.deepseek.com/v1",
-        "default_model": "deepseek-chat",
-    },
-    "ollama": {
-        "name": "Ollama",
-        "base_url": None,
-        "default_model": "llama3",
+    "opencode": {
+        "name": "OpenCode",
+        "base_url": "https://opencode.ai/zen/v1",
+        "default_model": "deepseek-v4-flash-free",
     },
 }
 
@@ -74,7 +49,7 @@ def _normalizar_mensajes(messages: list[dict]) -> list[dict]:
 
 
 def _iter_openai_compatible(cfg: dict, api_key: str, model: str, messages: list, display: str):
-    """OpenAI, Mistral, Groq, DeepSeek (y cualquiera compatible con /chat/completions)."""
+    """OpenCode Zen (y cualquiera compatible con /chat/completions)."""
     url = f"{cfg['base_url']}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
     body = {
@@ -100,34 +75,6 @@ def _iter_openai_compatible(cfg: dict, api_key: str, model: str, messages: list,
             token = delta.get("content", "")
             if token:
                 yield token, display
-
-
-def _iter_anthropic(cfg: dict, api_key: str, model: str, messages: list, display: str):
-    """Claude — usa 'system' aparte y solo user/assistant en messages."""
-    url = f"{cfg['base_url']}/messages"
-    headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-    system = next((m["content"] for m in messages if m.get("role") == "system"), "")
-    history = [m for m in _normalizar_mensajes(messages) if m["role"] in ("user", "assistant")]
-    body = {
-        "model": model,
-        "max_tokens": 4096,
-        "system": system,
-        "messages": history,
-        "stream": True,
-    }
-    with httpx.stream("POST", url, headers=headers, json=body, timeout=_TIMEOUT) as resp:
-        resp.raise_for_status()
-        for line in resp.iter_lines():
-            if not line or not line.startswith("data:"):
-                continue
-            try:
-                data = json.loads(line[5:].strip())
-            except json.JSONDecodeError:
-                continue
-            if data.get("type") == "content_block_delta":
-                token = data.get("delta", {}).get("text", "")
-                if token:
-                    yield token, display
 
 
 def _iter_google(cfg: dict, api_key: str, model: str, messages: list, display: str):
@@ -161,28 +108,6 @@ def _iter_google(cfg: dict, api_key: str, model: str, messages: list, display: s
                     yield token, display
 
 
-def _iter_ollama(base_url: str, model: str, messages: list, display: str):
-    """Ollama local — NDJSON en /api/chat."""
-    url = f"{base_url}/api/chat"
-    body = {
-        "model": model,
-        "messages": _normalizar_mensajes(messages),
-        "stream": True,
-    }
-    with httpx.stream("POST", url, json=body, timeout=_TIMEOUT) as resp:
-        resp.raise_for_status()
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            token = chunk.get("message", {}).get("content", "")
-            if token:
-                yield token, display
-
-
 def _error_amigable(e: httpx.HTTPStatusError) -> str:
     """Traduce errores HTTP del proveedor a mensajes claros en español."""
     status = e.response.status_code
@@ -202,20 +127,15 @@ def generar_stream(provider: str, api_key: str, model: str, messages: list):
     cfg = PROVIDERS.get(provider)
     if cfg is None:
         raise ValueError(f"Proveedor no soportado: {provider}")
-    if provider != "ollama" and not api_key:
+    if not api_key:
         raise ValueError("Falta la API key del proveedor.")
 
     model = model or cfg["default_model"]
     display = cfg["name"]
 
     try:
-        if provider == "anthropic":
-            yield from _iter_anthropic(cfg, api_key, model, messages, display)
-        elif provider == "google":
+        if provider == "google":
             yield from _iter_google(cfg, api_key, model, messages, display)
-        elif provider == "ollama":
-            base = api_key or "http://localhost:11434"
-            yield from _iter_ollama(base, model, messages, display)
         else:
             yield from _iter_openai_compatible(cfg, api_key, model, messages, display)
     except httpx.HTTPStatusError as e:

@@ -23,13 +23,8 @@ export const MODEL_OPTIONS: { key: ModelKey; label: string; desc: string; minRam
 ];
 
 export const CLOUD_PROVIDERS: { id: string; display: string; defaultModel: string }[] = [
-  { id: "openai", display: "ChatGPT", defaultModel: "gpt-4o-mini" },
-  { id: "anthropic", display: "Claude", defaultModel: "claude-3-5-haiku-latest" },
   { id: "google", display: "Gemini", defaultModel: "gemini-2.0-flash" },
-  { id: "mistral", display: "Mistral", defaultModel: "mistral-small-latest" },
-  { id: "groq", display: "Groq", defaultModel: "llama-3.3-70b-versatile" },
-  { id: "deepseek", display: "DeepSeek", defaultModel: "deepseek-chat" },
-  { id: "ollama", display: "Ollama", defaultModel: "llama3" },
+  { id: "opencode", display: "OpenCode", defaultModel: "mimo-v2.5-free" },
 ];
 
 export interface ActiveCloud {
@@ -45,9 +40,17 @@ export function getActiveCloud(): ActiveCloud {
     const raw = localStorage.getItem("yarvis_api_keys");
     if (!raw) return empty;
     const keys = JSON.parse(raw) as Record<string, string>;
+    let stored: { provider?: string; model?: string } | null = null;
+    try {
+      stored = JSON.parse(localStorage.getItem("yarvis_cloud_model") || "null");
+    } catch { /* ignore */ }
     for (const p of CLOUD_PROVIDERS) {
       if ((keys[p.id] || "").trim()) {
-        return { provider: p.id, apiKey: keys[p.id].trim(), display: p.display, model: p.defaultModel };
+        const model =
+          stored && stored.provider === p.id && stored.model
+            ? stored.model
+            : p.defaultModel;
+        return { provider: p.id, apiKey: keys[p.id].trim(), display: p.display, model };
       }
     }
   } catch { /* ignore */ }
@@ -59,6 +62,14 @@ function modelDotClass(model: string): string {
   if (model === "0.8B") return "bg-amber-500";
   if (model === "0.5B") return "bg-neutral-400";
   return "bg-blue-500";
+}
+
+function contextLimit(_model: string): number {
+  return 131072;
+}
+
+function fmtTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
 }
 
 interface ModelPickerState {
@@ -94,6 +105,10 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
 
   const [currentSuggestion, setCurrentSuggestion] = useState(0);
 
+  const [contextUsed, setContextUsed] = useState(0);
+  const [contextMax, setContextMax] = useState(131072);
+  const usageRealRef = useRef(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -125,8 +140,18 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
       setMessages([]);
       setExpandedThinking(new Set());
       localStorage.removeItem(storageKey);
+      usageRealRef.current = false;
+      setContextUsed(0);
     }
   }, [clearTrigger, storageKey]);
+
+  useEffect(() => {
+    if (usageRealRef.current) return;
+    const chars =
+      messages.reduce((acc, m) => acc + (m.content || "").length, 0) + streamingText.length;
+    setContextUsed(Math.round(chars / 4));
+    setContextMax(contextLimit(getActiveCloud().model || streamingModel));
+  }, [messages, streamingText, streamingModel]);
 
   const toggleThinking = (idx: number) => {
     setExpandedThinking((prev) => {
@@ -294,6 +319,19 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
         setStreamingModel(event.payload.model);
       }));
 
+      unlistenRef.current.push(await listen<{
+        usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      }>("chat-usage", (event) => {
+        if (settled) return;
+        const u = event.payload.usage;
+        const total = u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0);
+        if (total) {
+          usageRealRef.current = true;
+          setContextUsed(total);
+          setContextMax(contextLimit(getActiveCloud().model || streamingModelRef.current));
+        }
+      }));
+
       unlistenRef.current.push(await listen<{ response: string; model: string }>("chat-complete", (event) => {
         finish(event.payload.response, event.payload.model);
       }));
@@ -304,7 +342,7 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
 
       const cloud = getActiveCloud();
       await invoke("send_chat_stream", {
-        messages: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+        messages: updatedMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
         role,
         model: cloud.provider ? cloud.model : selectedModel,
         provider: cloud.provider,
@@ -416,6 +454,24 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
           </div>
         )}
 
+        {/* WAITING FOR FIRST TOKEN */}
+        {isStreaming && !streamingText && !thinkingText && (
+          <div className="flex justify-start animate-in fade-in duration-300">
+            <div className="bg-neutral-50 border border-neutral-200 rounded-2xl rounded-bl-md px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1.5">
+                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce"></div>
+                </div>
+                <span className="text-[13px] font-bold text-neutral-400 uppercase tracking-widest animate-pulse">
+                  {streamingModel ? `${streamingModel} escribiendo...` : "Escribiendo..."}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* LOADING STATE (before streaming) */}
         {isLoading && !isStreaming && (
           <div className="flex justify-start animate-in fade-in duration-300">
@@ -439,6 +495,20 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
 
       {/* INPUT */}
       <div className="flex-shrink-0 px-8 pb-8 pt-3">
+        {contextUsed > 0 && (
+          <div className="mb-3 flex items-center gap-2.5">
+            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-400 flex-shrink-0">Contexto</span>
+            <div className="flex-1 h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${contextUsed / contextMax > 0.85 ? "bg-red-500" : "bg-neutral-900"}`}
+                style={{ width: `${Math.min(100, (contextUsed / contextMax) * 100)}%` }}
+              />
+            </div>
+            <span className="text-[9px] font-bold text-neutral-400 flex-shrink-0 tabular-nums">
+              {fmtTokens(contextUsed)} / {fmtTokens(contextMax)} tok
+            </span>
+          </div>
+        )}
         {error && (
           <div className="mb-3 px-5 py-3 bg-red-50 border border-red-200 rounded-2xl text-[14px] font-bold text-red-600 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
