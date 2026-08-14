@@ -13,7 +13,7 @@ export function useMetricas() {
     setLoading(true);
     try {
       const [res, pe] = await Promise.all([
-        invoke<ResumenPeriodo>('get_resumen_periodo', { fecha_inicio, fecha_fin }),
+        invoke<ResumenPeriodo>('get_resumen_periodo', { fechaInicio: fecha_inicio, fechaFin: fecha_fin }),
         invoke<PuntoEquilibrio>('get_punto_equilibrio'),
       ]);
       setResumen(res);
@@ -35,7 +35,7 @@ export function useGraficas() {
   const cargarPL = useCallback(async (fecha_inicio: string, fecha_fin: string, granularidad: 'dia' | 'semana' | 'mes') => {
     setLoading(true);
     try {
-      const data = await invoke<DatoGraficaPL[]>('get_datos_grafica_pl', { fecha_inicio, fecha_fin, granularidad });
+      const data = await invoke<DatoGraficaPL[]>('get_datos_grafica_pl', { fechaInicio: fecha_inicio, fechaFin: fecha_fin, granularidad });
       setDatosPL(data);
     } catch (error) {
       console.error('Error cargando gráficas:', error);
@@ -116,7 +116,7 @@ export function useCortes() {
   }, [cargarCortes]);
 
   const cerrarCorte = useCallback(async (corte_id: number, datos: any) => {
-    await invoke('cerrar_corte', { corte_id, ...datos });
+    await invoke('cerrar_corte', { corteId: corte_id, ...datos });
     await cargarCortes();
   }, [cargarCortes]);
 
@@ -134,7 +134,7 @@ export function useAlertas() {
   const cargarAlertas = useCallback(async (solo_no_leidas = false) => {
     setLoading(true);
     try {
-      const data = await invoke<AlertaFinanciera[]>('get_alertas', { solo_no_leidas });
+      const data = await invoke<AlertaFinanciera[]>('get_alertas', { soloNoLeidas: solo_no_leidas });
       setAlertas(data);
     } catch (error) {
       console.error('Error cargando alertas:', error);
@@ -159,11 +159,11 @@ export function useAlertas() {
 
 export function useExport() {
   const exportarGastosCSV = useCallback(async (fecha_inicio: string, fecha_fin: string) => {
-    return await invoke<string>('exportar_gastos_csv', { fecha_inicio, fecha_fin });
+    return await invoke<string>('exportar_gastos_csv', { fechaInicio: fecha_inicio, fechaFin: fecha_fin });
   }, []);
 
   const exportarBalancePDF = useCallback(async (fecha_inicio: string, fecha_fin: string) => {
-    return await invoke<Uint8Array>('exportar_balance_pdf', { fecha_inicio, fecha_fin });
+    return await invoke<Uint8Array>('exportar_balance_pdf', { fechaInicio: fecha_inicio, fechaFin: fecha_fin });
   }, []);
 
   return { exportarGastosCSV, exportarBalancePDF };

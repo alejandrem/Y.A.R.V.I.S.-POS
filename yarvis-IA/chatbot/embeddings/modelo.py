@@ -1,16 +1,26 @@
 import struct
+import threading
 import numpy as np
 
 _embedding_model = None
+_embedding_lock = threading.Lock()
 
 
 def get_embedding_model():
+    """Modelo de embeddings compartido, cargado UNA sola vez (thread-safe).
+
+    Dos requests concurrentes pueden intentar cargar el modelo al mismo
+    tiempo; el lock con double-checked locking garantiza que solo un hilo
+    lo construya y los demás reutilicen la misma instancia.
+    """
     global _embedding_model
     if _embedding_model is None:
-        print("[YARVIS-IA] Cargando modelo de embeddings all-MiniLM-L6-v2...")
-        from sentence_transformers import SentenceTransformer
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-        print("[YARVIS-IA] Modelo de embeddings listo.")
+        with _embedding_lock:
+            if _embedding_model is None:
+                print("[YARVIS-IA] Cargando modelo de embeddings all-MiniLM-L6-v2...")
+                from sentence_transformers import SentenceTransformer
+                _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+                print("[YARVIS-IA] Modelo de embeddings listo.")
     return _embedding_model
 
 

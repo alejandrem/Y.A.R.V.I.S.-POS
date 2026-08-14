@@ -164,8 +164,15 @@ yarvis-IA/
 ├── chatbot/                          # Chat y Búsqueda Semántica
 │   ├── motor_chat/                   # Lógica central del asistente RAG
 │   │   ├── endpoints.py              # /chat, /chat_stream, /load_model
-│   │   ├── gestion_hardware.py       # Decide entre 0.5B, 0.8B y 1.7B según RAM
-│   │   └── motor_rag.py              # Retrieval-Augmented Generation
+│   │   ├── modelos_local/            # Modelos LOCALES (Qwen + RAG)
+│   │   │   ├── gestion_hardware.py   # Decide entre 0.5B, 0.8B y 1.7B según RAM
+│   │   │   ├── motor_rag.py          # Retrieval-Augmented Generation
+│   │   │   ├── cache.py              # Caché de inventario + contexto
+│   │   │   ├── consultas_db.py       # Acceso a SQLite
+│   │   │   └── prompts.py            # System prompt local (con RAG)
+│   │   └── modelos_API/              # Modelos de nube (sin RAG)
+│   │       ├── apis_cloud.py         # Proveedores (Gemini, OpenCode Zen)
+│   │       └── prompts_api.py        # Prompt mínimo de nube
 │   └── embeddings/                   # Motor vectorial
 │       ├── modelo.py                 # all-MiniLM-L6-v2
 │       └── endpoints.py              # /generar_embedding, /buscar_similar

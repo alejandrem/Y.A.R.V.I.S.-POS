@@ -15,7 +15,7 @@ router = APIRouter()
 
 def _descargar_todos_los_modelos():
     """Libera RAM/VRAM de todos los modelos Qwen (parser y chat) al terminar un parseo."""
-    from chatbot.motor_chat.gestion_hardware import descargar_modelo
+    from chatbot.motor_chat.modelos_local.gestion_hardware import descargar_modelo
 
     try:
         descargar_modelos()

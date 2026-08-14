@@ -13,7 +13,7 @@ chatbot/embeddings/modelo.py y se comparte con todo el sistema;
 aquí NO se duplica en memoria.
 """
 
-from ..embeddings.modelo import texto_a_embedding, embedding_a_blob
+from ...embeddings.modelo import texto_a_embedding, embedding_a_blob
 from .consultas_db import _conectar
 
 

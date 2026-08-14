@@ -329,7 +329,7 @@ const GastosCategoriaChart = ({ fechaInicio, fechaFin }: { fechaInicio: string; 
   const [data, setData] = useState<{ name: string; value: number }[]>([]);
 
   useEffect(() => {
-    invoke<any[]>('get_gastos_por_categoria', { fecha_inicio: fechaInicio, fecha_fin: fechaFin })
+    invoke<any[]>('get_gastos_por_categoria', { fechaInicio, fechaFin })
       .then(cats => setData(cats.filter(c => c.monto > 0).map(c => ({ name: c.categoria, value: c.monto }))))
       .catch(() => setData([]));
   }, [fechaInicio, fechaFin]);

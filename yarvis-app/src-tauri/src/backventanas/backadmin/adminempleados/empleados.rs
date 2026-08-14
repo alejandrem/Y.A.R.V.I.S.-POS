@@ -95,7 +95,7 @@ pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, empleado_i
     };
 
     let ventas_row = sqlx::query_as::<_, (f64, i32)>(
-        "SELECT COALESCE(SUM(total), 0), COUNT(*) FROM ventas WHERE cajero = ? AND estado = 'completada'"
+        "SELECT COALESCE(SUM(total), 0) * 1.0, COUNT(*) FROM ventas WHERE cajero = ? AND estado = 'completada'"
     )
     .bind(&nombre)
     .fetch_one(&*state)
@@ -103,7 +103,7 @@ pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, empleado_i
     .map_err(|e| e.to_string())?;
 
     let canceladas_row = sqlx::query_as::<_, (f64, i32)>(
-        "SELECT COALESCE(SUM(total), 0), COUNT(*) FROM ventas WHERE cajero = ? AND estado = 'cancelada'"
+        "SELECT COALESCE(SUM(total), 0) * 1.0, COUNT(*) FROM ventas WHERE cajero = ? AND estado = 'cancelada'"
     )
     .bind(&nombre)
     .fetch_one(&*state)
@@ -111,7 +111,7 @@ pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, empleado_i
     .map_err(|e| e.to_string())?;
 
     let descuento_row = sqlx::query_as::<_, (f64,)>(
-        "SELECT COALESCE(SUM(total), 0) FROM ventas WHERE cajero = ? AND estado = 'completada' AND descuento > 0"
+        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE cajero = ? AND estado = 'completada' AND descuento > 0"
     )
     .bind(&nombre)
     .fetch_one(&*state)
@@ -136,12 +136,12 @@ pub async fn get_resumen_empleados(state: tauri::State<'_, SqlitePool>) -> Resul
         .await
         .map_err(|e| e.to_string())?;
 
-    let ventas = sqlx::query_as::<_, (f64,)>("SELECT COALESCE(SUM(total), 0) FROM ventas WHERE estado = 'completada'")
+    let ventas = sqlx::query_as::<_, (f64,)>("SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE estado = 'completada'")
         .fetch_one(&*state)
         .await
         .map_err(|e| e.to_string())?;
 
-    let nomina = sqlx::query_as::<_, (f64,)>("SELECT COALESCE(SUM(salario_semanal), 0) FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'")
+    let nomina = sqlx::query_as::<_, (f64,)>("SELECT COALESCE(SUM(salario_semanal), 0) * 1.0 FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'")
         .fetch_one(&*state)
         .await
         .map_err(|e| e.to_string())?;

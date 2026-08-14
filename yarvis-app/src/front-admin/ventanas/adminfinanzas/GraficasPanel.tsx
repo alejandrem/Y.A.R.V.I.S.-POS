@@ -36,9 +36,9 @@ const GraficasPanel = () => {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      invoke<DatoGraficaPL[]>('get_datos_grafica_pl', { fecha_inicio: fechaInicio, fecha_fin: fechaFin, granularidad }),
-      invoke<DatoGraficaGastosCategoria[]>('get_gastos_por_categoria', { fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
-      invoke<DatoGraficaCortesZ[]>('get_tendencia_cortes_z', { fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
+      invoke<DatoGraficaPL[]>('get_datos_grafica_pl', { fechaInicio, fechaFin, granularidad }),
+      invoke<DatoGraficaGastosCategoria[]>('get_gastos_por_categoria', { fechaInicio, fechaFin }),
+      invoke<DatoGraficaCortesZ[]>('get_tendencia_cortes_z', { fechaInicio, fechaFin }),
       invoke<DatoGraficaPL[]>('get_ventas_vs_gastos_mensual', { meses: 6 }),
     ])
       .then(([pl, cat, z, mensual]) => {

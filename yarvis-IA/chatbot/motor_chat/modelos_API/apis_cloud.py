@@ -73,23 +73,33 @@ def _siguiente_modelo_free(model_id: str) -> str | None:
 
 
 def _normalizar_mensajes(messages: list[dict]) -> list[dict]:
-    """Junta mensajes consecutivos con el mismo rol (evita rechazos de APIs)."""
+    """Junta mensajes consecutivos con el mismo rol (evita rechazos de APIs).
+
+    Respeta los mensajes de tool_calls / de rol 'tool' (function calling):
+    esos no se fusionan porque llevan tool_call_id y NO deben pegarse a otros.
+    """
     normalized: list[dict] = []
     for m in messages:
         role = m.get("role", "user")
-        content = m.get("content", "")
-        if normalized and normalized[-1]["role"] == role:
+        content = m.get("content") or ""
+        if m.get("tool_calls") or role == "tool" or m.get("tool_call_id"):
+            normalized.append(m)
+            continue
+        if normalized and normalized[-1]["role"] == role and not normalized[-1].get("tool_calls"):
             normalized[-1]["content"] += f"\n{content}"
         else:
             normalized.append({"role": role, "content": content})
     return normalized
 
 
-def _iter_delta_lineas(resp, usage: dict | None, display: str):
+def _iter_delta_lineas(resp, usage: dict | None, display: str, tool_calls: dict | None = None):
     """Consume un stream SSE estilo OpenAI y captura tokens y uso.
 
     'usage' (si se pasa) se rellena con el chunk final de uso que los
     proveedores envían con `stream_options.include_usage` activo.
+
+    'tool_calls' (dict índice -> dict, si se pasa) acumula los tool_calls
+    que llegan troceados entre chunks de streaming (function calling).
     """
     for line in resp.iter_lines():
         if not line or not line.startswith("data:"):
@@ -104,13 +114,52 @@ def _iter_delta_lineas(resp, usage: dict | None, display: str):
         if usage is not None and chunk.get("usage"):
             usage.update(chunk["usage"])
         delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+        if tool_calls is not None and delta.get("tool_calls"):
+            for tc in delta["tool_calls"]:
+                idx = tc.get("index", 0)
+                entrada = tool_calls.setdefault(
+                    idx, {"id": "", "name": "", "arguments": ""}
+                )
+                if tc.get("id"):
+                    entrada["id"] = tc["id"]
+                fn = tc.get("function", {})
+                if fn.get("name"):
+                    entrada["name"] = fn["name"]
+                if fn.get("arguments"):
+                    entrada["arguments"] += fn["arguments"]
         token = delta.get("content", "")
         if token:
             yield token, display
 
 
-def _iter_openai_compatible(cfg: dict, api_key: str, model: str, messages: list, display: str, usage: dict | None = None):
-    """OpenCode Zen (y cualquiera compatible con /chat/completions)."""
+def _formato_tool_calls(tool_calls: dict) -> list[dict]:
+    """Convierte tool_calls acumulados del stream al formato OpenAI estándar."""
+    return [
+        {
+            "id": tc.get("id") or f"call_{idx}",
+            "type": "function",
+            "function": {"name": tc.get("name", ""), "arguments": tc.get("arguments", "{}")},
+        }
+        for idx, tc in sorted(tool_calls.items())
+    ]
+
+
+def _iter_openai_compatible(
+    cfg: dict,
+    api_key: str,
+    model: str,
+    messages: list,
+    display: str,
+    usage: dict | None = None,
+    tools: list | None = None,
+    ejecutar_tool=None,
+):
+    """OpenCode Zen (y cualquiera compatible con /chat/completions).
+
+    Si se pasan 'tools' + 'ejecutar_tool' y el modelo pide llamar una tool,
+    se ejecuta localmente y se hace una segunda llamada con los resultados
+    (streaming del texto final).
+    """
     url = f"{cfg['base_url']}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
     normalized = _normalizar_mensajes(messages)
@@ -124,15 +173,56 @@ def _iter_openai_compatible(cfg: dict, api_key: str, model: str, messages: list,
         }
         if intentar_con_uso:
             body["stream_options"] = {"include_usage": True}
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
         try:
             with httpx.stream("POST", url, headers=headers, json=body, timeout=_TIMEOUT) as resp:
                 resp.raise_for_status()
-                yield from _iter_delta_lineas(resp, usage, display)
+                tool_calls: dict = {}
+                yield from _iter_delta_lineas(resp, usage, display, tool_calls)
+            if tool_calls:
+                yield from _resolver_tool_calls(
+                    cfg, api_key, model, normalized, display, usage,
+                    tools, ejecutar_tool, _formato_tool_calls(tool_calls),
+                )
             return
         except httpx.HTTPStatusError as e:
             if e.response.status_code != 400 or not intentar_con_uso:
                 raise
             print("[YARVIS-CHAT] El proveedor no aceptó include_usage; reintento sin él.")
+
+
+def _resolver_tool_calls(
+    cfg, api_key, model, normalized, display, usage, tools, ejecutar_tool, tool_calls
+):
+    """Ejecuta las tools pedidas por el modelo y continúa el streaming con los resultados."""
+    if not ejecutar_tool:
+        yield "…", display
+        return
+
+    mensaje_assistant = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": tool_calls,
+    }
+    mensajes_tool: list[dict] = []
+    for tc in tool_calls:
+        try:
+            resultado = ejecutar_tool(tc)
+        except Exception as e:  # la tool nunca debe tumbar el chat
+            resultado = json.dumps({"error": str(e)}, ensure_ascii=False)
+        mensajes_tool.append({
+            "role": "tool",
+            "tool_call_id": tc.get("id") or f"call_{tool_calls.index(tc)}",
+            "content": resultado,
+        })
+
+    yield from _iter_openai_compatible(
+        cfg, api_key, model,
+        [*normalized, mensaje_assistant, *mensajes_tool],
+        display, usage, tools, ejecutar_tool,
+    )
 
 
 def _iter_google(cfg: dict, api_key: str, model: str, messages: list, display: str, usage: dict | None = None):
@@ -234,11 +324,23 @@ def listar_modelos(provider: str, api_key: str = "") -> list[dict]:
     return modelos
 
 
-def generar_stream(provider: str, api_key: str, model: str, messages: list, usage: dict | None = None):
+def generar_stream(
+    provider: str,
+    api_key: str,
+    model: str,
+    messages: list,
+    usage: dict | None = None,
+    tools: list | None = None,
+    ejecutar_tool=None,
+):
     """Genera (token, nombre_mostrado) por streaming para el proveedor indicado.
 
     Si se pasa 'usage' (dict), se rellena con los tokens reales del proveedor
     (prompt/completion/total) cuando el chunk final de uso lo reporta.
+
+    Si se pasan 'tools' + 'ejecutar_tool', el modelo puede pedir llamar una
+    herramienta (function calling): se ejecuta localmente y se continúa con
+    el texto final.
 
     Anti-saturación: ante un 429 de un modelo free de OpenCode se cambia
     automáticamente al siguiente modelo gratuito disponible; si no hay más
@@ -259,7 +361,9 @@ def generar_stream(provider: str, api_key: str, model: str, messages: list, usag
             if provider == "google":
                 yield from _iter_google(cfg, api_key, model, messages, display, usage)
             else:
-                yield from _iter_openai_compatible(cfg, api_key, model, messages, display, usage)
+                yield from _iter_openai_compatible(
+                    cfg, api_key, model, messages, display, usage, tools, ejecutar_tool
+                )
             return
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429 and intento == 0:
@@ -278,6 +382,17 @@ def generar_stream(provider: str, api_key: str, model: str, messages: list, usag
             raise ValueError(f"No se pudo conectar con {display}: {e}") from e
 
 
-def generar_completo(provider: str, api_key: str, model: str, messages: list) -> str:
+def generar_completo(
+    provider: str,
+    api_key: str,
+    model: str,
+    messages: list,
+    tools: list | None = None,
+    ejecutar_tool=None,
+) -> str:
     """Respuesta completa (sin streaming) consumiendo el generador de tokens."""
-    return "".join(token for token, _ in generar_stream(provider, api_key, model, messages))
+    return "".join(
+        token for token, _ in generar_stream(
+            provider, api_key, model, messages, tools=tools, ejecutar_tool=ejecutar_tool
+        )
+    )

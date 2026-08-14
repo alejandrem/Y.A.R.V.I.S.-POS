@@ -16,17 +16,18 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .apis_cloud import generar_completo, generar_stream, listar_modelos, nombre_proveedor
-from .cache import cantidad_productos_cache, iniciar_cache
-from .gestion_hardware import (
+from .modelos_API.apis_cloud import generar_completo, generar_stream, listar_modelos, nombre_proveedor
+from .modelos_API.prompts_api import construir_mensajes_api
+from .modelos_local.cache import cantidad_productos_cache, iniciar_cache
+from .modelos_local.gestion_hardware import (
     WORD_LIMITS,
     cargar_modelo,
     descargar_modelo,
     ejecutar_chat,
     estado_modelos,
 )
-from .prompts import construir_mensajes
-from .prompts_api import construir_mensajes_api
+from .modelos_local.herramientas import TOOLS_SCHEMA, ejecutar_tool, search_inventory
+from .modelos_local.prompts import construir_mensajes
 
 router = APIRouter()
 
@@ -98,6 +99,33 @@ def _estado_completo() -> dict:
     estado = estado_modelos()
     estado["cache_products"] = cantidad_productos_cache()
     return estado
+
+
+def _fallback_local(messages: list, role: str, ultimo: str, err: str = "") -> str:
+    """Respuesta local de emergencia si la nube falla (switch automático).
+
+    Réplica exacta del modo local: Qwen 0.5B con RAG de inventario vía
+    construir_mensajes (que ya inyecta buscar_semantico en el contexto).
+    """
+    try:
+        chat_messages = construir_mensajes(role, messages, ultimo)
+        llm = cargar_modelo("0.5B")
+        return ejecutar_chat(llm, chat_messages, WORD_LIMITS["0.5B"])
+    except Exception as e:
+        return f"Error nube: {err}\nError local: {e}"
+
+
+def _stream_fallback_local(messages: list, role: str, ultimo: str) -> str:
+    """SSE del fallback local: una ventana 'token' con la respuesta Qwen 0.5B.
+
+    Se inyecta como único evento del stream cuando la nube falla.
+    """
+    try:
+        texto = _fallback_local(messages, role, ultimo)
+        datos = json.dumps({"token": texto, "model": "local-fallback"})
+    except Exception:
+        datos = json.dumps({"error": "Fallback local también falló."})
+    return f"data: {datos}\n\n"
 
 
 def _separar_think(textos, max_w):
@@ -208,11 +236,18 @@ async def chat(request: ChatRequest):
     if request.provider:
         try:
             chat_messages = construir_mensajes_api(request.messages)
-            respuesta = generar_completo(request.provider, request.api_key, request.model, chat_messages)
+            respuesta = generar_completo(
+                request.provider,
+                request.api_key,
+                request.model,
+                chat_messages,
+                tools=TOOLS_SCHEMA,
+                ejecutar_tool=ejecutar_tool,
+            )
             return {"response": respuesta, "model_used": nombre_proveedor(request.provider)}
         except Exception as e:
             print(f"[YARVIS-CHAT] Error proveedor ({request.provider}): {e}")
-            return {"response": f"Error: {e}", "model_used": "none"}
+            return {"response": _fallback_local(request.messages, request.role, ultimo, str(e)), "model_used": "local-fallback"}
 
     chat_messages = construir_mensajes(request.role, request.messages, ultimo)
     selected = request.model.lower()
@@ -257,8 +292,13 @@ async def chat_stream(request: ChatRequest):
                 total_chars = sum(len(m.get("content") or "") for m in chat_messages)
                 print(f"[YARVIS-CHAT] Cloud: {len(chat_messages)} msgs, {total_chars} chars (~{total_chars // 4} tok est)")
                 textos = (token for token, _ in generar_stream(
-                    request.provider, request.api_key, request.model, chat_messages,
+                    request.provider,
+                    request.api_key,
+                    request.model,
+                    chat_messages,
                     usage=usage,
+                    tools=TOOLS_SCHEMA,
+                    ejecutar_tool=ejecutar_tool,
                 ))
                 for kind, text in _separar_think(textos, max_w):
                     if _cancel_event.is_set():
@@ -270,8 +310,8 @@ async def chat_stream(request: ChatRequest):
                 if not _cancel_event.is_set():
                     yield f"data: {json.dumps({'done': True, 'model': cloud_display})}\n\n"
             except Exception as e:
-                print(f"[YARVIS-CHAT] Error proveedor ({cloud_display}): {e}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                print(f"[YARVIS-CHAT] Error proveedor ({cloud_display}), fallback a local: {e}")
+                yield _stream_fallback_local(request.messages, request.role, ultimo)
 
         return StreamingResponse(generate_cloud(), media_type="text/event-stream")
 

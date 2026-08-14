@@ -243,7 +243,7 @@ pub async fn check_employee_goals(
             match g_type.as_str() {
                 "ventas" => {
                     let ventas_row = sqlx::query_as::<_, (f64,)>(
-                        "SELECT COALESCE(SUM(total), 0) FROM ventas WHERE cajero = ? AND estado = 'completada'
+                        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE cajero = ? AND estado = 'completada'
                          AND fecha >= date('now', 'start of week') AND fecha < date('now', '+1 day', 'start of week', '+7 days')"
                     )
                     .bind(&nombre)

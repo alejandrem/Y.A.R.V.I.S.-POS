@@ -160,7 +160,7 @@ async def analizar_ticket_endpoint(request: AnalizarTicketRequest):
         resultado = analizar_ticket(request.texto)
     finally:
         descargar_modelos()
-        from chatbot.motor_chat.gestion_hardware import descargar_modelo
+        from chatbot.motor_chat.modelos_local.gestion_hardware import descargar_modelo
         for key in ("0.5B", "0.8B", "1.7B"):
             try:
                 descargar_modelo(key)

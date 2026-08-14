@@ -23,7 +23,7 @@ corto de asistente de ventas + el historial del chat (ver `prompts_api.py`).
 
 ## 2. Proveedores configurados
 
-Archivo: `yarvis-IA/chatbot/motor_chat/apis_cloud.py`
+Archivo: `yarvis-IA/chatbot/motor_chat/modelos_API/apis_cloud.py`
 
 ### 2.1 Google (Gemini)
 
@@ -328,8 +328,8 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST https://opencode.ai/zen/v1/chat/compl
 
 | Archivo | Rol |
 |---------|-----|
-| `yarvis-IA/chatbot/motor_chat/apis_cloud.py` | Proveedores, formatos, streaming, usage, fallback, caché |
-| `yarvis-IA/chatbot/motor_chat/prompts_api.py` | System prompt corto de nube (sin RAG) |
+| `yarvis-IA/chatbot/motor_chat/modelos_API/apis_cloud.py` | Proveedores, formatos, streaming, usage, fallback, caché |
+| `yarvis-IA/chatbot/motor_chat/modelos_API/prompts_api.py` | System prompt corto de nube (sin RAG) |
 | `yarvis-IA/chatbot/motor_chat/endpoints.py` | `/chat`, `/chat_stream`, `/cloud_models`, logs |
 | `yarvis-app/src-tauri/src/backventanas/backadmin/admintarvis/chat.rs` | `send_chat_stream`, `get_cloud_models`, eventos |
 | `yarvis-app/src-tauri/src/lib.rs` | Registro de comandos Tauri |
