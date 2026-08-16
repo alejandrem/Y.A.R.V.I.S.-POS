@@ -165,7 +165,7 @@ yarvis-IA/
 │   ├── motor_chat/                   # Lógica central del asistente RAG
 │   │   ├── endpoints.py              # /chat, /chat_stream, /load_model
 │   │   ├── modelos_local/            # Modelos LOCALES (Qwen + RAG)
-│   │   │   ├── gestion_hardware.py   # Decide entre 0.5B, 0.8B y 1.7B según RAM
+│   │   │   ├── gestion_hardware.py   # Gestión de IA y reserva de RAM
 │   │   │   ├── motor_rag.py          # Retrieval-Augmented Generation
 │   │   │   ├── cache.py              # Caché de inventario + contexto
 │   │   │   ├── consultas_db.py       # Acceso a SQLite
@@ -456,7 +456,7 @@ uvicorn.run(app, host="127.0.0.1", port=PORT)
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
 | `/chat` | POST | Inferencia con RAG y SQL tools |
-| `/load_llm` | POST | Carga modelo de forma dinámica basada en memoria RAM libre |
+| `/load_llm` | POST | Carga modelo forzando reserva de memoria RAM |
 | `/unload_llm` | POST | Libera RAM manualmente |
 
 ---
@@ -505,7 +505,7 @@ Le pide a la IA que analice un ticket y retorne JSON con:
 
 ### 7.2 LLM del Chatbot (`chatbot/motor_chat/gestion_hardware.py`)
 
-A diferencia del parseador, el chatbot NO escala de esta manera. Calcula la RAM del sistema en su arranque y **activa un único modelo (Lazy Loading)** permanentemente mientras la pestaña del chat esté abierta, para asegurar velocidad y respuesta conversacional fluida.
+A diferencia del parseador, el chatbot NO escala de esta manera. En su arranque **activa un único modelo (Lazy Loading)** permanentemente mientras la pestaña del chat esté abierta, para asegurar velocidad y respuesta conversacional fluida. Ya no se usará este modelo de gestión de RAM estricto. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
 
 ### 7.3 Embeddings (`chatbot/embeddings/modelo.py`)
 

@@ -203,7 +203,7 @@ El ejecutable de Rust (yarvis-app.exe) actúa como el orquestador principal y el
 5. Lanzamiento del Empleado (Sin LLM): Rust ejecuta en segundo plano el archivo `./engine/ai_service.exe`, pasándole los puertos y ordenando cargar SOLO el modelo de embeddings pequeño: `--embed-only`. (El LLM de Qwen NO se carga aún).
 6. Verificación de Salud: Rust espera a que el servidor local de FastAPI responda "OK" en GET /health y lanza el Ping de predicciones si fue necesario en el Paso 3.
 7. Se abre la interfaz de usuario para el cajero (Modo Punto de Venta normal).
-8. Lazy Loading (Solo al usar IA): Cuando el usuario abre la pestaña del Chatbot, Rust manda la orden de carga. Es Python (`gestion_hardware.py`) quien revisa en tiempo real la RAM disponible para escoger la cuantización ideal sin que Rust tenga que estar leyendo el hardware, delegando la responsabilidad por completo al lado de la IA.
+8. Lazy Loading (Solo al usar IA): Cuando el usuario abre la pestaña del Chatbot, Rust manda la orden de carga. Es Python (`gestion_hardware.py`) quien carga el modelo. Ya no se usará este modelo de gestión de RAM. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
 
 ## 2. Flujo de Comunicación (Protocolo HTTP Local)
 
@@ -218,13 +218,7 @@ Python (FastAPI)        | Rust (Tauri IPC)       | HTTP POST  | Escritura indire
 
 ## 3. Lógica de Selección Adaptativa de IA (Gestión Dinámica de Hardware)
 
-El sistema ya no usa un umbral fijo estático. En su lugar, el módulo `gestion_hardware.py` lee constantemente la memoria disponible del sistema operativo (`/proc/meminfo` o equivalente) para asegurar que el sistema tenga RAM libre, eligiendo o validando el modelo de forma escalonada:
-
-- **Qwen 3 1.7B**: Requiere >= 4.0 GB de RAM Libre.
-- **Qwen 3.5 0.8B**: Requiere >= 1.0 GB de RAM Libre.
-- **Qwen 2.5 0.5B**: Fallback ultra-ligero (para equipos de gama baja).
-
-El Chatbot utiliza estos umbrales para saber qué modelo puede cargar de manera segura sin saturar la máquina.
+El sistema ya no usa este modelo de gestión de RAM. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
 Por otro lado, el Parseador de Tickets (`analizador_llm.py`) utiliza una **escalada automática basada en confianza**:
 1. Intenta parsear con 0.5B.
 2. Si la confianza es menor a `0.80`, descarga el modelo y reintenta con 0.8B.

@@ -1,12 +1,6 @@
 Plan de corrección — bugs e riesgos de concurrencia
 FASE A — Datos silenciosamente incorrectos (parseador + profeta)
 
-> ⚠️ NOTA DE ALCANCE (2026-08-13): solo se resolvieron los bugs **relacionados con el RAG**
-> (FASE B1, C3, C4 y la parte de embeddings de C5). El resto queda pendiente.
-> La separación entre `modelos_local/gestion_hardware.py` (chatbot) y
-> `parseador_de_tickets/llm/analizador_llm.py` (parser de tickets) es **intencional**
-> y NO es un bug: cada uno se encarga de su propio ciclo de vida de modelos.
-
 A1. lote.py:280-360 — stream commitea ventas a medias; lógica duplicada
 - Archivo/líneas: parseador_de_tickets/cerebro/lote.py:280-364 (stream) vs 129-212 (síncrono), más _insertar_venta en 58-95.
 - Causa real: el stream abre conn.execute("BEGIN") por batch (:284) y commitea al final (:360). Si _insertar_venta falla a mitad de un archivo (ej. insert de un producto inexistente), el except en :344 solo cuenta el error pero NO hace rollback: la venta parcial y los UPDATEs de stock de ese batch quedan en la transacción y se commitean igual. La versión síncrona cierra conn sin commit → rollback implícito. Y el bucle completo de parseo está copiado en ambos sitios (~80 líneas), por eso ya divergieron.
@@ -22,8 +16,8 @@ A4. lector_txt.py:53-60 — el volumen "600" se come el nombre
 - Archivo/líneas: parseador_de_tickets/formatos/lector_txt.py:53-60.
 - Causa real: _extraer_nombre_cantidad usa rsplit(None, 1); para "COCA-COLA 600 10 $10 $5" el último token es "5"→ ok, pero en patrones sin cantidad final el 600 (volumen) queda como último token e isdigit() lo trata como cantidad → nombre truncado a "COCA-COLA".
 - Solución: solo tratar como cantidad si el último token es un entero "pequeño de pieza" (≤ 999) y además la línea tiene otras columnas numéricas después (precio) o el token restante es número; mejor aún: usar el patrón de la línea completo (_PATRON_*) que ya fija columnas y extraer cantidad de la columna cant explícita, no de rsplit. Fallback: no quitar el token si el resto del nombre ya tiene dígitos (volumen).
-A5. profeta/predictor.py:126-129 + endpoints.py:9 — days sin validar
 
+A5. profeta/predictor.py:126-129 + endpoints.py:9 — days sin validar
 - Archivo/líneas: profeta/predictor.py:126-129; causa raíz en profeta/endpoints.py:7-9 (days: int = 7 sin rango).
 - Causa real: el frontend o un cliente puede mandar days=0 → forecast.tail(0) devuelve lista vacía con status:"success" (parece error); days<0 → tail(-1) devuelve filas históricas como si fueran predicciones futuras. No hay validación.
 - Solución: en PredictionRequest usar days: int = Field(default=7, ge=1, le=365) (pydantic) y en run_prediction cláusula de guardia if days < 1: return {"error": ...} por si se llama directo. Opcional: with self.mock no aplica; solo validar.
@@ -34,27 +28,34 @@ B1. embeddings/endpoints.py:76-104 — backfill 500 por descripcion + NULLs
 - Archivo/líneas: chatbot/embeddings/endpoints.py:76-89 (query en :78, formato en :83).
 - Causa real: el SELECT incluye productos.descripcion, columna que ningún otro módulo usa (los demás selects del esquema real no la tienen) → OperationalError en DBs reales. Además f"{p['precio_venta']:.2f}" y stock:.0f crashean con TypeError si son NULL.
 - Solución: hacer la query robusta: SELECT id, nombre, COALESCE(descripcion,'') ... COALESCE(precio_venta,0), COALESCE(stock,0) ... envuelto en try/except con logger y, idealmente, verificar PRAGMA table_info(productos) para no depender de descripcion. Usar _conectar() con busy_timeout en vez de sqlite3.connect a secas.
-- ✅ RESUELTO (2026-08-13): reescrito chatbot/embeddings/endpoints.py → /backfill construye el SELECT según PRAGMA table_info (solo columnas existentes), COALESCE en precios/stock, logger.exception, busy_timeout y cierre con `closing()`. Probado con schema completo y schema mínimo.
 
-B2. gestion_hardware.py:36-55 — RAM: MemTotal ≠ disponible
-- Archivo/líneas: chatbot/motor_chat/modelos_local/gestion_hardware.py:36-46 (get_ram_gb), usada en :49-55.
-- Causa real: lee MemTotal (RAM total del sistema) pero puede_cargar_modelo y estado_modelos la reportan como "GB disponibles" y la comparan contra el requisito del modelo. En una máquina de 8 GB siempre deja cargar 1.7B aunque el proceso ya consuma 6 GB → carga falla/swap. El fallback inventado 8.0 tampoco es real.
-- Solución: leer MemAvailable de /proc/meminfo (Linux), restar el uso del proceso actual si se puede (/proc/self/status VmRSS), y loggear/print en el except en vez de devolver 8.0 ciego.
+- ✅ RESUELTO (2026-08-13): reescrito chatbot/embeddings/endpoints.py → /backfill construye el SELECT según PRAGMA table_info (solo columnas existentes), COALESCE en precios/stock, logger.exception, busy_timeout y cierre con `closing()`. Probado con schema completo y schema mínimo.
 
 B3. endpoints.py:264-274, 311-319 — SSE sin evento terminal
 - Archivo/líneas: chatbot/motor_chat/endpoints.py:264-274 (nube) y 311-319 (local).
 - Causa real: el break por cancelación en :264/:313 y el except en :274/:319 terminan el generador sin emitir {'done': True} ni event: end. Un cliente SSE que espera la señal de cierre se queda colgado (spinner infinito). Además, si el proveedor manda un error a mitad, :274 emite {'error':...} pero tampoco done.
 - Solución: en ambos generadores, mover el yield de done a un finally (o emitirlo siempre tras el bucle, aun si _cancel_event o hubo error): yield data: {'done': True, 'cancelled': bool(...), 'model':...}. El cliente siempre recibe cierre.
 
+- ✅ RESUELTO (2026-08-16): ambos generadores (nube y local) emiten SIEMPRE el evento `{'done': True, 'cancelled': bool, 'model': ...}` al terminar, tanto en final normal, por cancelación como tras un error. El `done` nunca se emite dentro del `finally` (para no crashear con GeneratorExit si el cliente se desconecta); se imprime justo antes del retorno natural del generador.
+
+
 B4. endpoints.py:211 — /chat nube devuelve el thinking crudo
 - Archivo/líneas: chatbot/motor_chat/endpoints.py:199-215 (generar_completo en :211); la concatenación cruda está en apis_cloud.py:282-283.
 - Causa real: generar_completo concatena todos los tokens ("".join(token for token,_ in ...)), incluidos los bloques thinking. El endpoint no aplica limpiar_think/_separar_think (la rama local sí limpia vía ejecutar_chat → limpiar_think). El usuario final ve el razonamiento intercalado en la respuesta corta.
 - Solución: en apis_cloud.py, filtrar del stream solo los segmentos fuera de thinking — reutilizar _separar_think (o copiar el filtro) y reconstruir solo la parte "token", o directamente limpiar_think("".join(...)). Lo más limpio: generar_completo construye con "".join(t for k,t in _separar_think(stream, 1e9) if k == "token").
 
+- ✅ RESUELTO (2026-08-16): `_separar_think` se movió de endpoints.py a modelos_local/prompts.py (compartido). `generar_completo` (apis_cloud.py:385+) ahora reconstruye solo los segmentos `"token"`, descartando los bloques `thinking...response`. Verificado con un proveedor simulado.
+
+
 B5. apis_cloud.py:117-135 — reintento 400 duplica tokens
 - Archivo/líneas: chatbot/motor_chat/modelos_API/apis_cloud.py:117-135.
 - Causa real: el bucle for intentar_con_uso in (True, False) hace el POST con include_usage; si el servidor rechaza con 400 a mitad del stream (tras ya entregar tokens con yield from), el except reintenta sin usage y vuelve a emitir todo desde cero → el cliente ve los primeros tokens repetidos.
 - Solución: validar include_usage con una primera llamada sin generar (HEAD/OPTIONS o un POST de 1 token que se descarta), o detectar el 400 antes del yield from comprobando el resp.status_code sin consumir líneas. Fallback pragmático: si el 400 llega después de haber cedido algún token, no reintentar (propagar el error); solo reintentar si aún no se cedieron tokens.
+
+
+- ✅ RESUELTO (2026-08-16): `_iter_openai_compatible` rastrea `cedio_tokens`; solo reintenta sin `include_usage` si el 400 llegó ANTES de ceder tokens. Si llega a mitad de stream, propaga el error y el cliente nunca ve salida repetida (el fallback local de /chat_stream lo absorbe). Verificado con un stream simulado que falla a mitad.
+
+
 
 FASE C — Concurrencia
 
@@ -63,10 +64,16 @@ C1. endpoints.py:35,247 — _cancel_event global
 - Causa real: un Event único por proceso. El /stop de un cliente setea el evento de todos (cancela streams ajenos), y cada /chat_stream nuevo hace clear(), "des-cancelando" streams en curso. Es un bug de sesión-compartida.
 - Solución: por-request: generador recibe su propio threading.Event creado en chat_stream; /stop cancela solo el actual (guardando referencia del último evento activo en un dict {stream_id: Event} con lock, o un registro con token). Al terminar el stream se limpia la entrada.
 
+- ✅ RESUELTO (2026-08-16): cada /chat_stream crea su propio Event vía `_nuevo_stream_event()` y lo registra en `_registry["streams"]` bajo `_streams_lock`. `/stop` cancela solo el más reciente (o el indicado por `?stream_id=`); ya no existe el `clear()` global que des-cancelaba streams ajenos. El `finally` del generador llama `_terminar_stream()` para limpiar registro y contador.
+
 C2. endpoints.py:43-62 — timer descarga modelo en uso
 - Archivo/líneas: chatbot/motor_chat/endpoints.py:40-62 (timer) + descargar_modelo en modelos_local/gestion_hardware.py:79-91.
 - Causa real: a los 5 min, _descargar_por_inactividad cierra el Llama que un /chat_stream largo está iterando → el generador lanza al siguiente .next() (crash del stream). Además _registrar_actividad reinicia el mismo timer global sin lock.
 - Solución: contador atómico de streams activos (con threading.Lock); el timer solo descarga si el contador es 0; y descargar_modelo debe dar AttributeError... mejor: que el timer sea por dato de actividad mínima con lock (_last_activity timestamp + thread que verifica), o pausar/cancelar el timer cuando hay stream activo.
+
+- ✅ RESUELTO (2026-08-16): el threading.Timer global se reemplazó por un hilo daemon (`_vigilante_inactividad`) que revisa cada 15 s la inactividad (`_ultima_actividad`, con `_actividad_lock`) y un contador `_registry["activos"]` de llamadas/streams usando el motor (`_marcar_uso_ia`/`_liberar_uso_ia`). Solo descarga si no hay uso activo, y `_terminar_stream()` reinicia la ventana al finalizar cada stream.
+
+
 
 C3. embeddings/endpoints.py:20,47,95,128 + profeta/endpoints.py:13 — event loop bloqueado
 - Archivo/líneas: chatbot/embeddings/endpoints.py handlers async def en :16,38,56,122 haciendo model.encode (segundos) y sqlite3.connect; profeta/endpoints.py:12-17 llamando run_prediction (Prophet, minutos).

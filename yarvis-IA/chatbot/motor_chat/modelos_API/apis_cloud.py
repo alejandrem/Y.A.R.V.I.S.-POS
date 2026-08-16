@@ -15,6 +15,8 @@ import time
 
 import httpx
 
+from ..modelos_local.prompts import _separar_think
+
 PROVIDERS = {
     "google": {
         "name": "Gemini",
@@ -176,11 +178,14 @@ def _iter_openai_compatible(
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
+        cedio_tokens = False
         try:
             with httpx.stream("POST", url, headers=headers, json=body, timeout=_TIMEOUT) as resp:
                 resp.raise_for_status()
                 tool_calls: dict = {}
-                yield from _iter_delta_lineas(resp, usage, display, tool_calls)
+                for token, _ in _iter_delta_lineas(resp, usage, display, tool_calls):
+                    cedio_tokens = True
+                    yield token, display
             if tool_calls:
                 yield from _resolver_tool_calls(
                     cfg, api_key, model, normalized, display, usage,
@@ -188,7 +193,9 @@ def _iter_openai_compatible(
                 )
             return
         except httpx.HTTPStatusError as e:
-            if e.response.status_code != 400 or not intentar_con_uso:
+            # Reintento sin include_usage SOLO si el 400 llegó antes de ceder
+            # ningún token; si ya cedimos, el cliente vería la salida repetida.
+            if e.response.status_code != 400 or not intentar_con_uso or cedio_tokens:
                 raise
             print("[YARVIS-CHAT] El proveedor no aceptó include_usage; reintento sin él.")
 
@@ -390,9 +397,15 @@ def generar_completo(
     tools: list | None = None,
     ejecutar_tool=None,
 ) -> str:
-    """Respuesta completa (sin streaming) consumiendo el generador de tokens."""
+    """Respuesta completa (sin streaming) limpiando los bloques  thinking.
+
+    El modelo puede intercalar su razonamiento (🧠 thinking...response) en el
+    texto; aquí se filtra igual que en el streaming con _separar_think y se
+    reconstruye solo la parte 'token' (respuesta final).
+    """
+    stream = (token for token, _ in generar_stream(
+        provider, api_key, model, messages, tools=tools, ejecutar_tool=ejecutar_tool
+    ))
     return "".join(
-        token for token, _ in generar_stream(
-            provider, api_key, model, messages, tools=tools, ejecutar_tool=ejecutar_tool
-        )
+        texto for tipo, texto in _separar_think(stream, 10**9) if tipo == "token"
     )

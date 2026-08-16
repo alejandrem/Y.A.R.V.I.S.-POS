@@ -15,10 +15,60 @@ from .cache import obtener_contexto_inteligente
 from .consultas_db import obtener_tienda_info
 
 def limpiar_think(texto: str) -> str:
-    """Elimina bloques <think>...</think> de la respuesta del modelo."""
-    texto = re.sub(r'<think>.*?</think>', '', texto, flags=re.DOTALL)
-    texto = re.sub(r'<think>.*', '', texto, flags=re.DOTALL)
+    """Elimina bloques  thinking... response de la respuesta del modelo."""
+    texto = re.sub(r' thinking.*? response', '', texto, flags=re.DOTALL)
+    texto = re.sub(r' thinking.*', '', texto, flags=re.DOTALL)
     return texto.strip()
+
+
+def _separar_think(textos, max_w):
+    """Separa los bloques  thinking del texto final.
+
+    Recibe texto crudo por trozos y emite ('token'|'think', texto):
+    - 'think': razonamiento del modelo (se muestra sombreado).
+    - 'token': respuesta final (texto real).
+
+    Vive aquí (y no en endpoints.py) para que tanto el streaming como
+    generar_completo (apis_cloud.py) la reutilicen.
+    """
+    word_count = 0
+    in_think = False
+    buffer = ""
+    for content in textos:
+        if not content:
+            continue
+        buffer += content
+        while buffer:
+            if not in_think:
+                idx = buffer.find(" thinking")
+                if idx == -1:
+                    word_count += len(buffer.split())
+                    if word_count > max_w:
+                        return
+                    yield "token", buffer
+                    buffer = ""
+                    break
+                pre = buffer[:idx]
+                if pre:
+                    word_count += len(pre.split())
+                    if word_count > max_w:
+                        return
+                    yield "token", pre
+                buffer = buffer[idx + len(" thinking"):]
+                in_think = True
+            else:
+                idx = buffer.find(" response")
+                if idx == -1:
+                    yield "think", buffer
+                    buffer = ""
+                    break
+                pre = buffer[:idx]
+                if pre:
+                    yield "think", pre
+                buffer = buffer[idx + len(" response"):]
+                in_think = False
+    if buffer:
+        yield ("think" if in_think else "token"), buffer
 
 
 def construir_system_prompt(contexto_db: str, tienda_info: dict) -> str:

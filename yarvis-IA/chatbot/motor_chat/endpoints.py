@@ -11,6 +11,7 @@ No contiene lógica de negocio ni consultas SQL.
 
 import json
 import threading
+import time
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -27,18 +28,94 @@ from .modelos_local.gestion_hardware import (
     estado_modelos,
 )
 from .modelos_local.herramientas import TOOLS_SCHEMA, ejecutar_tool, search_inventory
-from .modelos_local.prompts import construir_mensajes
+from .modelos_local.prompts import _separar_think, construir_mensajes
 
 router = APIRouter()
 
-# Evento global de cancelación: se setea al llamar /stop y los generadores
-# de /chat_stream lo consultan entre tokens para cortar la generación.
-_cancel_event = threading.Event()
+# ------------------------------------------------------------
+# Concurrencia aislada por stream (C1) y descarga segura (C2):
+#
+# C1 — Cada /chat_stream recibe su PROPIO threading.Event. El registro
+#      {stream_id -> Event} permite que /stop cancele SOLO la generación
+#      más reciente (o la que traiga stream_id) sin afectar a las demás.
+# C2 — La descarga por inactividad espera un contador de "modelos en uso":
+#      si hay un stream o una llamada iterando los Qwen, NUNCA descarga.
+# ------------------------------------------------------------
 
-# Auto-desactivación por inactividad: si no se habla con el chat en
-# _INACTIVIDAD_SEGUNDOS, se descargan los modelos Qwen de la RAM.
 _INACTIVIDAD_SEGUNDOS = 300  # 5 minutos
-_timer_inactividad = None  # threading.Timer activo, o None si no hay
+_INACTIVIDAD_CHECK_SEGUNDOS = 15  # frecuencia del hilo vigilante (s)
+
+# Registro de streams bajo un lock (diccionario con orden de inserción).
+_streams_lock = threading.Lock()
+_registry = {
+    "next_id": 0,     # último id asignado a un stream
+    "streams": {},    # stream_id -> threading.Event (cancelación por-stream)
+    "activos": 0,     # nº de llamadas/streams usando los modelos AHORA
+}
+
+_actividad_lock = threading.Lock()
+_ultima_actividad = time.monotonic()
+
+
+def _nuevo_stream_event() -> tuple[int, threading.Event]:
+    """Crea y registra un evento de cancelación por-stream; devuelve (id, event)."""
+    with _streams_lock:
+        _registry["next_id"] += 1
+        event = threading.Event()
+        _registry["streams"][_registry["next_id"]] = event
+        return _registry["next_id"], event
+
+
+def _marcar_uso_ia():
+    """Marca el motor de IA como 'en uso' (el vigilante no debe descargar)."""
+    with _streams_lock:
+        _registry["activos"] += 1
+
+
+def _liberar_uso_ia():
+    """Marca fin de uso del motor de IA."""
+    with _streams_lock:
+        if _registry["activos"] > 0:
+            _registry["activos"] -= 1
+
+
+def _terminar_stream(stream_id: int):
+    """Da de baja un stream y reinicia la ventana de inactividad.
+
+    Se ejecuta SIEMPRE en el finally del generador (fin, cancelación o error),
+    garantizando que el contador de 'modelos en uso' nunca quede desincronizado.
+    """
+    with _streams_lock:
+        _registry["streams"].pop(stream_id, None)
+        if _registry["activos"] > 0:
+            _registry["activos"] -= 1
+        global _ultima_actividad
+        _ultima_actividad = time.monotonic()
+
+
+def _cancelar_stream(stream_id: int | None = None) -> dict:
+    """Cancela un stream: el indicado por stream_id o, si no, el más reciente."""
+    with _streams_lock:
+        if stream_id is not None:
+            event = _registry["streams"].get(stream_id)
+        elif _registry["streams"]:
+            stream_id, event = next(reversed(_registry["streams"].items()))
+        else:
+            event = None
+    if event is None:
+        return {"cancelled": False, "stream_id": None}
+    event.set()
+    return {"cancelled": True, "stream_id": stream_id}
+
+
+def _registrar_actividad():
+    """Marca actividad en el chat: retrasa la descarga por inactividad.
+
+    Se llama en cada /chat, /chat_stream y /load_model.
+    """
+    global _ultima_actividad
+    with _actividad_lock:
+        _ultima_actividad = time.monotonic()
 
 
 def _descargar_por_inactividad():
@@ -46,21 +123,26 @@ def _descargar_por_inactividad():
     print("[YARVIS-CHAT] 5 min de inactividad: descargando modelos de la RAM.")
     for key in ("0.5B", "0.8B", "1.7B"):
         descargar_modelo(key)
-    global _timer_inactividad
-    _timer_inactividad = None
 
 
-def _registrar_actividad():
-    """Marca actividad en el chat: reinicia el timer de 5 min.
+def _vigilante_inactividad():
+    """Hilo daemon: descarga SOLO si no hay streams ni llamadas en uso (C2).
 
-    Se llama en cada /chat, /chat_stream y /load_model.
+    Reemplaza al threading.Timer global (que reiniciaba sin lock y podía
+    descargar un Llama en plena generación de un /chat_stream).
     """
-    global _timer_inactividad
-    if _timer_inactividad is not None:
-        _timer_inactividad.cancel()
-    _timer_inactividad = threading.Timer(_INACTIVIDAD_SEGUNDOS, _descargar_por_inactividad)
-    _timer_inactividad.daemon = True
-    _timer_inactividad.start()
+    global _ultima_actividad
+    while True:
+        time.sleep(_INACTIVIDAD_CHECK_SEGUNDOS)
+        with _actividad_lock:
+            inactividad = time.monotonic() - _ultima_actividad
+        with _streams_lock:
+            activos = _registry["activos"]
+        if inactividad < _INACTIVIDAD_SEGUNDOS or activos > 0:
+            continue
+        _descargar_por_inactividad()
+        with _actividad_lock:
+            _ultima_actividad = time.monotonic()
 
 
 # ============================================================
@@ -128,57 +210,6 @@ def _stream_fallback_local(messages: list, role: str, ultimo: str) -> str:
     return f"data: {datos}\n\n"
 
 
-def _separar_think(textos, max_w):
-    """Separa los bloques <think> del texto final.
-
-    Recibe texto crudo por trozos y emite ('token'|'think', texto):
-    - 'think': razonamiento del modelo (se muestra sombreado).
-    - 'token': respuesta final (texto real).
-    """
-    word_count = 0
-    in_think = False
-    buffer = ""
-    for content in textos:
-        if not content:
-            continue
-        buffer += content
-        while buffer:
-            if not in_think:
-                idx = buffer.find("<think>")
-                if idx == -1:
-                    word_count += len(buffer.split())
-                    if word_count > max_w:
-                        return
-                    yield "token", buffer
-                    buffer = ""
-                    break
-                pre = buffer[:idx]
-                if pre:
-                    word_count += len(pre.split())
-                    if word_count > max_w:
-                        return
-                    yield "token", pre
-                buffer = buffer[idx + len("<think>"):]
-                in_think = True
-            else:
-                idx = buffer.find("</think>")
-                if idx == -1:
-                    yield "think", buffer
-                    buffer = ""
-                    break
-                pre = buffer[:idx]
-                if pre:
-                    yield "think", pre
-                buffer = buffer[idx + len("</think>"):]
-                in_think = False
-    if buffer:
-        yield ("think" if in_think else "token"), buffer
-
-
-# ============================================================
-# ENDPOINTS
-# ============================================================
-
 @router.get("/model_status")
 async def model_status():
     return _estado_completo()
@@ -200,10 +231,14 @@ async def load_model(request: LoadModelRequest):
 
 
 @router.post("/stop")
-async def stop():
-    """Detiene la generación en curso (local o nube)."""
-    _cancel_event.set()
-    return {"status": "stopped"}
+async def stop(stream_id: int | None = None):
+    """Detiene la generación en curso (local o nube).
+
+    Cada stream tiene su propio evento (C1): sin stream_id se cancela la
+    generación más reciente; con stream_id se cancela exactamente esa.
+    Nunca afecta a otros streams en curso.
+    """
+    return {"status": "stopped", **_cancelar_stream(stream_id)}
 
 
 @router.post("/unload_model")
@@ -233,41 +268,45 @@ async def chat(request: ChatRequest):
     if not ultimo or not ultimo.strip():
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
-    if request.provider:
-        try:
-            chat_messages = construir_mensajes_api(request.messages)
-            respuesta = generar_completo(
-                request.provider,
-                request.api_key,
-                request.model,
-                chat_messages,
-                tools=TOOLS_SCHEMA,
-                ejecutar_tool=ejecutar_tool,
-            )
-            return {"response": respuesta, "model_used": nombre_proveedor(request.provider)}
-        except Exception as e:
-            print(f"[YARVIS-CHAT] Error proveedor ({request.provider}): {e}")
-            return {"response": _fallback_local(request.messages, request.role, ultimo, str(e)), "model_used": "local-fallback"}
+    _marcar_uso_ia()
+    try:
+        if request.provider:
+            try:
+                chat_messages = construir_mensajes_api(request.messages)
+                respuesta = generar_completo(
+                    request.provider,
+                    request.api_key,
+                    request.model,
+                    chat_messages,
+                    tools=TOOLS_SCHEMA,
+                    ejecutar_tool=ejecutar_tool,
+                )
+                return {"response": respuesta, "model_used": nombre_proveedor(request.provider)}
+            except Exception as e:
+                print(f"[YARVIS-CHAT] Error proveedor ({request.provider}): {e}")
+                return {"response": _fallback_local(request.messages, request.role, ultimo, str(e)), "model_used": "local-fallback"}
 
-    chat_messages = construir_mensajes(request.role, request.messages, ultimo)
-    selected = request.model.lower()
+        chat_messages = construir_mensajes(request.role, request.messages, ultimo)
+        selected = request.model.lower()
 
-    if selected in ("0.5b", "0.8b", "1.7b"):
-        mk = selected.replace("b", "B")
+        if selected in ("0.5b", "0.8b", "1.7b"):
+            mk = selected.replace("b", "B")
+            try:
+                llm = cargar_modelo(mk)
+                return {"response": ejecutar_chat(llm, chat_messages, WORD_LIMITS[mk]), "model_used": mk}
+            except RuntimeError as e:
+                return {"response": str(e), "model_used": "none"}
+            except Exception as e:
+                return {"response": f"Error: {e}", "model_used": "none"}
+
         try:
-            llm = cargar_modelo(mk)
-            return {"response": ejecutar_chat(llm, chat_messages, WORD_LIMITS[mk]), "model_used": mk}
-        except RuntimeError as e:
-            return {"response": str(e), "model_used": "none"}
+            llm = cargar_modelo("0.5B")
+            respuesta = ejecutar_chat(llm, chat_messages, WORD_LIMITS["0.5B"])
+            return {"response": respuesta, "model_used": "0.5B"}
         except Exception as e:
             return {"response": f"Error: {e}", "model_used": "none"}
-
-    try:
-        llm = cargar_modelo("0.5B")
-        respuesta = ejecutar_chat(llm, chat_messages, WORD_LIMITS["0.5B"])
-        return {"response": respuesta, "model_used": "0.5B"}
-    except Exception as e:
-        return {"response": f"Error: {e}", "model_used": "none"}
+    finally:
+        _liberar_uso_ia()
 
 
 @router.post("/chat_stream")
@@ -279,7 +318,8 @@ async def chat_stream(request: ChatRequest):
     if not ultimo or not ultimo.strip():
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
-    _cancel_event.clear()
+    stream_id, cancel_event = _nuevo_stream_event()
+    _marcar_uso_ia()
 
     if request.provider:
         chat_messages = construir_mensajes_api(request.messages)
@@ -301,17 +341,19 @@ async def chat_stream(request: ChatRequest):
                     ejecutar_tool=ejecutar_tool,
                 ))
                 for kind, text in _separar_think(textos, max_w):
-                    if _cancel_event.is_set():
+                    if cancel_event.is_set():
                         break
                     yield f"data: {json.dumps({kind: text, 'model': cloud_display})}\n\n"
                 if usage:
                     print(f"[YARVIS-CHAT] Usage real del proveedor: {usage.get('prompt_tokens')} prompt + {usage.get('completion_tokens')} completion = {usage.get('total_tokens')} total")
                     yield f"data: {json.dumps({'usage': usage, 'model': cloud_display})}\n\n"
-                if not _cancel_event.is_set():
-                    yield f"data: {json.dumps({'done': True, 'model': cloud_display})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'cancelled': cancel_event.is_set(), 'model': cloud_display})}\n\n"
             except Exception as e:
                 print(f"[YARVIS-CHAT] Error proveedor ({cloud_display}), fallback a local: {e}")
                 yield _stream_fallback_local(request.messages, request.role, ultimo)
+                yield f"data: {json.dumps({'done': True, 'cancelled': False, 'model': 'local-fallback'})}\n\n"
+            finally:
+                _terminar_stream(stream_id)
 
         return StreamingResponse(generate_cloud(), media_type="text/event-stream")
 
@@ -321,21 +363,20 @@ async def chat_stream(request: ChatRequest):
     llm = None
     model_key = "0.5B"
 
-    if selected in ("0.5b", "0.8b", "1.7b"):
-        mk = selected.replace("b", "B")
-        try:
+    try:
+        if selected in ("0.5b", "0.8b", "1.7b"):
+            mk = selected.replace("b", "B")
             llm = cargar_modelo(mk)
             model_key = mk
-        except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error cargando {mk}: {e}")
-    else:
-        try:
+        else:
             llm = cargar_modelo("0.5B")
             model_key = "0.5B"
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error: {e}")
+    except RuntimeError as e:
+        _terminar_stream(stream_id)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        _terminar_stream(stream_id)
+        raise HTTPException(status_code=500, detail=f"Error cargando {model_key}: {e}")
 
     max_w = WORD_LIMITS.get(model_key, 2000)
 
@@ -350,16 +391,25 @@ async def chat_stream(request: ChatRequest):
             )
             deltas = (((c.get("choices") or [{}])[0].get("delta") or {}).get("content", "") for c in stream)
             for kind, text in _separar_think(deltas, max_w):
-                if _cancel_event.is_set():
+                if cancel_event.is_set():
                     break
                 yield f"data: {json.dumps({kind: text, 'model': model_key})}\n\n"
-            if not _cancel_event.is_set():
-                yield f"data: {json.dumps({'done': True, 'model': model_key})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'cancelled': cancel_event.is_set(), 'model': model_key})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'cancelled': False, 'model': model_key})}\n\n"
+        finally:
+            _terminar_stream(stream_id)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-# Se arranca la caché al importar el módulo (carga en segundo plano)
+# Se arrancan la caché y el vigilante de inactividad al importar el módulo.
 iniciar_cache()
+
+_vigilante_inactividad_thread = threading.Thread(
+    target=_vigilante_inactividad,
+    name="yarvis-vigilante-inactividad",
+    daemon=True,
+)
+_vigilante_inactividad_thread.start()

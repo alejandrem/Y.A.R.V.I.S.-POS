@@ -64,11 +64,9 @@
 - Python (Empleado): Gestiona IA, predicciones y chatbot. Solo lectura en la DB.
 - Comunicación: HTTP Local vía FastAPI en puerto dinámico (seleccionado por Rust al inicio para evitar colisiones).
 
-### Selección Adaptativa de IA (Semaforización de RAM Libre)
-La decisión del modelo la toma el módulo `gestion_hardware.py` de Python midiendo la RAM libre (OS agnostic):
-- **Cerebro Pesado (Qwen 1.7B)**: Si hay más de 4 GB de RAM libre.
-- **Cerebro Intermedio (Qwen 0.8B)**: Si hay más de 1 GB de RAM libre.
-- **Cerebro Ligero (Qwen 0.5B)**: Fallback para computadoras de muy bajos recursos.
+### Selección de IA
+La decisión del modelo la toma el módulo `gestion_hardware.py` de Python:
+- Ya no se usará este modelo de gestión de RAM. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
 
 ### Lazy Loading del LLM
 Para lograr un Lazy Loading real, el sidecar de Python arranca en segundo plano pero **sin cargar ningún LLM** pesado en memoria (a excepción de los embeddings ligeros de 40MB). 

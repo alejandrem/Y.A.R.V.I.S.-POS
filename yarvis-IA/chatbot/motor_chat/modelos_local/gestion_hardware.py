@@ -2,8 +2,7 @@
 🧠 gestion_hardware.py — Gestión de hardware y modelos Qwen.
 
 Se encarga de:
-    - Medir la RAM disponible del sistema (/proc/meminfo en Linux).
-    - Decidir qué modelo Qwen (0.5B / 0.8B / 1.7B) se puede cargar.
+    - Ya no se usará este modelo de gestión de ram si el usuario consta de 4GB de ram serian 1.5 para windows y lo demas para nosotros tenemos que forzar a windows a darnos mas ram.
     - Cargar, descargar y consultar el estado de los modelos.
     - Ejecutar la inferencia del modelo (respuestas completas).
 
@@ -23,8 +22,8 @@ _llm_1_7 = None
 
 WORD_LIMITS = {"0.5B": 2000, "0.8B": 3000, "1.7B": 4000}
 
-# RAM mínima (GB) requerida por cada modelo
-_RAM_REQUERIDA = {"0.5B": 0.0, "0.8B": 1.0, "1.7B": 4.0}
+# RAM mínima (GB) requerida por cada modelo (Límites eliminados, se fuerza el uso de RAM)
+_RAM_REQUERIDA = {"0.5B": 0.0, "0.8B": 0.0, "1.7B": 1.0}
 
 _LOADERS = {
     "0.5B": (lambda: Llama(model_path=qwen0_5, n_ctx=4096, n_gpu_layers=-1, n_threads=4, verbose=False), "_llm_0_5"),
