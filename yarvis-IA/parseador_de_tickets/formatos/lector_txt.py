@@ -16,8 +16,8 @@ from ..cerebro.filtrador import limpiar_producto, es_categoria
 _PATRON_PRODUCTO = re.compile(
     r'([A-Za-z0-9áéíóúñüÁÉÍÓÚÑÜ\s\.\-\'\"°®™]+?)'
     r'\s*[-=\*\~>]+\s*'
-    r'[\$]?\s*([\d,]+(?:\.\d+)?)?'
-    r'(?:\s+[\$]?\s*([\d,]+(?:\.\d+)?)?)?'
+    r'[\$]?\s*([\d,]+(?:\.\d+)?)'
+    r'(?:\s*[-=\*\~>]*\s*[\$]?\s*([\d,]+(?:\.\d+)?))?'
 )
 
 # Patrón para detectar cantidad al inicio de la línea (ej: "10Producto $10 $5")
@@ -30,34 +30,42 @@ _PATRON_CANTIDAD_INICIO = re.compile(
 )
 
 # Patrones SIN separador (solo espacios): Nombre  CANT  $VTA  $CST
+# El lookbehind (?<![-=*~>]) evita que el nombre se robe un separador real:
+# "Coca-Cola 600ML -- $25 $18" NO debe caer aquí (termina en '-'), sino en
+# _PATRON_PRODUCTO. Ese era el bug 8: SIN_SEP ganaba por precedencia.
 # Patrón 1: Con cantidad y con $ en precios
 _PATRON_SIN_SEP_CANT = re.compile(
-    r'^(.+?)\s+(\d+)\s+\$([\d,]+(?:\.\d+)?)\s+\$([\d,]+(?:\.\d+)?)'
+    r'^(.+?)(?<![-=*\~>])\s+(\d+)\s+\$([\d,]+(?:\.\d+)?)\s+\$([\d,]+(?:\.\d+)?)'
 )
 # Patrón 2: Sin cantidad, con $ en precios
 _PATRON_SIN_SEP = re.compile(
-    r'^(.+?)\s+\$([\d,]+(?:\.\d+)?)\s+\$([\d,]+(?:\.\d+)?)'
+    r'^(.+?)(?<![-=*\~>])\s+\$([\d,]+(?:\.\d+)?)\s+\$([\d,]+(?:\.\d+)?)'
 )
 # Patrón 3: Con cantidad, sin $ en precios
 _PATRON_SIN_SEP_CANT_SINDOL = re.compile(
-    r'^(.+?)\s+(\d+)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)'
+    r'^(.+?)(?<![-=*\~>])\s+(\d+)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)'
 )
 # Patrón 4: Sin cantidad, sin $
 _PATRON_SIN_SEP_SINDOL = re.compile(
-    r'^(.+?)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)'
+    r'^(.+?)(?<![-=*\~>])\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)'
 )
 
 _PATRON_LINEA_HEADER = re.compile(r'^[\s─]+$|PRODUCTO.*CANT.*VTA|^\s*$')
 
 
+_CANTIDAD_FINAL = re.compile(r'^(.*?)\s+(\d{1,3})$')
+_UNIDADES = ("ml", "l", "kg", "g", "gr", "oz", "lb")
+
+
 def _extraer_nombre_cantidad(texto_limpio: str) -> tuple[str, int]:
     """Extrae nombre y cantidad de un texto que termina en número (ej: 'Coca-Cola 600ml 2880')."""
-    partes = texto_limpio.rsplit(None, 1)
-    if len(partes) == 2:
-        posibles_numeros = partes[1].replace(',', '')
-        if posibles_numeros.isdigit():
-            return partes[0].strip(), int(posibles_numeros)
-    return texto_limpio.strip(), 0
+    limpio = texto_limpio.strip()
+    m = _CANTIDAD_FINAL.match(limpio)
+    if m:
+        nombre, num = m.group(1).strip(), int(m.group(2))
+        if not nombre.lower().endswith(_UNIDADES) and 0 < num <= 999:
+            return nombre, num
+    return limpio, 0
 
 
 def _parsear_linea_catalogo(linea: str, categoria_actual: str) -> list[dict]:
@@ -168,10 +176,10 @@ def _parsear_linea_catalogo(linea: str, categoria_actual: str) -> list[dict]:
                 continue
         
         # 5. Intentar cantidad al inicio con separador (ej: "10Producto - $10 $5")
-        match_cantidad = _PATRON_CANTIDAD_INICIO.search(segmento)
+        match_cantidad = _PATRON_CANTIDAD_INICIO.match(segmento)
         if match_cantidad:
             cantidad = int(match_cantidad.group(1))
-            nombre = match_cantidad.group(2).strip()
+            nombre = match_cantidad.group(2).strip().rstrip('-=*~> ').strip()
             venta_str = (match_cantidad.group(3) or '').replace(',', '')
             costo_str = (match_cantidad.group(4) or '').replace(',', '')
             
@@ -192,9 +200,9 @@ def _parsear_linea_catalogo(linea: str, categoria_actual: str) -> list[dict]:
                 continue
         
         # 6. Patrón con separador explícito (ej: "Producto -- $10 $5")
-        match = _PATRON_PRODUCTO.search(segmento)
+        match = _PATRON_PRODUCTO.match(segmento)
         if match:
-            nombre = match.group(1).strip()
+            nombre = match.group(1).strip().rstrip('-=*~> ').strip()
             venta_str = (match.group(2) or '').replace(',', '')
             costo_str = (match.group(3) or '').replace(',', '')
             

@@ -81,6 +81,11 @@ def run_prediction(db_path: str, days: int = 30) -> dict:
         print(f"[YARVIS-PROFETA] ❌ {msg}")
         return {"error": msg}
 
+    if not isinstance(days, int) or days < 1 or days > 365:
+        msg = f"days inválido: {days}. Debe estar entre 1 y 365."
+        print(f"[YARVIS-PROFETA] ❌ {msg}")
+        return {"error": msg}
+
     try:
         print(f"\n[YARVIS-PROFETA] ====== INICIANDO PREDICCION ======")
         print(f"[YARVIS-PROFETA] 📂 DB: {db_path}")

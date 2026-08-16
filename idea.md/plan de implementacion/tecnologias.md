@@ -66,7 +66,9 @@
 
 ### Selección de IA
 La decisión del modelo la toma el módulo `gestion_hardware.py` de Python:
-- Ya no se usará este modelo de gestión de RAM. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
+- `gestion_hardware.py` revisa la RAM disponible contra los umbrales de `_RAM_REQUERIDA`
+  (modelos Q4: 0.5B → 0.0GB, 0.8B → 0.5GB, 1.7B → 1.3GB). Solo se carga UN modelo Qwen
+  a la vez: al elegir otro, el frontend descarga el actual antes de cargar el nuevo.
 
 ### Lazy Loading del LLM
 Para lograr un Lazy Loading real, el sidecar de Python arranca en segundo plano pero **sin cargar ningún LLM** pesado en memoria (a excepción de los embeddings ligeros de 40MB). 

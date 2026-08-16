@@ -17,11 +17,6 @@ import json
 from .consultas_db import _conectar
 from .motor_rag import buscar_semantico
 
-# Columnas reales de la tabla `productos` (verificado en la DB de yarvis):
-# id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo,
-# codigo_barras, categoria, creado_en, vendido
-_CAMPOS_TOOL = ("nombre", "precio_venta", "stock", "categoria", "descripcion")
-
 
 def _columnas_productos() -> set[str]:
     """Columnas disponibles en la tabla productos (puede variar entre DBs)."""

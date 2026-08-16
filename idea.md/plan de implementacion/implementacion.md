@@ -108,7 +108,8 @@ Aquí el usuario finalmente sentirá la inteligencia del sistema.
 **Paso 4.1: Gestión de RAM y Lazy Loading**
 - En React, el usuario da clic en la pestaña "Consultar Y.A.R.V.I.S.".
 - Rust captura el clic y le pide a Python (FastAPI) que despierte el Chatbot.
-- Python, a través de `gestion_hardware.py`, carga el modelo. Ya no se usará este modelo de gestión de RAM. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
+- Python, a través de `gestion_hardware.py`, carga el modelo verificando la RAM disponible
+  contra los umbrales de `_RAM_REQUERIDA` (Q4: 0.5B → 0.0GB, 0.8B → 0.5GB, 1.7B → 1.3GB).
 - El chat se abre y el modelo se queda cargado permanentemente para no alentar la conversación (Lazy Loading).
 
 **Paso 4.2: RAG y Function Calling**

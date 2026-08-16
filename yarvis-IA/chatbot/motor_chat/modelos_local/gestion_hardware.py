@@ -2,7 +2,8 @@
 🧠 gestion_hardware.py — Gestión de hardware y modelos Qwen.
 
 Se encarga de:
-    - Ya no se usará este modelo de gestión de ram si el usuario consta de 4GB de ram serian 1.5 para windows y lo demas para nosotros tenemos que forzar a windows a darnos mas ram.
+    - Verificar la RAM disponible y cargar/descargar los modelos Qwen (0.5B/0.8B/1.7B)
+      según los umbrales de RAM_REQUERIDA (modelos en Q4: 0.5B → 0.0GB, 0.8B → 0.5GB, 1.7B → 1.3GB).
     - Cargar, descargar y consultar el estado de los modelos.
     - Ejecutar la inferencia del modelo (respuestas completas).
 
@@ -10,20 +11,22 @@ No sabe nada de la base de datos ni de la API web.
 """
 
 import gc
+import threading
 
 from llama_cpp import Llama
 from parseador_de_tickets.llm.rutas_modelos import qwen0_5, qwen0_8, qwen1_7
 
 from .prompts import limpiar_think
+from .variables import RAM_REQUERIDA, WORD_LIMITS
 
 _llm_0_5 = None
 _llm_0_8 = None
 _llm_1_7 = None
 
-WORD_LIMITS = {"0.5B": 2000, "0.8B": 3000, "1.7B": 4000}
-
-# RAM mínima (GB) requerida por cada modelo (Límites eliminados, se fuerza el uso de RAM)
-_RAM_REQUERIDA = {"0.5B": 0.0, "0.8B": 0.0, "1.7B": 1.0}
+# Un solo lock para toda la carga/descarga de modelos Qwen: evita que dos
+# requests concurrentes carguen el mismo modelo dos veces (doble RAM) o que
+# se descargue mientras otro hilo está cargando.
+_carga_lock = threading.Lock()
 
 _LOADERS = {
     "0.5B": (lambda: Llama(model_path=qwen0_5, n_ctx=4096, n_gpu_layers=-1, n_threads=4, verbose=False), "_llm_0_5"),
@@ -48,46 +51,52 @@ def get_ram_gb() -> float:
 def puede_cargar_modelo(model_key: str) -> tuple[bool, str]:
     """Verifica si la RAM disponible alcanza para cargar el modelo."""
     ram_gb = get_ram_gb()
-    needed = _RAM_REQUERIDA.get(model_key, 2.0)
+    needed = RAM_REQUERIDA.get(model_key, 2.0)
     if ram_gb < needed:
         return False, f"RAM insuficiente: {ram_gb:.1f}GB disponibles, {model_key} necesita ≥{needed}GB"
     return True, f"OK ({ram_gb:.1f}GB disponibles)"
 
 
 def cargar_modelo(model_key: str) -> Llama:
-    """Carga un modelo Qwen (0.5B/0.8B/1.7B) o devuelve el ya cargado."""
+    """Carga un modelo Qwen (0.5B/0.8B/1.7B) o devuelve el ya cargado.
+
+    Usa double-checked locking sobre `_carga_lock` para que dos requests
+    concurrentes jamás carguen el mismo modelo en paralelo (doble RAM).
+    """
     ok, msg = puede_cargar_modelo(model_key)
     if not ok:
         raise RuntimeError(msg)
 
-    if model_key == "0.5B" and _llm_0_5 is not None:
-        return _llm_0_5
-    if model_key == "0.8B" and _llm_0_8 is not None:
-        return _llm_0_8
-    if model_key == "1.7B" and _llm_1_7 is not None:
-        return _llm_1_7
-
     loader_fn, attr_name = _LOADERS[model_key]
-    print(f"[YARVIS-CHAT] Cargando Qwen {model_key}...")
-    model = loader_fn()
-    globals()[attr_name] = model
-    print(f"[YARVIS-CHAT] Qwen {model_key} listo.")
-    return model
+
+    # Primer chequeo sin lock: fast path cuando el modelo ya está cargado.
+    if globals()[attr_name] is not None:
+        return globals()[attr_name]
+
+    with _carga_lock:
+        # Segundo chequeo: otro hilo pudo cargarlo mientras esperábamos el lock.
+        if globals()[attr_name] is not None:
+            return globals()[attr_name]
+        print(f"[YARVIS-CHAT] Cargando Qwen {model_key}...")
+        model = loader_fn()
+        globals()[attr_name] = model
+        print(f"[YARVIS-CHAT] Qwen {model_key} listo.")
+        return model
 
 
 def descargar_modelo(model_key: str):
     """Descarga un modelo Qwen de la RAM/VRAM y libera memoria."""
-    global _llm_0_5, _llm_0_8, _llm_1_7
-    attr = {"0.5B": "_llm_0_5", "0.8B": "_llm_0_8", "1.7B": "_llm_1_7"}.get(model_key)
-    model = globals().get(attr)
-    if model is not None:
-        try:
-            model.close()
-        except Exception:
-            pass
-        globals()[attr] = None
-        gc.collect()
-        print(f"[YARVIS-CHAT] Qwen {model_key} descargado.")
+    with _carga_lock:
+        attr = {"0.5B": "_llm_0_5", "0.8B": "_llm_0_8", "1.7B": "_llm_1_7"}.get(model_key)
+        model = globals().get(attr)
+        if model is not None:
+            try:
+                model.close()
+            except Exception:
+                pass
+            globals()[attr] = None
+            gc.collect()
+            print(f"[YARVIS-CHAT] Qwen {model_key} descargado.")
 
 
 def estado_modelos() -> dict:
@@ -100,9 +109,8 @@ def estado_modelos() -> dict:
             "0.8B": _llm_0_8 is not None,
             "1.7B": _llm_1_7 is not None,
         },
-        "can_load_1_7b": ram_gb >= 4.0,
+        "can_load_1_7b": ram_gb >= RAM_REQUERIDA["1.7B"],
     }
-
 
 def ejecutar_chat(model: Llama, messages: list, max_words: int) -> str:
     """Ejecuta una conversación completa con el modelo y recorta el exceso."""

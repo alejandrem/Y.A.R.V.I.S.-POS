@@ -17,8 +17,8 @@ interface Message {
 export type ModelKey = "0.5B" | "0.8B" | "1.7B";
 
 export const MODEL_OPTIONS: { key: ModelKey; label: string; desc: string; minRam: number }[] = [
-  { key: "1.7B", label: "1.7B", desc: "El más capaz", minRam: 4.0 },
-  { key: "0.8B", label: "0.8B", desc: "Balance ideal", minRam: 1.0 },
+  { key: "1.7B", label: "1.7B", desc: "El más capaz", minRam: 1.3 },
+  { key: "0.8B", label: "0.8B", desc: "Balance ideal", minRam: 0.5 },
   { key: "0.5B", label: "0.5B", desc: "Rápido y ligero", minRam: 0 },
 ];
 

@@ -16,12 +16,13 @@ router = APIRouter()
 def _descargar_todos_los_modelos():
     """Libera RAM/VRAM de todos los modelos Qwen (parser y chat) al terminar un parseo."""
     from chatbot.motor_chat.modelos_local.gestion_hardware import descargar_modelo
+    from chatbot.motor_chat.modelos_local.variables import MODELOS
 
     try:
         descargar_modelos()
     except Exception:
         pass
-    for key in ("0.5B", "0.8B", "1.7B"):
+    for key in MODELOS:
         try:
             descargar_modelo(key)
         except Exception:
@@ -108,6 +109,121 @@ def _cargar_estado(db_path: str) -> dict:
     return state
 
 
+def _procesar_archivos(archivos: list[str], mapeo: dict, db_path: str):
+    """Procesa cada archivo con transacción propia; cede un dict por archivo.
+
+    Devuelve por cada archivo algo así:
+        {
+          "archivo", "ok", "motivo", "items", "duplicados",
+          "nuevos", "existentes", "venta_id", "total",
+        }
+
+    Es la ÚNICA implementación del bucle de parseo: tanto el modo síncrono
+    (/parsear_carpeta) como el streaming (/parsear_carpeta_stream) lo
+    recorren, evitando la duplicación de ~80 líneas que ya había divergido.
+
+    Transaccionalidad: cada archivo abre UNA transacción (BEGIN...COMMIT).
+    Si _insertar_venta falla a mitad (ej. producto inexistente), se hace
+    rollback: la venta parcial y los UPDATEs de stock de ese archivo se
+    descartan. NUNCA queda un insert a medias commiteado.
+    """
+    state = _cargar_estado(db_path)
+    conn = sqlite3.connect(db_path)
+    mapeo_obj = MapeoColumnas(**mapeo)
+
+    def _info(ok, motivo, **kw):
+        base = {
+            "archivo": "", "ok": ok, "motivo": motivo, "items": 0,
+            "duplicados": 0, "nuevos": [], "existentes": 0,
+            "venta_id": None, "total": 0.0,
+        }
+        base.update(kw)
+        return base
+
+    try:
+        for archivo in archivos:
+            nombre_archivo = os.path.basename(archivo)
+            try:
+                with open(archivo, "r", encoding="utf-8", errors="ignore") as f:
+                    texto = f.read()
+
+                if not texto.strip():
+                    yield _info(False, "archivo vacío", archivo=nombre_archivo)
+                    continue
+
+                lineas = [l for l in texto.strip().splitlines() if l.strip()]
+                if not lineas:
+                    yield _info(False, "sin líneas útiles", archivo=nombre_archivo)
+                    continue
+
+                total_cols = max(len(l.split()) for l in lineas)
+                items = []
+                seen = set()
+                duplicados = 0
+                existentes = 0
+                nuevos = []
+
+                for linea in lineas:
+                    try:
+                        item = parsear_linea(linea, mapeo_obj, total_cols)
+                    except Exception as e:
+                        print(f"[YARVIS-PARSER] Error parseando línea en {nombre_archivo}: {e}")
+                        continue
+                    if not item:
+                        continue
+                    dup_key = f"{item['producto']}|{item.get('precio_unitario', 0):.2f}"
+                    if dup_key in seen:
+                        duplicados += 1
+                        continue
+                    seen.add(dup_key)
+                    if dup_key in state["productos_db"]:
+                        existentes += 1
+                    else:
+                        state["productos_db"][dup_key] = None
+                        nuevos.append({"nombre": item["producto"], "precio": item.get("precio_unitario", 0)})
+                    items.append(item)
+
+                if not items:
+                    yield _info(False, "ningún producto reconocido con el mapeo actual", archivo=nombre_archivo)
+                    continue
+
+                fecha, hora = _extraer_fecha_hora_regex(texto)
+                fecha_iso = None
+                if fecha:
+                    fecha_iso = f"{fecha} {hora}:00" if hora else f"{fecha} 00:00:00"
+
+                cajero = _extraer_cajero(texto)
+                metodo_pago = _extraer_metodo_pago(texto)
+
+                try:
+                    conn.execute("BEGIN")
+                    try:
+                        venta_id = _insertar_venta(conn, items, cajero, fecha_iso, metodo_pago)
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
+                except Exception as e:
+                    yield _info(
+                        False, f"error al insertar en DB: {e}",
+                        archivo=nombre_archivo, items=len(items),
+                        duplicados=duplicados, nuevos=nuevos, existentes=existentes,
+                    )
+                    continue
+
+                yield _info(
+                    True, None,
+                    archivo=nombre_archivo, items=len(items), duplicados=duplicados,
+                    nuevos=nuevos, existentes=existentes, venta_id=venta_id,
+                    total=round(_calcular_subtotal(items) * 1.16, 2),
+                )
+            except Exception as e:
+                print(f"[YARVIS-PARSER] Error inesperado procesando {nombre_archivo}: {e}")
+                yield _info(False, f"error inesperado: {e}", archivo=nombre_archivo)
+    finally:
+        conn.close()
+
+
 def _procesar_carpeta_impl(archivos: list[str], mapeo: dict, db_path: str) -> dict:
     stats = {
         "total_archivos": len(archivos),
@@ -121,95 +237,33 @@ def _procesar_carpeta_impl(archivos: list[str], mapeo: dict, db_path: str) -> di
         "duplicados_detectados": 0,
         "productos_nuevos_lista": [],
         "resumen_ventas": [],
-        "tickets_fallidos": [],  # archivos que no se pudieron parsear + motivo
+        "tickets_fallidos": [],
     }
 
-    state = _cargar_estado(db_path)
+    nombres_nuevos_vistos: set = set()
 
-    for archivo in archivos:
-        nombre_archivo = os.path.basename(archivo)
-        try:
-            with open(archivo, "r", encoding="utf-8", errors="ignore") as f:
-                texto = f.read()
-
-            if not texto.strip():
-                stats["errores"] += 1
-                stats["tickets_fallidos"].append({"archivo": nombre_archivo, "motivo": "archivo vacío"})
-                continue
-
-            lineas = [l for l in texto.strip().splitlines() if l.strip()]
-            if not lineas:
-                stats["errores"] += 1
-                stats["tickets_fallidos"].append({"archivo": nombre_archivo, "motivo": "sin líneas útiles"})
-                continue
-
-            total_cols = max(len(l.split()) for l in lineas)
-            items = []
-            seen = set()
-
-            for linea in lineas:
-                try:
-                    item = parsear_linea(linea, MapeoColumnas(**mapeo), total_cols)
-                    if item:
-                        dup_key = f"{item['producto']}|{item.get('precio_unitario', 0):.2f}"
-                        if dup_key in seen:
-                            stats["duplicados_detectados"] += 1
-                            continue
-                        seen.add(dup_key)
-
-                        db_key = dup_key
-                        if db_key in state["productos_db"]:
-                            stats["productos_existentes"] += 1
-                        else:
-                            stats["productos_nuevos"] += 1
-                            state["productos_db"][db_key] = None
-                            if item["producto"] not in [p["nombre"] for p in stats["productos_nuevos_lista"]]:
-                                stats["productos_nuevos_lista"].append({
-                                    "nombre": item["producto"],
-                                    "precio": item.get("precio_unitario", 0),
-                                })
-
-                        items.append(item)
-                except Exception as e:
-                    print(f"[YARVIS-PARSER] Error parseando línea en {nombre_archivo}: {e}")
-
-            if items:
-                try:
-                    fecha, hora = _extraer_fecha_hora_regex(texto)
-                    fecha_iso = None
-                    if fecha:
-                        fecha_iso = f"{fecha} {hora}:00" if hora else f"{fecha} 00:00:00"
-
-                    conn = sqlite3.connect(db_path)
-                    cajero = _extraer_cajero(texto)
-                    metodo_pago = _extraer_metodo_pago(texto)
-                    venta_id = _insertar_venta(conn, items, cajero, fecha_iso, metodo_pago)
-                    conn.commit()
-                    conn.close()
-
-                    stats["exitosos"] += 1
-                    stats["ventas_creadas"] += 1
-                    stats["items_insertados"] += len(items)
-                    stats["resumen_ventas"].append({
-                        "archivo": nombre_archivo,
-                        "venta_id": venta_id,
-                        "items": len(items),
-                        "total": round(_calcular_subtotal(items) * 1.16, 2),
-                    })
-                except Exception as e:
-                    stats["errores"] += 1
-                    stats["tickets_fallidos"].append({"archivo": nombre_archivo, "motivo": f"error al insertar en DB: {e}"})
-                    print(f"[YARVIS-PARSER] Error insertando {nombre_archivo} en DB: {e}")
-            else:
-                stats["errores"] += 1
-                stats["tickets_fallidos"].append({"archivo": nombre_archivo, "motivo": "ningún producto reconocido con el mapeo actual"})
-
-        except Exception as e:
-            stats["errores"] += 1
-            stats["tickets_fallidos"].append({"archivo": nombre_archivo, "motivo": f"error inesperado: {e}"})
-            print(f"[YARVIS-PARSER] Error inesperado procesando {nombre_archivo}: {e}")
-
+    for res in _procesar_archivos(archivos, mapeo, db_path):
         stats["procesados"] += 1
+        if res["ok"]:
+            stats["exitosos"] += 1
+            stats["ventas_creadas"] += 1
+            stats["items_insertados"] += res["items"]
+            stats["duplicados_detectados"] += res["duplicados"]
+            stats["productos_existentes"] += res["existentes"]
+            stats["productos_nuevos"] += len(res["nuevos"])
+            for nuevo in res["nuevos"]:
+                if nuevo["nombre"] not in nombres_nuevos_vistos:
+                    nombres_nuevos_vistos.add(nuevo["nombre"])
+                    stats["productos_nuevos_lista"].append(nuevo)
+            stats["resumen_ventas"].append({
+                "archivo": res["archivo"],
+                "venta_id": res["venta_id"],
+                "items": res["items"],
+                "total": res["total"],
+            })
+        else:
+            stats["errores"] += 1
+            stats["tickets_fallidos"].append({"archivo": res["archivo"], "motivo": res["motivo"]})
 
     stats["productos_nuevos_lista"] = stats["productos_nuevos_lista"][:100]
     stats["tickets_fallidos"] = stats["tickets_fallidos"][:500]  # máx 500 para no inflar la respuesta
@@ -256,7 +310,6 @@ async def parsear_carpeta_stream(request: ParseCarpetaRequest):
         raise HTTPException(status_code=400, detail="No se encontraron archivos .txt en la carpeta")
 
     total = len(archivos)
-    state = _cargar_estado(db_path)
 
     descargar_modelos()
 
@@ -273,96 +326,26 @@ async def parsear_carpeta_stream(request: ParseCarpetaRequest):
         tickets_fallidos = []  # lista de {archivo, motivo} para los que no se parsearon
 
         try:
-            # UNA sola conexion SQLite para todo el proceso
-            conn = sqlite3.connect(db_path)
-            try:
-                batch_size = 50
-                for i in range(0, total, batch_size):
-                    batch = archivos[i:i + batch_size]
+            # Misma lógica de parseo/inserción que el modo síncrono; aquí solo
+            # se acumulan contadores y se emiten eventos de progreso.
+            for res in _procesar_archivos(archivos, mapeo, db_path):
+                procesados += 1
+                if res["ok"]:
+                    exitosos += 1
+                    ventas_creadas += 1
+                    items_insertados += res["items"]
+                    duplicados_detectados += res["duplicados"]
+                    productos_existentes += res["existentes"]
+                    for nuevo in res["nuevos"]:
+                        productos_nuevos_set.add(nuevo["nombre"])
+                    productos_nuevos += len(res["nuevos"])
+                else:
+                    errores += 1
+                    tickets_fallidos.append({"archivo": res["archivo"], "motivo": res["motivo"]})
 
-                    # Una transaccion por batch (no por archivo)
-                    conn.execute("BEGIN")
-
-                    for archivo in batch:
-                        nombre_archivo = os.path.basename(archivo)
-                        try:
-                            with open(archivo, "r", encoding="utf-8", errors="ignore") as f:
-                                texto = f.read()
-
-                            if not texto.strip():
-                                errores += 1
-                                tickets_fallidos.append({"archivo": nombre_archivo, "motivo": "archivo vacío"})
-                                procesados += 1
-                                continue
-
-                            lineas = [l for l in texto.strip().splitlines() if l.strip()]
-                            if not lineas:
-                                errores += 1
-                                tickets_fallidos.append({"archivo": nombre_archivo, "motivo": "sin líneas útiles"})
-                                procesados += 1
-                                continue
-
-                            total_cols = max(len(l.split()) for l in lineas)
-                            items = []
-                            seen = set()
-
-                            for linea in lineas:
-                                try:
-                                    item = parsear_linea(linea, MapeoColumnas(**mapeo), total_cols)
-                                    if item:
-                                        dup_key = f"{item['producto']}|{item.get('precio_unitario', 0):.2f}"
-                                        if dup_key in seen:
-                                            duplicados_detectados += 1
-                                            continue
-                                        seen.add(dup_key)
-
-                                        db_key = dup_key
-                                        if db_key in state["productos_db"]:
-                                            productos_existentes += 1
-                                        else:
-                                            productos_nuevos += 1
-                                            state["productos_db"][db_key] = None
-                                            productos_nuevos_set.add(item["producto"])
-
-                                        items.append(item)
-                                except Exception as e:
-                                    print(f"[YARVIS-PARSER] Error parseando línea en {nombre_archivo}: {e}")
-
-                            if items:
-                                try:
-                                    fecha, hora = _extraer_fecha_hora_regex(texto)
-                                    fecha_iso = None
-                                    if fecha:
-                                        fecha_iso = f"{fecha} {hora}:00" if hora else f"{fecha} 00:00:00"
-
-                                    cajero = _extraer_cajero(texto)
-                                    metodo_pago = _extraer_metodo_pago(texto)
-                                    _insertar_venta(conn, items, cajero, fecha_iso, metodo_pago)
-                                    exitosos += 1
-                                    ventas_creadas += 1
-                                    items_insertados += len(items)
-                                except Exception as e:
-                                    errores += 1
-                                    tickets_fallidos.append({"archivo": nombre_archivo, "motivo": f"error al insertar en DB: {e}"})
-                                    print(f"[YARVIS-PARSER] Error insertando {nombre_archivo} en DB: {e}")
-                            else:
-                                errores += 1
-                                tickets_fallidos.append({"archivo": nombre_archivo, "motivo": "ningún producto reconocido con el mapeo actual"})
-
-                        except Exception as e:
-                            errores += 1
-                            tickets_fallidos.append({"archivo": nombre_archivo, "motivo": f"error inesperado: {e}"})
-                            print(f"[YARVIS-PARSER] Error inesperado procesando {nombre_archivo}: {e}")
-
-                        procesados += 1
-
-                    # Commit al final de cada batch
-                    conn.commit()
-
+                if procesados % 50 == 0 or procesados == total:
                     yield f"data: {json.dumps({'type': 'progress', 'procesados': procesados, 'total': total, 'exitosos': exitosos, 'errores': errores, 'ventas_creadas': ventas_creadas, 'items_insertados': items_insertados, 'productos_nuevos': productos_nuevos, 'productos_existentes': productos_existentes, 'duplicados_detectados': duplicados_detectados})}\n\n"
                     await asyncio.sleep(0.01)
-            finally:
-                conn.close()
 
             yield f"data: {json.dumps({'type': 'complete', 'total_archivos': total, 'procesados': procesados, 'exitosos': exitosos, 'errores': errores, 'ventas_creadas': ventas_creadas, 'items_insertados': items_insertados, 'productos_nuevos': productos_nuevos, 'productos_existentes': productos_existentes, 'duplicados_detectados': duplicados_detectados, 'productos_nuevos_lista': list(productos_nuevos_set)[:100], 'tickets_fallidos': tickets_fallidos[:500]})}\n\n"
 

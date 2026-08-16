@@ -505,7 +505,7 @@ Le pide a la IA que analice un ticket y retorne JSON con:
 
 ### 7.2 LLM del Chatbot (`chatbot/motor_chat/gestion_hardware.py`)
 
-A diferencia del parseador, el chatbot NO escala de esta manera. En su arranque **activa un único modelo (Lazy Loading)** permanentemente mientras la pestaña del chat esté abierta, para asegurar velocidad y respuesta conversacional fluida. Ya no se usará este modelo de gestión de RAM estricto. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
+A diferencia del parseador, el chatbot NO escala de esta manera. En su arranque **activa un único modelo (Lazy Loading)** permanentemente mientras la pestaña del chat esté abierta, para asegurar velocidad y respuesta conversacional fluida. `gestion_hardware.py` valida la RAM contra `_RAM_REQUERIDA` (Q4: 0.5B → 0.0GB, 0.8B → 0.5GB, 1.7B → 1.3GB) y el frontend descarga el modelo actual antes de cargar otro (solo uno a la vez).
 
 ### 7.3 Embeddings (`chatbot/embeddings/modelo.py`)
 

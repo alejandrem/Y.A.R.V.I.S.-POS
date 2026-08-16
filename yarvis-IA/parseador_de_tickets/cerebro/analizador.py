@@ -161,7 +161,8 @@ async def analizar_ticket_endpoint(request: AnalizarTicketRequest):
     finally:
         descargar_modelos()
         from chatbot.motor_chat.modelos_local.gestion_hardware import descargar_modelo
-        for key in ("0.5B", "0.8B", "1.7B"):
+        from chatbot.motor_chat.modelos_local.variables import MODELOS
+        for key in MODELOS:
             try:
                 descargar_modelo(key)
             except Exception:
@@ -235,41 +236,79 @@ def _limpiar_precio(texto: str) -> float:
         return 0.0
 
 
-def _es_linea_util(linea: str) -> bool:
-    """Detecta si una linea es datos de producto o es encabezado/separador."""
-    linea_lower = linea.lower().strip()
+_PATRON_NUM = re.compile(r'^\$?[\d,]+(?:\.\d+)?$')
 
+
+def _es_linea_util(linea: str) -> bool:
+    """Detecta si una linea es datos de producto o es encabezado/separador.
+
+    Los patrones de skip se dividen en 3 niveles para evitar falsos positivos
+    con productos cuyos nombres contienen palabras ambiguas ("GATORADE TOTAL",
+    "CAJA DE 24 CERVEZAS", "CANTIMPLORA", "PRECIOS JUSTOS", "OLIVA", "COLONIA"):
+
+    Nivel 1 (subcadena/frase): cabeceras y pies que NUNCA están en un nombre
+                               de producto ("cfdi", "gracias", "metodo de
+                               pago", "total:"...). Incluye los patrones con
+                               ':' para que "CAJA:" y "TOTAL:" sean cabecera
+                               sin hacer que "CAJA DE MADERA" sea descartada.
+    Nivel 2 (word-boundary \\b): palabras que SÍ pueden ser parte de un nombre
+                               de producto ("total", "caja", "cant", "precio",
+                               "colonia", "iva"...). Solo se descartan si la
+                               línea NO tiene columnas numéricas (≈ cabecera).
+    Nivel 3 (columnas numéricas): con ≥2 números la línea casi seguro es un
+                               producto y se saltan los niveles 2 y 3; una
+                               palabra de total/pago arrancando la línea con
+                               1 sola columna numérica es una cabecera.
+    """
+    linea_lower = linea.lower().strip()
     if not linea_lower:
         return False
 
-    if all(c in "-=_*~" for c in linea_lower.replace(" ", "")):
+    if all(c in "-=_*~.:" for c in linea_lower.replace(" ", "")):
         return False
 
-    patrones_skip = [
-        "ticket", "factura", "cfdi", "rfc", "serie", "folio",
-        "caja", "cajero", "turno",
-        "subtotal", "iva", "total a pagar", "cambio",
-        "metodo de pago", "forma de pago",
-        "nombre", "direccion", "telefono", "tel:", "correo",
-        "gracias", "vuelva", "auxiliar", "copias",
-        "articulo", "producto", "descripcion", "cant", "precio",
-        "empresa", "razon social", "regimen",
-        # Encabezados de ticket de tienda
-        "miscelánea", "miscelanea", "av.", "av ", "calle",
-        "colonia", "ciudad", "estado", "cp:", "rfc:",
-        "tel ", "tel.", "pagina", "www", "ticket #",
-        # Línea de total
-        "total", "pago:", "efectivo", "tarjeta",
-        # Fecha, hora, lineas de pago
-        "fecha:", "hora:", "pago con", "c.p.",
-    ]
-    for patron in patrones_skip:
-        if patron in linea_lower:
+    tokens = linea_lower.split()
+    nums = sum(1 for t in tokens if _PATRON_NUM.match(t.replace("$", "", 1)))
+
+    # --- Nivel 1: nunca aparecen en un nombre de producto ---
+    for frase in (
+        "factura", "cfdi", "gracias", "vuelva", "bienvenido",
+        "metodo de pago", "forma de pago", "razon social", "regimen fiscal",
+        "total a pagar", "efectivo recibido", "dinero recibido",
+        "ticket #", "www", "pagina", "c.p.", "cp:",
+        "telefono:", "direccion:", "correo:", "email:",
+        "total:", "subtotal:", "iva:", "efectivo:", "tarjeta:", "cambio:",
+        "pago:", "caja:", "nombre:", "fecha:", "hora:", "folio:", "serie:",
+        "av.",
+    ):
+        if frase in linea_lower:
             return False
 
-    # Si la línea termina con un número de 4+ dígitos (ticket number)
+    # --- Nivel 3: cabeceras de total/pago que arrancan la línea ---
+    # "TOTAL ------ $1,234.56", "EFECTIVO $500", "IVA ..." → cabecera.
+    if nums < 3 and tokens:
+        primer = tokens[0].rstrip(":.")
+        if primer in ("total", "subtotal", "iva", "efectivo", "tarjeta",
+                      "cambio", "credito", "debito", "pago", "cuota", "extra"):
+            return False
+
+    # Línea que termina en un número grande (folio/número de ticket)
     if re.search(r'#?\d{4,}$', linea_lower):
         return False
+
+    # --- Nivel 2: word-boundary, solo si NO hay columnas numéricas ---
+    if nums < 2:
+        for palabra in (
+            "ticket", "caja", "cajero", "turno", "rfc", "cambio",
+            "nombre", "articulo", "producto", "cant", "precio",
+            "empresa", "calle", "ciudad", "estado", "colonia",
+            "direccion", "telefono", "tel", "descripcion",
+            "serie", "folio", "copias", "correo", "miscelanea",
+            "total", "efectivo", "tarjeta", "iva", "av",
+        ):
+            if re.search(rf'\b{re.escape(palabra)}\b', linea_lower):
+                if nums == 0:
+                    return False
 
     return True
 

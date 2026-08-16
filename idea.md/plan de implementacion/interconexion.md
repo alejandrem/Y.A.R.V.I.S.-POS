@@ -116,8 +116,8 @@ Compatibilidad de CPU: Debemos configurar la IA para que use solo el procesador 
 
 Detección automática de RAM para la ejecución del LLM: Rust notifica la apertura del chat. Es el motor de Python (`gestion_hardware.py`) el encargado de leer `/proc/meminfo` o similar para medir la memoria y tomar la decisión, evitando un ciclo de recargas si se abre/cierra la ventana.
 
-- RAM >= 4.0 GB: Carga Qwen 3 1.7B. Es muy inteligente y razona casi como humano.
-- RAM >= 1.0 GB: Carga Qwen 3.5 0.8B. Rápido y eficiente.
+- RAM >= 1.3 GB: Carga Qwen 3 1.7B. Es muy inteligente y razona casi como humano. (En Q4 ocupa ~1.3GB.)
+- RAM >= 0.5 GB: Carga Qwen 3.5 0.8B. Rápido y eficiente.
 - RAM >= 0.0 GB: Carga Qwen 2.5 0.5B. Fallback ultra-ligero para no asfixiar a computadoras viejas.
 
 
@@ -203,7 +203,7 @@ El ejecutable de Rust (yarvis-app.exe) actúa como el orquestador principal y el
 5. Lanzamiento del Empleado (Sin LLM): Rust ejecuta en segundo plano el archivo `./engine/ai_service.exe`, pasándole los puertos y ordenando cargar SOLO el modelo de embeddings pequeño: `--embed-only`. (El LLM de Qwen NO se carga aún).
 6. Verificación de Salud: Rust espera a que el servidor local de FastAPI responda "OK" en GET /health y lanza el Ping de predicciones si fue necesario en el Paso 3.
 7. Se abre la interfaz de usuario para el cajero (Modo Punto de Venta normal).
-8. Lazy Loading (Solo al usar IA): Cuando el usuario abre la pestaña del Chatbot, Rust manda la orden de carga. Es Python (`gestion_hardware.py`) quien carga el modelo. Ya no se usará este modelo de gestión de RAM. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
+8. Lazy Loading (Solo al usar IA): Cuando el usuario abre la pestaña del Chatbot, Rust manda la orden de carga. Es Python (`gestion_hardware.py`) quien carga el modelo, validando la RAM contra `_RAM_REQUERIDA` (Q4: 0.5B → 0.0GB, 0.8B → 0.5GB, 1.7B → 1.3GB). Solo se carga UN modelo Qwen a la vez: si ya hay uno en RAM, el frontend lo descarga antes de cargar el nuevo.
 
 ## 2. Flujo de Comunicación (Protocolo HTTP Local)
 
@@ -218,7 +218,10 @@ Python (FastAPI)        | Rust (Tauri IPC)       | HTTP POST  | Escritura indire
 
 ## 3. Lógica de Selección Adaptativa de IA (Gestión Dinámica de Hardware)
 
-El sistema ya no usa este modelo de gestión de RAM. Si el usuario consta de 4GB de RAM, serían 1.5 para Windows y lo demás para nosotros, tenemos que forzar a Windows a darnos más RAM.
+El sistema gestiona la RAM de forma adaptativa: `gestion_hardware.py` mide la memoria disponible
+y solo deja cargar el modelo que cumpla su umbral en `_RAM_REQUERIDA` (Q4: 0.5B → 0.0GB,
+0.8B → 0.5GB, 1.7B → 1.3GB). El frontend también bloquea el selector si la RAM no alcanza
+y descarga el modelo actual antes de cargar otro.
 Por otro lado, el Parseador de Tickets (`analizador_llm.py`) utiliza una **escalada automática basada en confianza**:
 1. Intenta parsear con 0.5B.
 2. Si la confianza es menor a `0.80`, descarga el modelo y reintenta con 0.8B.

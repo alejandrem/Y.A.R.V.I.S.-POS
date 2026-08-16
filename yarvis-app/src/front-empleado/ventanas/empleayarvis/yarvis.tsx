@@ -18,8 +18,8 @@ const yarvisNav = {
 };
 
 function pickBestModel(ramGb: number): ModelKey {
-  if (ramGb >= 4.0) return "1.7B";
-  if (ramGb >= 1.0) return "0.8B";
+  if (ramGb >= 1.3) return "1.7B";
+  if (ramGb >= 0.5) return "0.8B";
   return "0.5B";
 }
 
@@ -65,7 +65,7 @@ export default function Yarvis() {
       return;
     }
 
-    const MODEL_RAM: Record<ModelKey, number> = { "0.5B": 0, "0.8B": 1.0, "1.7B": 4.0 };
+    const MODEL_RAM: Record<ModelKey, number> = { "0.5B": 0, "0.8B": 0.5, "1.7B": 1.3 };
     const needed = MODEL_RAM[model];
     if (ramGb > 0 && ramGb < needed) {
       setRamWarning(`RAM insuficiente para Qwen ${model}: tienes ${ramGb.toFixed(1)}GB, necesitas ≥${needed}GB`);
@@ -154,7 +154,7 @@ export default function Yarvis() {
       {ramWarning && (
         <div className="px-6 py-2 bg-red-50 border-b border-red-200">
           <div className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 flex-shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
             <span className="text-[10px] font-black text-red-600 uppercase tracking-widest">{ramWarning}</span>
           </div>
         </div>

@@ -8,8 +8,8 @@ const API_PROVIDERS = [
 ];
 
 function pickBestModel(ramGb: number): ModelKey {
-  if (ramGb >= 4.0) return "1.7B";
-  if (ramGb >= 1.0) return "0.8B";
+  if (ramGb >= 1.3) return "1.7B";
+  if (ramGb >= 0.5) return "0.8B";
   return "0.5B";
 }
 
@@ -112,7 +112,7 @@ const AdminYarvis = () => {
       return;
     }
 
-    const MODEL_RAM: Record<ModelKey, number> = { "0.5B": 0, "0.8B": 1.0, "1.7B": 4.0 };
+    const MODEL_RAM: Record<ModelKey, number> = { "0.5B": 0, "0.8B": 0.5, "1.7B": 1.3 };
     const needed = MODEL_RAM[model];
     if (ramGb > 0 && ramGb < needed) {
       setRamWarning(`RAM insuficiente para Qwen ${model}: tienes ${ramGb.toFixed(1)}GB, necesitas ≥${needed}GB`);

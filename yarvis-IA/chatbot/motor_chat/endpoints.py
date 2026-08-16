@@ -21,14 +21,17 @@ from .modelos_API.apis_cloud import generar_completo, generar_stream, listar_mod
 from .modelos_API.prompts_api import construir_mensajes_api
 from .modelos_local.cache import cantidad_productos_cache, iniciar_cache
 from .modelos_local.gestion_hardware import (
-    WORD_LIMITS,
     cargar_modelo,
     descargar_modelo,
     ejecutar_chat,
     estado_modelos,
 )
-from .modelos_local.herramientas import TOOLS_SCHEMA, ejecutar_tool, search_inventory
+from .modelos_local.variables import MODELOS, WORD_LIMITS
+from .modelos_local.herramientas import TOOLS_SCHEMA, ejecutar_tool
 from .modelos_local.prompts import _separar_think, construir_mensajes
+
+# Versión en minúsculas de las claves (el usuario manda "0.5b" / "0.8b" / "1.7b").
+_MODELOS_B = tuple(m.lower() for m in MODELOS)
 
 router = APIRouter()
 
@@ -121,7 +124,7 @@ def _registrar_actividad():
 def _descargar_por_inactividad():
     """Descarga los modelos Qwen de la RAM tras 5 min sin actividad."""
     print("[YARVIS-CHAT] 5 min de inactividad: descargando modelos de la RAM.")
-    for key in ("0.5B", "0.8B", "1.7B"):
+    for key in MODELOS:
         descargar_modelo(key)
 
 
@@ -219,7 +222,7 @@ async def model_status():
 async def load_model(request: LoadModelRequest):
     _registrar_actividad()
     model_key = request.model.upper()
-    if model_key not in ("0.5B", "0.8B", "1.7B"):
+    if model_key not in MODELOS:
         raise HTTPException(status_code=400, detail=f"Modelo no válido: {request.model}")
     try:
         cargar_modelo(model_key)
@@ -244,7 +247,7 @@ async def stop(stream_id: int | None = None):
 @router.post("/unload_model")
 async def unload_model(request: LoadModelRequest):
     model_key = request.model.upper()
-    if model_key not in ("0.5B", "0.8B", "1.7B"):
+    if model_key not in MODELOS:
         raise HTTPException(status_code=400, detail=f"Modelo no válido: {request.model}")
     descargar_modelo(model_key)
     return {"status": "ok", "model": model_key, "message": f"Qwen {model_key} descargado", **_estado_completo()}
@@ -289,7 +292,7 @@ async def chat(request: ChatRequest):
         chat_messages = construir_mensajes(request.role, request.messages, ultimo)
         selected = request.model.lower()
 
-        if selected in ("0.5b", "0.8b", "1.7b"):
+        if selected in _MODELOS_B:
             mk = selected.replace("b", "B")
             try:
                 llm = cargar_modelo(mk)
@@ -364,7 +367,7 @@ async def chat_stream(request: ChatRequest):
     model_key = "0.5B"
 
     try:
-        if selected in ("0.5b", "0.8b", "1.7b"):
+        if selected in _MODELOS_B:
             mk = selected.replace("b", "B")
             llm = cargar_modelo(mk)
             model_key = mk

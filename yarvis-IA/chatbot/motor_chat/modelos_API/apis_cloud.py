@@ -16,41 +16,20 @@ import time
 import httpx
 
 from ..modelos_local.prompts import _separar_think
+from .variables import (
+    MODELOS_CACHE_TTL,
+    MODELOS_FREE_EXTRA,
+    ORDEN_FALLBACK_FREE,
+    PROVIDERS,
+    TIMEOUT_CONNECT,
+    TIMEOUT_READ,
+)
 
-PROVIDERS = {
-    "google": {
-        "name": "Gemini",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "default_model": "gemini-2.0-flash",
-    },
-    "opencode": {
-        "name": "OpenCode",
-        "base_url": "https://opencode.ai/zen/v1",
-        "default_model": "mimo-v2.5-free",
-    },
-}
-
-_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
-
-# Modelos gratuitos de OpenCode que no terminan en "-free" (lista extra).
-_MODELOS_FREE_EXTRA = {"big-pickle"}
+_TIMEOUT = httpx.Timeout(TIMEOUT_READ, connect=TIMEOUT_CONNECT)
 
 # Caché del listado de modelos (TTL 60s): evita gastar cuota pegándole a
 # los endpoints de /models en cada apertura del selector.
 _MODELOS_CACHE: dict[str, tuple[float, list[dict]]] = {}
-_MODELOS_CACHE_TTL = 60.0
-
-# Orden de fallback para los modelos gratuitos de OpenCode cuando uno se
-# satura (429). Empieza por el más estable y baja a los demás.
-_ORDEN_FALLBACK_FREE = [
-    "mimo-v2.5-free",
-    "nemotron-3-ultra-free",
-    "nemotron-3.5-lightning-free",
-    "hy3-free",
-    "laguna-s-2.1-free",
-    "deepseek-v4-flash-free",
-    "big-pickle",
-]
 
 
 def nombre_proveedor(provider: str) -> str:
@@ -61,17 +40,17 @@ def nombre_proveedor(provider: str) -> str:
 
 def _es_free(model_id: str) -> bool:
     """Un modelo de OpenCode es gratuito si termina en '-free' o está en la lista extra."""
-    return model_id.endswith("-free") or model_id in _MODELOS_FREE_EXTRA
+    return model_id.endswith("-free") or model_id in MODELOS_FREE_EXTRA
 
 
 def _siguiente_modelo_free(model_id: str) -> str | None:
     """Devuelve el siguiente modelo gratuito de OpenCode a probar, o None si se agotaron."""
-    if model_id in _ORDEN_FALLBACK_FREE:
-        idx = _ORDEN_FALLBACK_FREE.index(model_id)
-        if idx + 1 < len(_ORDEN_FALLBACK_FREE):
-            return _ORDEN_FALLBACK_FREE[idx + 1]
+    if model_id in ORDEN_FALLBACK_FREE:
+        idx = ORDEN_FALLBACK_FREE.index(model_id)
+        if idx + 1 < len(ORDEN_FALLBACK_FREE):
+            return ORDEN_FALLBACK_FREE[idx + 1]
         return None
-    return _ORDEN_FALLBACK_FREE[0]
+    return ORDEN_FALLBACK_FREE[0]
 
 
 def _normalizar_mensajes(messages: list[dict]) -> list[dict]:
@@ -294,7 +273,7 @@ def listar_modelos(provider: str, api_key: str = "") -> list[dict]:
 
     ahora = time.time()
     cached = _MODELOS_CACHE.get(provider)
-    if cached and ahora - cached[0] < _MODELOS_CACHE_TTL:
+    if cached and ahora - cached[0] < MODELOS_CACHE_TTL:
         return cached[1]
 
     if provider == "google":
