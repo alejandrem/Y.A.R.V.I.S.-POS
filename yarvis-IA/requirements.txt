@@ -21,6 +21,7 @@ torch
 
 # --- Base de Datos Vectorial ---
 sqlite-vec
+
 # --- Dependencias de Desarrollo (tests) ---
 pytest
 httpx2

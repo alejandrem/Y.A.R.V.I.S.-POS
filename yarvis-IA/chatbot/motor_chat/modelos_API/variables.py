@@ -39,6 +39,15 @@ ORDEN_FALLBACK_FREE = [
     "big-pickle",
 ]
 
+# Máximo de modelos a probar en un solo mensaje (incluye el pedido). Si todos
+# fallan, se cae al modelo local. Evita que el relevo tarde una eternidad.
+MAX_MODELOS_A_PROBAR = 3
+
+# Segundos a esperar ante un 429 entre modelo y modelo (rango corto para no
+# frenar el chat: si está saturado, mejor pasar al siguiente rápido o caer al local).
+ESPERA_429_MIN = 2
+ESPERA_429_MAX = 4
+
 # TTL (segundos) de la caché del listado de modelos de /cloud_models.
 # Evita golpear los endpoints /models de los proveedores en cada apertura.
 MODELOS_CACHE_TTL = 60.0

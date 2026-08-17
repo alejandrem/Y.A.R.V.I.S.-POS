@@ -14,7 +14,11 @@ Se usa en AMBOS modos:
 
 import json
 
-from .consultas_db import _conectar
+from .consultas_db import (
+    _conectar,
+    obtener_productos_mas_vendidos,
+    obtener_ventas_por_producto,
+)
 from .motor_rag import buscar_semantico
 
 
@@ -34,7 +38,7 @@ def _select_base(columnas: set[str]) -> tuple[str, bool]:
     """Construye el SELECT base; devuelve (sql, tiene_descripcion)."""
     campos = ["nombre"]
     tiene_descripcion = "descripcion" in columnas
-    for c in ("precio_venta", "stock", "categoria"):
+    for c in ("precio_costo", "precio_venta", "stock", "categoria"):
         if c in columnas:
             campos.append(f"COALESCE({c}, 0) AS {c}" if c != "categoria" else f"COALESCE({c}, '') AS {c}")
     if tiene_descripcion:
@@ -139,9 +143,12 @@ def _buscar_secundario(query: str, limit: int) -> list[dict]:
 
 def _fila_a_dict(row) -> dict:
     """Convierte una fila SQLite en el dict de la tool (columnas opcionales)."""
+    precio_venta = float(row["precio_venta"] or 0) if "precio_venta" in row.keys() else 0.0
+    precio_costo = float(row["precio_costo"] or 0) if "precio_costo" in row.keys() else 0.0
     return {
         "nombre": row["nombre"],
-        "precio_venta": float(row["precio_venta"] or 0) if "precio_venta" in row.keys() else 0.0,
+        "precio_venta": precio_venta,
+        "margen_unitario": round(precio_venta - precio_costo, 2),
         "stock": float(row["stock"] or 0) if "stock" in row.keys() else 0.0,
         "categoria": (row["categoria"] or "Sin categoría") if "categoria" in row.keys() else "Sin categoría",
         "descripcion": (row["descripcion"] or "") if "descripcion" in row.keys() else "",
@@ -153,6 +160,7 @@ def _campos_fallback() -> dict:
     return {
         "nombre": "",
         "precio_venta": 0.0,
+        "margen_unitario": 0.0,
         "stock": 0.0,
         "categoria": "Sin categoría",
         "descripcion": "",
@@ -167,6 +175,7 @@ TOOLS_SCHEMA = [
             "name": "search_inventory",
             "description": (
                 "Busca productos en el inventario de la tienda por nombre o por qué son. "
+                "Devuelve precio de venta, margen de ganancia por unidad y stock. "
                 "Usa esta herramienta cuando el usuario pregunte por productos, precios, "
                 "stock, disponibilidad o qué hay en la tienda."
             ),
@@ -185,7 +194,58 @@ TOOLS_SCHEMA = [
                 "required": ["query"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_sales_history",
+            "description": (
+                "Cuánto se vendió de cada producto en un período (hoy/semana/mes), "
+                "con total y margen de ganancia. "
+                "Usa esta herramienta cuando el usuario pregunte por ventas de "
+                "productos, cantidades vendidas o histórico de ventas por producto."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "periodo": {
+                        "type": "string",
+                        "enum": ["hoy", "semana", "mes"],
+                        "description": "Período a consultar: hoy, semana (7 días) o mes (30 días).",
+                    },
+                    "top": {
+                        "type": "integer",
+                        "description": "Máximo de productos a devolver (por defecto 10).",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_top_sellers",
+            "description": (
+                "Ranking real de los productos más vendidos (por cantidad) en los "
+                "últimos N días, con total y margen de ganancia. "
+                "Usa esta herramienta cuando el usuario pregunte "
+                "por 'los más vendidos', 'top ventas' o 'qué se vende más'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dias": {
+                        "type": "integer",
+                        "description": "Ventana en días a consultar (por defecto 30).",
+                    },
+                    "top": {
+                        "type": "integer",
+                        "description": "Máximo de productos a devolver (por defecto 8).",
+                    },
+                },
+            },
+        },
+    },
 ]
 
 
@@ -206,6 +266,18 @@ def ejecutar_tool(tool_call: dict) -> str:
     if nombre == "search_inventory":
         return json.dumps(
             search_inventory(args.get("query", ""), int(args.get("limit", 5))),
+            ensure_ascii=False,
+            default=str,
+        )
+    if nombre == "get_sales_history":
+        return json.dumps(
+            obtener_ventas_por_producto(args.get("periodo", "mes"), int(args.get("top", 10))),
+            ensure_ascii=False,
+            default=str,
+        )
+    if nombre == "get_top_sellers":
+        return json.dumps(
+            obtener_productos_mas_vendidos(int(args.get("dias", 30)), int(args.get("top", 8))),
             ensure_ascii=False,
             default=str,
         )

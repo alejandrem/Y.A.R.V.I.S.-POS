@@ -17,6 +17,9 @@ import httpx
 
 from ..modelos_local.prompts import _separar_think
 from .variables import (
+    ESPERA_429_MAX,
+    ESPERA_429_MIN,
+    MAX_MODELOS_A_PROBAR,
     MODELOS_CACHE_TTL,
     MODELOS_FREE_EXTRA,
     ORDEN_FALLBACK_FREE,
@@ -43,14 +46,36 @@ def _es_free(model_id: str) -> bool:
     return model_id.endswith("-free") or model_id in MODELOS_FREE_EXTRA
 
 
-def _siguiente_modelo_free(model_id: str) -> str | None:
-    """Devuelve el siguiente modelo gratuito de OpenCode a probar, o None si se agotaron."""
-    if model_id in ORDEN_FALLBACK_FREE:
-        idx = ORDEN_FALLBACK_FREE.index(model_id)
-        if idx + 1 < len(ORDEN_FALLBACK_FREE):
-            return ORDEN_FALLBACK_FREE[idx + 1]
-        return None
-    return ORDEN_FALLBACK_FREE[0]
+def _cola_modelos_a_probar(provider: str, model: str) -> list[str]:
+    """Orden de los modelos a probar cuando el proveedor satura (429).
+
+    - OpenCode free: empieza por el modelo pedido y recorre la lista
+      `ORDEN_FALLBACK_FREE`, pero limitada a `MAX_MODELOS_A_PROBAR` modelos
+      (relevo acotado: si todos fallan, se cae rápido al modelo local).
+    - Cualquier otra combinación (Gemini, modelos pagados): solo el modelo original.
+    """
+    if provider == "opencode" and _es_free(model):
+        if model in ORDEN_FALLBACK_FREE:
+            idx = ORDEN_FALLBACK_FREE.index(model)
+            cola = ORDEN_FALLBACK_FREE[idx:] + ORDEN_FALLBACK_FREE[:idx]
+        else:
+            cola = [model, *ORDEN_FALLBACK_FREE]
+        # Dedupe conservando el orden (por si el modelo pedido aparece en la lista)
+        cola = list(dict.fromkeys(cola))
+        return cola[:MAX_MODELOS_A_PROBAR]
+    return [model]
+
+
+def _espera_429(e: httpx.HTTPStatusError, minimo: int, maximo: int) -> float:
+    """Segundos a esperar ante un 429: respeta retry-after pero clavado al rango.
+
+    Si el proveedor manda 'retry-after' se respeta dentro del rango; si no,
+    se usa un valor intermedio del rango.
+    """
+    retry = e.response.headers.get("retry-after", "")
+    if retry.isdigit():
+        return min(max(int(retry), minimo), maximo)
+    return (minimo + maximo) / 2
 
 
 def _normalizar_mensajes(messages: list[dict]) -> list[dict]:
@@ -109,6 +134,9 @@ def _iter_delta_lineas(resp, usage: dict | None, display: str, tool_calls: dict 
                 if fn.get("arguments"):
                     entrada["arguments"] += fn["arguments"]
         token = delta.get("content", "")
+        razonamiento = delta.get("reasoning_content", "")
+        if razonamiento:
+            yield f" think {razonamiento} response ", display
         if token:
             yield token, display
 
@@ -244,7 +272,11 @@ def _iter_google(cfg: dict, api_key: str, model: str, messages: list, display: s
             parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
             for part in parts:
                 token = part.get("text", "")
-                if token:
+                if not token:
+                    continue
+                if part.get("thought"):
+                    yield f" think {token} response ", display
+                else:
                     yield token, display
 
 
@@ -310,6 +342,20 @@ def listar_modelos(provider: str, api_key: str = "") -> list[dict]:
     return modelos
 
 
+def _iterar_modelo(provider, cfg, api_key, modelo, messages, display, usage, tools, ejecutar_tool):
+    """Itera un modelo específico (gemini u openai-compatible), cediendo tokens.
+
+    Devuelve un generador de (token, display). Es un helper para no duplicar
+    el código de iteración en los reintentos de generar_stream.
+    """
+    if provider == "google":
+        yield from _iter_google(cfg, api_key, modelo, messages, display, usage)
+    else:
+        yield from _iter_openai_compatible(
+            cfg, api_key, modelo, messages, display, usage, tools, ejecutar_tool
+        )
+
+
 def generar_stream(
     provider: str,
     api_key: str,
@@ -318,6 +364,7 @@ def generar_stream(
     usage: dict | None = None,
     tools: list | None = None,
     ejecutar_tool=None,
+    avisos: list | None = None,
 ):
     """Genera (token, nombre_mostrado) por streaming para el proveedor indicado.
 
@@ -328,10 +375,15 @@ def generar_stream(
     herramienta (function calling): se ejecuta localmente y se continúa con
     el texto final.
 
-    Anti-saturación: ante un 429 de un modelo free de OpenCode se cambia
-    automáticamente al siguiente modelo gratuito disponible; si no hay más
-    modelos a los que saltar, respeta el header 'retry-after' y reintenta
-    una sola vez antes de rendirse.
+    Anti-saturación (429):
+    - OpenCode free → prueba hasta `MAX_MODELOS_A_PROBAR` modelos gratuitos
+      (cola de relevo acotada); espera 2-4 s entre cada uno.
+    - Cualquier otro modelo → espera 2-4 s y reintenta una vez antes de
+      rendirse (comportamiento original).
+
+    Regla de oro: si el modelo YA cedió tokens (se conectó y va bien) y luego
+    falla a mitad del stream, NO se cambia de modelo ni se duplica salida: el
+    error se propaga tal cual.
     """
     cfg = PROVIDERS.get(provider)
     if cfg is None:
@@ -342,30 +394,53 @@ def generar_stream(
     model = model or cfg["default_model"]
     display = cfg["name"]
 
-    for intento in range(2):
+    cola = _cola_modelos_a_probar(provider, model)
+
+    for idx, modelo in enumerate(cola):
+        cedio = False
         try:
-            if provider == "google":
-                yield from _iter_google(cfg, api_key, model, messages, display, usage)
-            else:
-                yield from _iter_openai_compatible(
-                    cfg, api_key, model, messages, display, usage, tools, ejecutar_tool
-                )
+            for token, _ in _iterar_modelo(
+                provider, cfg, api_key, modelo, messages, display, usage, tools, ejecutar_tool
+            ):
+                cedio = True
+                yield token, modelo
             return
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429 and intento == 0:
-                if provider == "opencode" and _es_free(model):
-                    siguiente = _siguiente_modelo_free(model)
-                    if siguiente:
-                        print(f"[YARVIS] {model} saturado (429), cambiando a {siguiente}")
-                        model = siguiente
-                        continue
-                retry = e.response.headers.get("retry-after", "")
-                espera = min(int(retry), 20) if retry.isdigit() else 5
+            # Si ya cedimos tokens, el modelo SÍ conectó: el error es real y
+            # no debe repetirse salida cambiando de modelo.
+            if e.response.status_code != 429 or cedio:
+                raise ValueError(_error_amigable(e)) from e
+
+            siguiente = cola[idx + 1] if idx + 1 < len(cola) else None
+            espera = _espera_429(e, ESPERA_429_MIN, ESPERA_429_MAX)
+            if siguiente is not None:
+                if avisos is not None:
+                    avisos.append(
+                        f"Modelo {modelo} saturado (429); probando {siguiente} en unos segundos…"
+                    )
+                print(f"[YARVIS] {modelo} saturado (429), cambiando a {siguiente} (espera {espera:.0f}s)")
                 time.sleep(espera)
                 continue
-            raise ValueError(_error_amigable(e)) from e
+
+            # Último modelo: un respiro y un último intento real.
+            if avisos is not None:
+                avisos.append("Todos los modelos de la nube están saturados; último intento…")
+            print(f"[YARVIS] {modelo} saturado (429), último intento tras {espera:.0f}s")
+            time.sleep(espera)
+            try:
+                for token, _ in _iterar_modelo(
+                    provider, cfg, api_key, modelo, messages, display, usage, tools, ejecutar_tool
+                ):
+                    yield token, modelo
+                return
+            except httpx.HTTPStatusError as e2:
+                raise ValueError(_error_amigable(e2)) from e2
+            except httpx.RequestError as e2:
+                raise ValueError(f"No se pudo conectar con {display}: {e2}") from e2
         except httpx.RequestError as e:
             raise ValueError(f"No se pudo conectar con {display}: {e}") from e
+
+    raise ValueError(f"No se pudo completar la respuesta con {display}")
 
 
 def generar_completo(
@@ -375,6 +450,7 @@ def generar_completo(
     messages: list,
     tools: list | None = None,
     ejecutar_tool=None,
+    avisos: list | None = None,
 ) -> str:
     """Respuesta completa (sin streaming) limpiando los bloques  thinking.
 
@@ -383,7 +459,8 @@ def generar_completo(
     reconstruye solo la parte 'token' (respuesta final).
     """
     stream = (token for token, _ in generar_stream(
-        provider, api_key, model, messages, tools=tools, ejecutar_tool=ejecutar_tool
+        provider, api_key, model, messages,
+        tools=tools, ejecutar_tool=ejecutar_tool, avisos=avisos,
     ))
     return "".join(
         texto for tipo, texto in _separar_think(stream, 10**9) if tipo == "token"

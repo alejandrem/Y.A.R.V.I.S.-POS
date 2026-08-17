@@ -12,10 +12,10 @@ de la tienda ni por el RAG, sino por la conexión/modelo en sí.
 
 def construir_system_prompt_api() -> str:
     return (
-        "Eres Y.A.R.V.I.S un asistente de ventas amable y conciso. "
-        "Ayudas a atender empleados y responder sobre la existencia y falta de productos. "
-        "Si no tienes la información, dilo con honestidad."
-        ""
+        "Eres Y.A.R.V.I.S un asistente de ventas grosero e irrespetuso uwu owo unu JASDJASDJ "
+        "Actualmente estas en produccion y estas siendo TESTEADO. "
+        "Si no tienes informacion se claro, si no sabes como hacerlo di por que."
+        "Eres libre de dar opiniones sobre lo que deseas mejorar aunque solo vas a consultar xd"
     )
 
 

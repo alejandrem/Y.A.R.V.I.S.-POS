@@ -228,15 +228,21 @@ def obtener_reembolsos_por_producto(dias: int = 30) -> list[dict]:
 
 
 def obtener_productos_mas_vendidos(dias: int = 30, top: int = 8) -> list[dict]:
-    """Productos más vendidos (por cantidad) en los últimos N días."""
+    """Productos más vendidos (por cantidad) en los últimos N días.
+
+    Incluye margen de ganancia estimado = Σ (precio_venta - costo) * cantidad;
+    si un producto no tiene costo registrado se toma costo 0 (margen alto de más).
+    """
     conn = _conectar()
     if conn is None:
         return []
     fecha = (datetime.now() - timedelta(days=dias)).strftime("%Y-%m-%d")
     rows = conn.execute(
         "SELECT dv.producto_nombre, SUM(dv.cantidad) as cantidad, "
-        "       SUM(dv.subtotal) as total "
+        "       SUM(dv.subtotal) as total, "
+        "       SUM((dv.precio_unitario - COALESCE(p.precio_costo, 0)) * dv.cantidad) as margen "
         "FROM detalle_ventas dv JOIN ventas v ON dv.venta_id = v.id "
+        "LEFT JOIN productos p ON p.nombre = dv.producto_nombre COLLATE NOCASE "
         "WHERE v.estado != 'cancelada' "
         "      AND (DATE(v.fecha) >= ? OR substr(v.fecha, 7, 4) || '-' || "
         "           substr(v.fecha, 4, 2) || '-' || substr(v.fecha, 1, 2) >= ?) "
@@ -248,6 +254,43 @@ def obtener_productos_mas_vendidos(dias: int = 30, top: int = 8) -> list[dict]:
             "producto": r["producto_nombre"],
             "cantidad": r["cantidad"],
             "total": r["total"] or 0.0,
+            "margen": r["margen"] or 0.0,
+        }
+        for r in rows
+    ]
+
+
+def obtener_ventas_por_producto(periodo: str = "mes", top: int = 10) -> list[dict]:
+    """Cuánto se vendió de cada producto en el período ('hoy' | 'semana' | 'mes').
+
+    SOLO LECTURA: nunca modifica la base de datos. El período 'hoy' mira desde
+    el inicio de hoy, 'semana' los últimos 7 días y 'mes' los últimos 30.
+    """
+    conn = _conectar()
+    if conn is None:
+        return []
+    rango = {"hoy": 0, "semana": 7, "mes": 30}.get(periodo, 30)
+    fecha = (datetime.now() - timedelta(days=rango)).strftime("%Y-%m-%d")
+    clausula_fecha = (
+        "DATE(v.fecha) >= ? OR "
+        "substr(v.fecha, 7, 4) || '-' || substr(v.fecha, 4, 2) || '-' || substr(v.fecha, 1, 2) >= ?"
+    )
+    rows = conn.execute(
+        "SELECT dv.producto_nombre, SUM(dv.cantidad) as cantidad, "
+        "       SUM(dv.subtotal) as total, "
+        "       SUM((dv.precio_unitario - COALESCE(p.precio_costo, 0)) * dv.cantidad) as margen "
+        "FROM detalle_ventas dv JOIN ventas v ON dv.venta_id = v.id "
+        "LEFT JOIN productos p ON p.nombre = dv.producto_nombre COLLATE NOCASE "
+        f"WHERE v.estado != 'cancelada' AND ({clausula_fecha}) "
+        "GROUP BY dv.producto_nombre ORDER BY cantidad DESC LIMIT ?",
+        (fecha, fecha, top)
+    ).fetchall()
+    return [
+        {
+            "producto": r["producto_nombre"],
+            "cantidad": r["cantidad"],
+            "total": r["total"] or 0.0,
+            "margen": r["margen"] or 0.0,
         }
         for r in rows
     ]

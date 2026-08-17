@@ -15,21 +15,42 @@ from .cache import obtener_contexto_inteligente
 from .consultas_db import obtener_tienda_info
 
 def limpiar_think(texto: str) -> str:
-    """Elimina bloques  thinking... response de la respuesta del modelo."""
-    texto = re.sub(r' thinking.*? response', '', texto, flags=re.DOTALL)
-    texto = re.sub(r' thinking.*', '', texto, flags=re.DOTALL)
+    """Elimina bloques  thinking / think ... response / <think> de la respuesta."""
+    texto = re.sub(r'<think>.*?</think>', '', texto, flags=re.DOTALL)
+    texto = re.sub(r'\s*think(?:ing)?\b.*?\s*response\b', '', texto, flags=re.DOTALL)
+    texto = re.sub(r'\s*think(?:ing)?\b.*', '', texto, flags=re.DOTALL)
     return texto.strip()
 
 
+# Marcadores que abren/cierran un bloque de razonamiento del modelo.
+# " think" / " thinking" abren; " response" cierra. Aceptan espacio previo o
+# inicio de texto (los razonamientos llegan así desde el proveedor).
+_OPEN_THINK = re.compile(r"<think>|(?:\s+|^)think(?:ing)?\b")
+_CLOSE_THINK = re.compile(r"</think>|<response>|(?:\s+|^)response\b")
+
+# Prefijos parciales que podrían ser el inicio de un marcador (llegan troceados).
+_MARCADORES = ["<think>", " think", " thinking", " response", "<response>"]
+
+
+def _cola_potencial_marcador(texto: str) -> int:
+    """Cuántos caracteres del final de `texto` podrían ser el inicio de un marcador."""
+    for m in _MARCADORES:
+        for i in range(1, min(len(m), len(texto)) + 1):
+            if m[:i] == texto[-i:]:
+                return i
+    return 0
+
+
 def _separar_think(textos, max_w):
-    """Separa los bloques  thinking del texto final.
+    """Separa los bloques  think / <think> del texto final.
 
     Recibe texto crudo por trozos y emite ('token'|'think', texto):
     - 'think': razonamiento del modelo (se muestra sombreado).
     - 'token': respuesta final (texto real).
 
-    Vive aquí (y no en endpoints.py) para que tanto el streaming como
-    generar_completo (apis_cloud.py) la reutilicen.
+    Los marcadores pueden llegar partidos entre chunks de streaming: se acumula
+    en un buffer y solo se flushea lo seguro, reteniendo la cola que aún podría
+    ser el inicio de un marcador.
     """
     word_count = 0
     in_think = False
@@ -39,34 +60,36 @@ def _separar_think(textos, max_w):
             continue
         buffer += content
         while buffer:
-            if not in_think:
-                idx = buffer.find(" thinking")
-                if idx == -1:
-                    word_count += len(buffer.split())
+            patron = _CLOSE_THINK if in_think else _OPEN_THINK
+            match = patron.search(buffer)
+            if match is None:
+                cola = _cola_potencial_marcador(buffer)
+                if cola > 0:
+                    seguro, buffer = buffer[:-cola], buffer[-cola:]
+                else:
+                    seguro, buffer = buffer, ""
+                if not seguro:
+                    break
+                if in_think:
+                    yield "think", seguro
+                else:
+                    word_count += len(seguro.split())
                     if word_count > max_w:
                         return
-                    yield "token", buffer
-                    buffer = ""
-                    break
-                pre = buffer[:idx]
-                if pre:
+                    yield "token", seguro
+                continue
+            idx = match.start()
+            pre = buffer[:idx]
+            if pre:
+                if in_think:
+                    yield "think", pre
+                else:
                     word_count += len(pre.split())
                     if word_count > max_w:
                         return
                     yield "token", pre
-                buffer = buffer[idx + len(" thinking"):]
-                in_think = True
-            else:
-                idx = buffer.find(" response")
-                if idx == -1:
-                    yield "think", buffer
-                    buffer = ""
-                    break
-                pre = buffer[:idx]
-                if pre:
-                    yield "think", pre
-                buffer = buffer[idx + len(" response"):]
-                in_think = False
+            buffer = buffer[match.end():]
+            in_think = not in_think
     if buffer:
         yield ("think" if in_think else "token"), buffer
 

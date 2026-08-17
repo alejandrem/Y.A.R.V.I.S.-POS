@@ -274,6 +274,7 @@ async def chat(request: ChatRequest):
     _marcar_uso_ia()
     try:
         if request.provider:
+            avisos: list[str] = []
             try:
                 chat_messages = construir_mensajes_api(request.messages)
                 respuesta = generar_completo(
@@ -283,11 +284,16 @@ async def chat(request: ChatRequest):
                     chat_messages,
                     tools=TOOLS_SCHEMA,
                     ejecutar_tool=ejecutar_tool,
+                    avisos=avisos,
                 )
-                return {"response": respuesta, "model_used": nombre_proveedor(request.provider)}
+                return {"response": respuesta, "model_used": nombre_proveedor(request.provider), "avisos": avisos}
             except Exception as e:
                 print(f"[YARVIS-CHAT] Error proveedor ({request.provider}): {e}")
-                return {"response": _fallback_local(request.messages, request.role, ultimo, str(e)), "model_used": "local-fallback"}
+                return {
+                    "response": _fallback_local(request.messages, request.role, ultimo, str(e)),
+                    "model_used": "local-fallback",
+                    "avisos": avisos,
+                }
 
         chat_messages = construir_mensajes(request.role, request.messages, ultimo)
         selected = request.model.lower()
@@ -334,23 +340,30 @@ async def chat_stream(request: ChatRequest):
                 usage: dict = {}
                 total_chars = sum(len(m.get("content") or "") for m in chat_messages)
                 print(f"[YARVIS-CHAT] Cloud: {len(chat_messages)} msgs, {total_chars} chars (~{total_chars // 4} tok est)")
-                textos = (token for token, _ in generar_stream(
-                    request.provider,
-                    request.api_key,
-                    request.model,
-                    chat_messages,
-                    usage=usage,
-                    tools=TOOLS_SCHEMA,
-                    ejecutar_tool=ejecutar_tool,
-                ))
-                for kind, text in _separar_think(textos, max_w):
+                modelo_actual = request.model
+
+                def _con_modelo():
+                    nonlocal modelo_actual
+                    for token, modelo in generar_stream(
+                        request.provider,
+                        request.api_key,
+                        request.model,
+                        chat_messages,
+                        usage=usage,
+                        tools=TOOLS_SCHEMA,
+                        ejecutar_tool=ejecutar_tool,
+                    ):
+                        modelo_actual = modelo
+                        yield token
+
+                for kind, text in _separar_think(_con_modelo(), max_w):
                     if cancel_event.is_set():
                         break
-                    yield f"data: {json.dumps({kind: text, 'model': cloud_display})}\n\n"
+                    yield f"data: {json.dumps({kind: text, 'model': modelo_actual})}\n\n"
                 if usage:
                     print(f"[YARVIS-CHAT] Usage real del proveedor: {usage.get('prompt_tokens')} prompt + {usage.get('completion_tokens')} completion = {usage.get('total_tokens')} total")
-                    yield f"data: {json.dumps({'usage': usage, 'model': cloud_display})}\n\n"
-                yield f"data: {json.dumps({'done': True, 'cancelled': cancel_event.is_set(), 'model': cloud_display})}\n\n"
+                    yield f"data: {json.dumps({'usage': usage, 'model': modelo_actual})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'cancelled': cancel_event.is_set(), 'model': modelo_actual})}\n\n"
             except Exception as e:
                 print(f"[YARVIS-CHAT] Error proveedor ({cloud_display}), fallback a local: {e}")
                 yield _stream_fallback_local(request.messages, request.role, ultimo)
