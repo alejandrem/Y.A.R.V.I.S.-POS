@@ -166,7 +166,7 @@ fn gpu_layers() -> u32 {
 /// su propio KV cache; varios contextos sobre el mismo modelo son seguros en
 /// llama.cpp).
 #[cfg(feature = "llm-local")]
-struct ModeloChat {
+pub(crate) struct ModeloChat {
     model: LlamaModel,
 }
 
@@ -200,8 +200,11 @@ static INFERENCIA_LOCK: Mutex<()> = Mutex::new(());
 
 /// Carga el modelo Qwen indicado (0.5B / 0.8B / 1.7B) o devuelve el ya
 /// cargado. Es un port de `analizador_llm::_cargar_modelo` + `puede_cargar_modelo`.
+/// Se expone `pub(crate)` para que el chat local (`motor-chat/llm`) reutilice
+/// el MISMO caché: así el 1.7B de conversación y el del parseo comparten
+/// instancia y no se duplican en VRAM.
 #[cfg(feature = "llm-local")]
-fn cargar_modelo(clave: &str) -> Resultado<Arc<ModeloChat>> {
+pub(crate) fn cargar_modelo(clave: &str) -> Resultado<Arc<ModeloChat>> {
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
 
     // Fast path: ya cargado.
@@ -325,6 +328,25 @@ fn generar(modelo: &ModeloChat, prompt: &str) -> Resultado<String> {
     }
 
     Ok(String::from_utf8_lossy(&salida).into_owned())
+}
+
+/// Aplica el chat template a los mensajes y genera la respuesta bajo el lock
+/// global de inferencia (compartido con el parseo de tickets: llama.cpp no
+/// tolera dos generaciones a la vez sobre el mismo backend).
+///
+/// Lo consume el chat local (`motor-chat/llm`) para el modelo 1.7B de
+/// conversación, reutilizando el MISMO caché de modelos del parseo.
+#[cfg(feature = "llm-local")]
+pub(crate) fn generar_bajo_lock(
+    modelo: &Arc<ModeloChat>,
+    messages: &[LlamaChatMessage],
+) -> Resultado<String> {
+    let prompt = modelo
+        .model
+        .apply_chat_template(None, messages, true)
+        .map_err(|e| format!("No se pudo aplicar el chat template: {e}"))?;
+    let _lock = INFERENCIA_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    generar(modelo, &prompt)
 }
 
 /// Ejecuta un análisis sobre el modelo indicado (espejo de `_ejecutar_analisis`).
