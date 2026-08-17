@@ -57,3 +57,41 @@ def test_multiples_productos_por_linea():
     # Con 2+ columnas numéricas la línea es producto casi seguro
     assert _es_linea_util("2 TAZAS $60.00 $120.00") is True
     assert _es_linea_util("Coca-Cola 600ML $25 $18") is True
+
+
+# --- Casos extra de borde (A3, nivel 1/2/3) ---
+CABECERAS_CON_DOS_PUNTOS = [
+    "TOTAL: $1,234.56",
+    "CAJA: 3",
+    "FECHA: 12/05/2026",
+    "ATENDIO: MARIA",
+    "METODO DE PAGO: EFECTIVO",
+]
+
+PRODUCTOS_AMBIGUOS_EXTRA = [
+    "CAJA DE 24 CERVEZAS MODELO $540.00",     # "caja" como parte del nombre
+    "BEBIDA CAJA TETRA 1L $19.00",             # "caja" hacia el final
+    "ABARROTES VARIOS $5.00",                  # palabra de categoría en nombre
+]
+
+
+@pytest.mark.parametrize("linea", CABECERAS_CON_DOS_PUNTOS)
+def test_cabeceras_con_dos_puntos_se_descartan(linea):
+    assert _es_linea_util(linea) is False, f"{linea!r}"
+
+
+@pytest.mark.parametrize("linea", PRODUCTOS_AMBIGUOS_EXTRA)
+def test_productos_ambiguos_con_numeros_no_se_descartan(linea):
+    assert _es_linea_util(linea) is True, f"{linea!r}"
+
+
+def test_linea_solo_separadores():
+    assert _es_linea_util("----------------") is False
+    assert _es_linea_util("====================") is False
+    assert _es_linea_util("~~~~~~~") is False
+
+
+def test_saludo_breve_es_producto_o_no_rompe():
+    # Sin números no debería crashear; no es cabecera conocida
+    res = _es_linea_util("HOLA")
+    assert res in (True, False)

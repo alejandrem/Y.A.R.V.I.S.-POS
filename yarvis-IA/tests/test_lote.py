@@ -25,44 +25,9 @@ TOTAL $200.00
 
 
 @pytest.fixture
-def bd(tmp_path):
+def bd(bd_temporal):
     """Crea una BD SQLite con el esquema real (productos/ventas/detalle_ventas)."""
-    db = str(tmp_path / "test.db")
-    conn = sqlite3.connect(db)
-    conn.executescript("""
-        CREATE TABLE productos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
-            precio_costo REAL,
-            precio_venta REAL,
-            stock REAL DEFAULT 0,
-            stock_minimo REAL DEFAULT 0,
-            vendido REAL DEFAULT 0
-        );
-        CREATE TABLE ventas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
-            total REAL NOT NULL,
-            subtotal REAL,
-            iva REAL,
-            metodo_pago TEXT DEFAULT 'efectivo',
-            cajero TEXT NOT NULL,
-            estado TEXT DEFAULT 'completada'
-        );
-        CREATE TABLE detalle_ventas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            venta_id INTEGER NOT NULL,
-            producto_id INTEGER,
-            producto_nombre TEXT NOT NULL,
-            cantidad REAL NOT NULL,
-            precio_unitario REAL NOT NULL,
-            descuento REAL DEFAULT 0,
-            subtotal REAL NOT NULL
-        );
-    """)
-    conn.commit()
-    conn.close()
-    return db
+    return bd_temporal()
 
 
 def _escribir_tickets(carpeta, n):
@@ -102,7 +67,7 @@ def test_archivo_vacio_es_error_sin_venta(bd, tmp_path):
     assert _contar(bd, "ventas") == 0
 
 
-def test_fallo_a_mitad_no_deja_insert_parcial(bd, tmp_path, monkeypatch):
+def test_rollback_fallo_a_mitad_no_deja_insert_parcial(bd, tmp_path, monkeypatch):
     """El corazón del bug A1: si _insertar_venta explota DESPUÉS de insertar,
     el rollback debe descartar la venta parcial y los UPDATEs de stock."""
     # Deja 1 venta válida ya insertada (como control)
@@ -110,8 +75,6 @@ def test_fallo_a_mitad_no_deja_insert_parcial(bd, tmp_path, monkeypatch):
 
     # Ahora sabotea _insertar_venta: inserta LA venta y hace el UPDATE de stock,
     # luego explota — simulando el fallo a mitad de archivo.
-    original = _procesar_archivos and None  # (referencia de estilo, real se usa abajo)
-    del original
     import parseador_de_tickets.cerebro.lote as lote
 
     def explota(conn, items, *args, **kwargs):
@@ -142,3 +105,63 @@ def test_stream_y_sync_usan_el_mismo_generador(bd, tmp_path):
     assert len(resultados) == 2
     assert all(r["ok"] for r in resultados)
     assert sum(r["items"] for r in resultados) == 4
+
+
+def test_linea_duplicada_en_mismo_ticket_no_se_descuenta_dos_veces(bd, tmp_path):
+    """Si un ticket repite el mismo producto+precio (misma línea), se cuenta como
+    duplicado y NO vuelve a descontar stock 2 veces."""
+    ticket_dup = """TICKET 1
+12/05/2026
+2 TAZAS $60.00 $120.00
+2 TAZAS $60.00 $120.00
+TOTAL $240.00
+"""
+    (tmp_path / "dup.txt").write_text(ticket_dup)
+
+    stats = _procesar_carpeta_impl([str(tmp_path / "dup.txt")], MAPEO, bd)
+
+    assert stats["exitosos"] == 1
+    assert stats["items_insertados"] == 1
+    assert stats["duplicados_detectados"] == 1
+    assert _contar(bd, "detalle_ventas") == 1
+
+
+def test_stock_se_actualiza_con_cantidad_del_item(bd, tmp_path):
+    """Con productos preexistentes en productos, el stock baja la cantidad vendida."""
+    conn = sqlite3.connect(bd)
+    conn.execute("INSERT INTO productos (nombre, stock, vendido) VALUES ('TAZAS', 100, 0)")
+    conn.commit()
+    conn.close()
+
+    archivo = str(tmp_path / "ticket_stock.txt")
+    with open(archivo, "w") as f:
+        f.write(TICKET)
+
+    _procesar_carpeta_impl([archivo], MAPEO, bd)
+
+    conn = sqlite3.connect(bd)
+    stock, vendido = conn.execute("SELECT stock, vendido FROM productos WHERE nombre = 'TAZAS'").fetchone()
+    conn.close()
+    assert stock == 98  # 100 - 2
+    assert vendido == 2
+
+
+def test_fallo_en_un_archivo_no_afecta_a_los_demas(bd, tmp_path):
+    """Un archivo que no se parsea (sin productos reconocibles) marca error
+    SIN impedir que el archivo válido se procese (transacción por archivo)."""
+    bueno = str((tmp_path / "bueno.txt"))
+    with open(bueno, "w") as f:
+        f.write(TICKET)
+
+    # Archivo solo con cabeceras: el parser no encuentra ningún producto.
+    solo_cabeceras = str(tmp_path / "cabeceras.txt")
+    with open(solo_cabeceras, "w") as f:
+        f.write("GRACIAS POR SU COMPRA\nCFDI: 4D8F2A1\n")
+
+    stats = _procesar_carpeta_impl([bueno, solo_cabeceras], MAPEO, bd)
+
+    assert stats["exitosos"] == 1      # el bueno
+    assert stats["errores"] == 1       # el de cabeceras
+    assert stats["tickets_fallidos"][0]["archivo"] == "cabeceras.txt"
+    assert _contar(bd, "ventas") == 1  # solo la venta válida
+    assert _contar(bd, "detalle_ventas") == 2

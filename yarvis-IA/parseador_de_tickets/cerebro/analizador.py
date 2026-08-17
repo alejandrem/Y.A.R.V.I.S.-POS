@@ -279,7 +279,7 @@ def _es_linea_util(linea: str) -> bool:
         "telefono:", "direccion:", "correo:", "email:",
         "total:", "subtotal:", "iva:", "efectivo:", "tarjeta:", "cambio:",
         "pago:", "caja:", "nombre:", "fecha:", "hora:", "folio:", "serie:",
-        "av.",
+        "av.", "atendio:", "despacho:", "cliente:", "domicilio:",
     ):
         if frase in linea_lower:
             return False
