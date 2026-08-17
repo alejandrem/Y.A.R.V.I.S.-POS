@@ -20,23 +20,44 @@ def _normalizar(nombre: str) -> str:
 
 
 def _cargar_inventario(db_path: str) -> list[dict]:
-    """Carga productos del inventario con embedding pre-calculado."""
+    """Carga productos del inventario (id, nombre, precio) con su embedding.
+
+    Los embeddings NO viven en la tabla `productos`: residen en
+    `knowledge_base` con contenido del formato "NOMBRE | $precio | stock: X"
+    (generado por /backfill). Antes se consultaba `productos.embedding`, que
+    no existe, y el query fallaba SIEMPRE con 'no such column'; el except lo
+    tragaba y el inventario quedaba vacío → ningún producto se vinculaba
+    jamás (ni por nombre exacto).
+    """
     productos = []
     try:
         conn = sqlite3.connect(db_path)
         rows = conn.execute(
-            "SELECT id, nombre, precio_venta, embedding FROM productos WHERE embedding IS NOT NULL"
+            "SELECT id, nombre, precio_venta FROM productos"
         ).fetchall()
+
+        # Mapa nombre-normalizado → embedding, desde knowledge_base.
+        embeddings_por_nombre: dict[str, list] = {}
+        try:
+            kbs = conn.execute(
+                "SELECT contenido, embedding FROM knowledge_base WHERE embedding IS NOT NULL"
+            ).fetchall()
+            for contenido, blob in kbs:
+                nombre_kb = contenido.split("|")[0].strip()
+                if blob:
+                    embeddings_por_nombre[_normalizar(nombre_kb)] = blob_a_embedding(blob)
+        except Exception:
+            pass
+
         conn.close()
 
-        for pid, nombre, precio, blob in rows:
-            embedding = blob_a_embedding(blob) if blob else None
+        for pid, nombre, precio in rows:
             productos.append({
                 "id": pid,
                 "nombre": nombre,
                 "nombre_norm": _normalizar(nombre),
                 "precio_venta": precio,
-                "embedding": embedding,
+                "embedding": embeddings_por_nombre.get(_normalizar(nombre)),
             })
     except Exception:
         pass

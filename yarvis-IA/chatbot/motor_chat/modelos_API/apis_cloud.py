@@ -177,7 +177,7 @@ def _iter_openai_compatible(
             "model": model,
             "messages": normalized,
             "temperature": 0.6,
-            "max_tokens": 2048,
+            "max_tokens": 39800,
             "stream": True,
         }
         if intentar_con_uso:

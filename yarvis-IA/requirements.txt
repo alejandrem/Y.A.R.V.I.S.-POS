@@ -24,4 +24,4 @@ sqlite-vec
 
 # --- Dependencias de Desarrollo (tests) ---
 pytest
-httpx2
+httpx
