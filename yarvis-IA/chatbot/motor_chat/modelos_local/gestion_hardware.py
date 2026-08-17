@@ -14,7 +14,66 @@ import gc
 import threading
 
 from llama_cpp import Llama
-from parseador_de_tickets.llm.rutas_modelos import qwen0_5, qwen0_8, qwen1_7
+
+# --- Resolución de rutas de modelos Qwen (antes en
+# parseador_de_tickets.llm.rutas_modelos, ahora autocontenido aquí;
+# en Rust el equivalente es src_ia::rutas::rutas_modelos) ---
+# LM Studio puede bajar el mismo modelo a distintos namespaces/filenames
+# según la org de HF (Qwen/…, lmstudio-community/…) y con cualquier quant.
+# Se busca el primer .gguf real (sin mmproj) dentro de los candidatos.
+import glob as _glob
+import os as _os
+
+_LMSTUDIO_MODELS = _os.path.join(_os.path.expanduser("~"), ".lmstudio", "models")
+
+_CANDIDATOS: dict[str, list[str]] = {
+    "0.5B": [
+        _os.path.join("Qwen", "Qwen2.5-0.5B-Instruct-GGUF"),
+        _os.path.join("lmstudio-community", "Qwen2.5-0.5B-Instruct-GGUF"),
+    ],
+    "0.8B": [
+        _os.path.join("unsloth", "Qwen3.5-0.8B-GGUF"),
+        _os.path.join("Qwen", "Qwen3-0.6B-GGUF"),
+    ],
+    "1.7B": [
+        _os.path.join("lmstudio-community", "Qwen3-1.7B-GGUF"),
+        _os.path.join("qwen", "Qwen3-1.7B-GGUF"),
+    ],
+}
+
+_PREFERENCIA_QUANT = ("Q4_K_M", "Q3_K_L", "Q3_K_M", "Q4_0", "Q5_K_M", "Q8_0")
+
+
+def _buscar_gguf(rel: str) -> str | None:
+    """Devuelve la primera ruta .gguf (no mmproj) del directorio del modelo."""
+    folder = _os.path.join(_LMSTUDIO_MODELS, rel)
+    if not _os.path.isdir(folder):
+        return None
+    archivos = [
+        f for f in _glob.glob(_os.path.join(folder, "*.gguf"))
+        if "mmproj" not in _os.path.basename(f)
+    ]
+    if not archivos:
+        return None
+    for preferida in _PREFERENCIA_QUANT:
+        for f in archivos:
+            if preferida.lower() in _os.path.basename(f).lower():
+                return f
+    return archivos[0]
+
+
+def _resolver(key: str) -> str:
+    """Busca el modelo en los directorios candidatos; fallback a la ruta vieja."""
+    for rel in _CANDIDATOS[key]:
+        ruta = _buscar_gguf(rel)
+        if ruta:
+            return ruta
+    return _os.path.join(_LMSTUDIO_MODELS, _CANDIDATOS[key][0], "modelo_no_encontrado.gguf")
+
+
+qwen0_5 = _resolver("0.5B")
+qwen0_8 = _resolver("0.8B")
+qwen1_7 = _resolver("1.7B")
 
 from .prompts import limpiar_think
 from .variables import RAM_REQUERIDA, WORD_LIMITS

@@ -1,13 +1,14 @@
-// Parser TXT/Visual en Rust (envía al sidecar Python).
-// Incluye parsing de tickets y catálogos visuales.
+// Parser TXT/Visual en Rust.
+// Los comandos de catálogo, mapeo, carpetas y el análisis con LLM usan el
+// crate `src-ia` (migración Python → Rust, FASE 5). El LLM local corre
+// vía llama.cpp dentro del feature `llm-local` de `src-ia`.
 use std::fs;
 use std::path;
 use crate::models::TicketItem;
-use crate::sidecar::AiSidecar;
-use std::sync::Arc;
 use super::utils::sanitize_path;
 use tauri::Emitter;
-use futures_util::StreamExt;
+use src_ia::cerebro::analizador::{parsear_linea, MapeoColumnas};
+use src_ia::cerebro::lote::{procesar_archivos, procesar_carpeta_impl, ArchivoResultado};
 
 #[derive(serde::Serialize)]
 pub struct ArchivoCarpeta {
@@ -90,43 +91,33 @@ pub fn leer_archivo_bytes(path: String) -> Result<Vec<u8>, String> {
 }
 
 // ============================================================
-// Parser de catálogo visual (envía al sidecar Python)
+// Parser de catálogo visual (nativo, sin sidecar)
 // ============================================================
 
 #[tauri::command]
-pub async fn parsear_catalogo_visual(
-    path: String,
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-) -> Result<serde_json::Value, String> {
+pub fn parsear_catalogo_visual(path: String) -> Result<serde_json::Value, String> {
     let safe_path = sanitize_path(&path)?;
     let content = fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
 
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
-
-    let body = serde_json::json!({ "texto": content });
-
-    let resp = sidecar.http_client
-        .post(format!("{}/parsear_catalogo_visual", base_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
-
-    let status = resp.status();
-    let resultado: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
-
-    if status.is_success() {
-        Ok(resultado)
-    } else {
-        let msg = resultado.get("detail")
-            .and_then(|d| d.as_str())
-            .unwrap_or("Error desconocido del motor de IA");
-        Err(msg.to_string())
+    let productos = src_ia::formatos::lector_txt::parsear_catalogo_visual(&content);
+    if productos.is_empty() {
+        return Err("No se encontraron productos en el catálogo".to_string());
     }
+
+    let mut categorias: Vec<String> = productos
+        .iter()
+        .map(|p| p.categoria.clone())
+        .filter(|c| !c.is_empty())
+        .collect();
+    categorias.sort();
+    categorias.dedup();
+
+    Ok(serde_json::json!({
+        "status": "ok",
+        "productos": productos,
+        "total": productos.len(),
+        "categorias": categorias,
+    }))
 }
 
 // ============================================================
@@ -171,218 +162,220 @@ pub fn parsear_ticket(path: String) -> Result<Vec<TicketItem>, String> {
 // Análisis de tickets con LLM
 // ============================================================
 
+/// Convierte el JSON de `analizar_ticket` en `Result` (ok → Ok, error → Err).
+fn resultado_a_result(resultado: serde_json::Value) -> Result<serde_json::Value, String> {
+    if resultado.get("status").and_then(|s| s.as_str()) == Some("ok") {
+        Ok(resultado)
+    } else {
+        Err(resultado
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("Ningún modelo pudo analizar el ticket")
+            .to_string())
+    }
+}
+
+/// Ejecuta la inferencia fuera del hilo principal. Los comandos síncronos de
+/// Tauri corren en el main thread: cargar el GGUF (mmap ~463 MB) y generar en
+/// CPU congela la ventana (WebKit queda "No responde" y pide forzar cierre).
+/// `spawn_blocking` la corre en otro hilo y la UI sigue viva durante el análisis.
 #[tauri::command]
-pub async fn analizar_ticket_llm(
-    path: String,
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-) -> Result<serde_json::Value, String> {
+pub async fn analizar_ticket_llm(path: String) -> Result<serde_json::Value, String> {
     let safe_path = sanitize_path(&path)?;
     let contenido = fs::read_to_string(&safe_path)
         .map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
 
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
-
-    let body = serde_json::json!({ "texto": contenido });
-
-    let resp = sidecar.http_client
-        .post(format!("{}/analizar_ticket", base_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
-
-    let status = resp.status();
-    let resultado: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
-
-    if status.is_success() {
-        Ok(resultado)
-    } else {
-        let msg = resultado.get("detail")
-            .and_then(|d| d.as_str())
-            .unwrap_or("Error desconocido del motor de IA");
-        Err(msg.to_string())
-    }
+    tauri::async_runtime::spawn_blocking(move || {
+        resultado_a_result(src_ia::rutas::analizador_llm::analizar_ticket(&contenido))
+    })
+    .await
+    .map_err(|e| format!("Tarea de análisis abortada: {}", e))?
 }
 
 #[tauri::command]
-pub async fn analizar_ticket_con_ia(
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-    texto: String,
-) -> Result<serde_json::Value, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
-
-    let body = serde_json::json!({ "texto": texto });
-
-    let resp = sidecar.http_client
-        .post(format!("{}/analizar_ticket", base_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
-
-    let status = resp.status();
-    let resultado: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
-
-    if status.is_success() {
-        Ok(resultado)
-    } else {
-        let msg = resultado.get("detail")
-            .and_then(|d| d.as_str())
-            .unwrap_or("Error desconocido del motor de IA");
-        Err(msg.to_string())
-    }
+pub async fn analizar_ticket_con_ia(texto: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        resultado_a_result(src_ia::rutas::analizador_llm::analizar_ticket(&texto))
+    })
+    .await
+    .map_err(|e| format!("Tarea de análisis abortada: {}", e))?
 }
 
 // ============================================================
-// Parseo con mapeo de columnas
+// Parseo con mapeo de columnas (nativo, sin sidecar)
 // ============================================================
 
 #[tauri::command]
-pub async fn parsear_con_mapeo(
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-    texto: String,
-    mapeo: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
-
-    let body = serde_json::json!({ "texto": texto, "mapeo": mapeo });
-
-    let resp = sidecar.http_client
-        .post(format!("{}/parsear_con_mapeo", base_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
-
-    let status = resp.status();
-    let resultado: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
-
-    if status.is_success() {
-        Ok(resultado)
-    } else {
-        let msg = resultado.get("detail")
-            .and_then(|d| d.as_str())
-            .unwrap_or("Error desconocido del motor de IA");
-        Err(msg.to_string())
+pub fn parsear_con_mapeo(texto: String, mapeo: serde_json::Value) -> Result<serde_json::Value, String> {
+    let texto = texto.trim();
+    if texto.is_empty() {
+        return Ok(serde_json::json!({ "status": "error", "error": "El texto esta vacio" }));
     }
+
+    let lineas: Vec<&str> = texto
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    if lineas.is_empty() {
+        return Ok(serde_json::json!({ "status": "error", "error": "No hay lineas para parsear" }));
+    }
+
+    let mapeo: MapeoColumnas =
+        serde_json::from_value(mapeo).map_err(|e| format!("Mapeo inválido: {}", e))?;
+    let total_cols = lineas
+        .iter()
+        .map(|l| l.split_whitespace().count())
+        .max()
+        .unwrap_or(0);
+
+    let mut items = Vec::new();
+    let mut errores: Vec<String> = Vec::new();
+
+    for (i, linea) in lineas.iter().enumerate() {
+        match parsear_linea(linea, &mapeo, total_cols) {
+            Some(item) => items.push(item),
+            None => errores.push(format!("Linea {}: formato no reconocido", i + 1)),
+        }
+    }
+
+    Ok(serde_json::json!({
+        "status": "ok",
+        "items": items,
+        "total_lineas": lineas.len(),
+        "lineas_parseadas": items.len(),
+        "errores": errores.iter().take(20).collect::<Vec<_>>(),
+    }))
 }
 
 // ============================================================
-// Parseo de carpetas
+// Parseo de carpetas (nativo, sin sidecar)
 // ============================================================
 
 #[tauri::command]
-pub async fn parsear_carpeta(
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
+pub fn parsear_carpeta(
     carpeta: String,
     mapeo: serde_json::Value,
     db_path: String,
 ) -> Result<serde_json::Value, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
-
-    let body = serde_json::json!({
-        "carpeta": carpeta,
-        "mapeo": mapeo,
-        "db_path": db_path
-    });
-
-    let resp = sidecar.http_client
-        .post(format!("{}/parsear_carpeta", base_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
-
-    let status = resp.status();
-    let resultado: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Error leyendo respuesta del motor de IA: {}", e))?;
-
-    if status.is_success() {
-        Ok(resultado)
-    } else {
-        let msg = resultado.get("detail")
-            .and_then(|d| d.as_str())
-            .unwrap_or("Error desconocido del motor de IA");
-        Err(msg.to_string())
+    let archivos = src_ia::cerebro::lote::obtener_archivos_txt(&carpeta);
+    if archivos.is_empty() {
+        return Err("No se encontraron archivos .txt en la carpeta".to_string());
     }
+
+    let mapeo: MapeoColumnas =
+        serde_json::from_value(mapeo).map_err(|e| format!("Mapeo inválido: {}", e))?;
+
+    let stats = procesar_carpeta_impl(archivos, mapeo, db_path);
+    let mut valor = serde_json::to_value(&stats)
+        .map_err(|e| format!("Error serializando resultado: {}", e))?;
+    if let Some(obj) = valor.as_object_mut() {
+        obj.insert("status".to_string(), serde_json::json!("ok"));
+    }
+    Ok(valor)
 }
+
+// ============================================================
+// Parseo de carpetas con streaming (emite eventos batch-progress)
+// ============================================================
 
 #[tauri::command]
 pub async fn parsear_carpeta_stream(
     app_handle: tauri::AppHandle,
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
     carpeta: String,
     mapeo: serde_json::Value,
     db_path: String,
 ) -> Result<String, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible (sidecar no iniciado)")?;
-
-    let body = serde_json::json!({
-        "carpeta": carpeta,
-        "mapeo": mapeo,
-        "db_path": db_path
-    });
-
-    let resp = sidecar.http_client
-        .post(format!("{}/parsear_carpeta_stream", base_url))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Error conectando al motor de IA: {}", e))?;
-
-    if !resp.status().is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Error del motor de IA: {}", text));
+    let archivos = src_ia::cerebro::lote::obtener_archivos_txt(&carpeta);
+    if archivos.is_empty() {
+        return Err("No se encontraron archivos .txt en la carpeta".to_string());
     }
+    let total = archivos.len();
 
-    // Leer la respuesta SSE como stream de bytes y emitir eventos en tiempo real
-    let mut stream = resp.bytes_stream();
-    let mut buffer = String::new();
+    let mapeo: MapeoColumnas =
+        serde_json::from_value(mapeo).map_err(|e| format!("Mapeo inválido: {}", e))?;
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Error leyendo stream: {}", e))?;
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
+    tauri::async_runtime::spawn_blocking(move || {
+        emitir_stream_batch(&app_handle, &archivos, &mapeo, &db_path, total)
+    })
+    .await
+    .map_err(|e| format!("Error en el worker de procesamiento: {}", e))?
+}
 
-        // Procesar líneas completas del buffer SSE
-        while let Some(pos) = buffer.find("\n\n") {
-            let line = buffer[..pos].to_string();
-            buffer = buffer[pos + 2..].to_string();
+/// Procesa los archivos con `src-ia::lote::procesar_archivos` y emite los
+/// mismos eventos SSE (`progress` / `complete`) que emitía el sidecar Python.
+fn emitir_stream_batch(
+    app: &tauri::AppHandle,
+    archivos: &[String],
+    mapeo: &MapeoColumnas,
+    db_path: &str,
+    total: usize,
+) -> Result<String, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<ArchivoResultado>();
+    procesar_archivos(archivos, mapeo, db_path, &tx);
+    drop(tx);
 
-            if let Some(data) = line.strip_prefix("data: ") {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                    let _ = app_handle.emit("batch-progress", json);
-                }
+    let mut procesados = 0usize;
+    let mut exitosos = 0usize;
+    let mut errores = 0usize;
+    let mut ventas_creadas = 0usize;
+    let mut items_insertados = 0usize;
+    let mut productos_nuevos = 0usize;
+    let mut productos_existentes = 0usize;
+    let mut duplicados_detectados = 0usize;
+    let mut productos_nuevos_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut tickets_fallidos: Vec<serde_json::Value> = Vec::new();
+
+    for res in rx {
+        procesados += 1;
+        if res.ok {
+            exitosos += 1;
+            ventas_creadas += 1;
+            items_insertados += res.items;
+            duplicados_detectados += res.duplicados;
+            productos_existentes += res.existentes;
+            for nuevo in &res.nuevos {
+                productos_nuevos_set.insert(nuevo.nombre.clone());
             }
+            productos_nuevos += res.nuevos.len();
+        } else {
+            errores += 1;
+            tickets_fallidos.push(serde_json::json!({
+                "archivo": res.archivo,
+                "motivo": res.motivo.unwrap_or_default(),
+            }));
+        }
+
+        if procesados % 50 == 0 || procesados == total {
+            let _ = app.emit("batch-progress", serde_json::json!({
+                "type": "progress",
+                "procesados": procesados,
+                "total": total,
+                "exitosos": exitosos,
+                "errores": errores,
+                "ventas_creadas": ventas_creadas,
+                "items_insertados": items_insertados,
+                "productos_nuevos": productos_nuevos,
+                "productos_existentes": productos_existentes,
+                "duplicados_detectados": duplicados_detectados,
+            }));
         }
     }
 
-    // Procesar cualquier dato restante en el buffer
-    if !buffer.is_empty() {
-        for line in buffer.lines() {
-            if let Some(data) = line.strip_prefix("data: ") {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                    let _ = app_handle.emit("batch-progress", json);
-                }
-            }
-        }
-    }
+    let _ = app.emit("batch-progress", serde_json::json!({
+        "type": "complete",
+        "total_archivos": total,
+        "procesados": procesados,
+        "exitosos": exitosos,
+        "errores": errores,
+        "ventas_creadas": ventas_creadas,
+        "items_insertados": items_insertados,
+        "productos_nuevos": productos_nuevos,
+        "productos_existentes": productos_existentes,
+        "duplicados_detectados": duplicados_detectados,
+        "productos_nuevos_lista": productos_nuevos_set.into_iter().take(100).collect::<Vec<_>>(),
+        "tickets_fallidos": tickets_fallidos.iter().take(500).collect::<Vec<_>>(),
+    }));
 
     Ok("ok".to_string())
 }

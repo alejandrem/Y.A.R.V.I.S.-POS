@@ -4,20 +4,14 @@ import sys
 
 from chatbot.embeddings.endpoints import router as embeddings_router
 from profeta.endpoints import router as predictions_router
-from parseador_de_tickets.cerebro.analizador import router as parser_router
-from parseador_de_tickets.cerebro.lote import router as carpeta_router
 from chatbot.motor_chat import router as chat_router
-from parseador_de_tickets.cerebro.vinculador import router as matching_router
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 app = FastAPI(title="Y.A.R.V.I.S. IA Engine")
 
 app.include_router(embeddings_router)
 app.include_router(predictions_router)
-app.include_router(parser_router)
-app.include_router(carpeta_router)
 app.include_router(chat_router)
-app.include_router(matching_router)
 
 
 @app.get("/")
@@ -38,18 +32,9 @@ if __name__ == "__main__":
     print(f"[YARVIS-IA]   /generar_embedding          → Embeddings (all-MiniLM-L6-v2)")
     print(f"[YARVIS-IA]   /buscar_similar             → Busqueda semantica knowledge_base")
     print(f"[YARVIS-IA]   /insertar_knowledge         → Insertar en knowledge_base")
-    print(f"[YARVIS-IA]   /analizar_ticket            → LLM Qwen (extrae fecha + items)")
-    print(f"[YARVIS-IA]   /parsear_con_mapeo          → Parser manual con mapeo de columnas")
-    print(f"[YARVIS-IA]   /parsear_carpeta            → Parsear carpeta de tickets")
-    print(f"[YARVIS-IA]   /parsear_carpeta_stream     → Parsear carpeta (stream SSE)")
-    print(f"[YARVIS-IA]   /parsear_excel              → Parsear catalogo Excel")
-    print(f"[YARVIS-IA]   /parsear_catalogo_visual    → Parsear catalogo TXT visual")
-    print(f"[YARVIS-IA]   /parsear_catalogo_csv       → Parsear catalogo CSV")
     print(f"[YARVIS-IA]   /recalcular_predicciones    → Prophet: prediccion de ventas")
     print(f"[YARVIS-IA]   /chat | /chat_stream         → Chat YARVIS (local y nube)")
     print(f"[YARVIS-IA]   /model_status /load_model /unload_model /stop → Modelos Qwen")
     print(f"[YARVIS-IA]   /cloud_models                → Modelos de proveedores de nube")
-    print(f"[YARVIS-IA]   /vincular_inventario        → Vincular productos con inventario")
-    print(f"[YARVIS-IA]   /guardar_vinculacion        → Guardar vinculacion producto-DB")
     print(f"[YARVIS-IA]   /backfill                    → Generar embeddings del catalogo")
     uvicorn.run(app, host="127.0.0.1", port=PORT)

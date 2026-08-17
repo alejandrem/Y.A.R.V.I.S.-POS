@@ -29,6 +29,22 @@ pub fn run() {
             let sidecar_task = Arc::clone(&sidecar_for_setup);
             let db_path_for_backfill = db_path_str.clone();
             tauri::async_runtime::spawn(async move {
+                // Python queda DESCONECTADO por defecto: la app corre 100%
+                // nativa (el análisis de tickets ya es Rust/llama.cpp). Solo se
+                // lanza el sidecar si el entorno pide YARVIS_PYTHON=1 (run.sh
+                // lo exporta; ver run.sh).
+                let python_habilitado = std::env::var("YARVIS_PYTHON")
+                    .map(|v| v == "1")
+                    .unwrap_or(false);
+
+                if !python_habilitado {
+                    println!(
+                        "[YARVIS-SIDECAR] Python desconectado (YARVIS_PYTHON!=1). Todo corre en Rust."
+                    );
+                    *sidecar_task.status.lock().unwrap() = sidecar::AiStatus::NotRunning;
+                    return;
+                }
+
                 sidecar::launch_ai_engine(sidecar_task.clone()).await;
 
                 // Cuando el motor de IA esté listo, poblara knowledge_base con
