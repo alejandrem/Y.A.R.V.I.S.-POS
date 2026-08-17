@@ -17,8 +17,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .modelos_API.apis_cloud import generar_completo, generar_stream, listar_modelos, nombre_proveedor
-from .modelos_API.prompts_api import construir_mensajes_api
 from .modelos_local.cache import cantidad_productos_cache, iniciar_cache
 from .modelos_local.gestion_hardware import (
     cargar_modelo,
@@ -27,7 +25,6 @@ from .modelos_local.gestion_hardware import (
     estado_modelos,
 )
 from .modelos_local.variables import MODELOS, WORD_LIMITS
-from .modelos_local.herramientas import TOOLS_SCHEMA, ejecutar_tool
 from .modelos_local.prompts import _separar_think, construir_mensajes
 
 # Versión en minúsculas de las claves (el usuario manda "0.5b" / "0.8b" / "1.7b").
@@ -166,11 +163,6 @@ class ChatRequest(BaseModel):
     tienda_info: dict = {}
 
 
-class CloudModelsRequest(BaseModel):
-    provider: str
-    api_key: str = ""
-
-
 class LoadModelRequest(BaseModel):
     model: str
 
@@ -184,33 +176,6 @@ def _estado_completo() -> dict:
     estado = estado_modelos()
     estado["cache_products"] = cantidad_productos_cache()
     return estado
-
-
-def _fallback_local(messages: list, role: str, ultimo: str, err: str = "") -> str:
-    """Respuesta local de emergencia si la nube falla (switch automático).
-
-    Réplica exacta del modo local: Qwen 0.5B con RAG de inventario vía
-    construir_mensajes (que ya inyecta buscar_semantico en el contexto).
-    """
-    try:
-        chat_messages = construir_mensajes(role, messages, ultimo)
-        llm = cargar_modelo("0.5B")
-        return ejecutar_chat(llm, chat_messages, WORD_LIMITS["0.5B"])
-    except Exception as e:
-        return f"Error nube: {err}\nError local: {e}"
-
-
-def _stream_fallback_local(messages: list, role: str, ultimo: str) -> str:
-    """SSE del fallback local: una ventana 'token' con la respuesta Qwen 0.5B.
-
-    Se inyecta como único evento del stream cuando la nube falla.
-    """
-    try:
-        texto = _fallback_local(messages, role, ultimo)
-        datos = json.dumps({"token": texto, "model": "local-fallback"})
-    except Exception:
-        datos = json.dumps({"error": "Fallback local también falló."})
-    return f"data: {datos}\n\n"
 
 
 @router.get("/model_status")
@@ -253,15 +218,6 @@ async def unload_model(request: LoadModelRequest):
     return {"status": "ok", "model": model_key, "message": f"Qwen {model_key} descargado", **_estado_completo()}
 
 
-@router.post("/cloud_models")
-async def cloud_models(request: CloudModelsRequest):
-    """Lista los modelos disponibles de un proveedor de nube (dinámico)."""
-    try:
-        return {"models": listar_modelos(request.provider, request.api_key)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
 @router.post("/chat")
 async def chat(request: ChatRequest):
     _registrar_actividad()
@@ -273,28 +229,6 @@ async def chat(request: ChatRequest):
 
     _marcar_uso_ia()
     try:
-        if request.provider:
-            avisos: list[str] = []
-            try:
-                chat_messages = construir_mensajes_api(request.messages)
-                respuesta = generar_completo(
-                    request.provider,
-                    request.api_key,
-                    request.model,
-                    chat_messages,
-                    tools=TOOLS_SCHEMA,
-                    ejecutar_tool=ejecutar_tool,
-                    avisos=avisos,
-                )
-                return {"response": respuesta, "model_used": nombre_proveedor(request.provider), "avisos": avisos}
-            except Exception as e:
-                print(f"[YARVIS-CHAT] Error proveedor ({request.provider}): {e}")
-                return {
-                    "response": _fallback_local(request.messages, request.role, ultimo, str(e)),
-                    "model_used": "local-fallback",
-                    "avisos": avisos,
-                }
-
         chat_messages = construir_mensajes(request.role, request.messages, ultimo)
         selected = request.model.lower()
 
@@ -329,49 +263,6 @@ async def chat_stream(request: ChatRequest):
 
     stream_id, cancel_event = _nuevo_stream_event()
     _marcar_uso_ia()
-
-    if request.provider:
-        chat_messages = construir_mensajes_api(request.messages)
-        cloud_display = nombre_proveedor(request.provider)
-        max_w = 1000
-
-        def generate_cloud():
-            try:
-                usage: dict = {}
-                total_chars = sum(len(m.get("content") or "") for m in chat_messages)
-                print(f"[YARVIS-CHAT] Cloud: {len(chat_messages)} msgs, {total_chars} chars (~{total_chars // 4} tok est)")
-                modelo_actual = request.model
-
-                def _con_modelo():
-                    nonlocal modelo_actual
-                    for token, modelo in generar_stream(
-                        request.provider,
-                        request.api_key,
-                        request.model,
-                        chat_messages,
-                        usage=usage,
-                        tools=TOOLS_SCHEMA,
-                        ejecutar_tool=ejecutar_tool,
-                    ):
-                        modelo_actual = modelo
-                        yield token
-
-                for kind, text in _separar_think(_con_modelo(), max_w):
-                    if cancel_event.is_set():
-                        break
-                    yield f"data: {json.dumps({kind: text, 'model': modelo_actual})}\n\n"
-                if usage:
-                    print(f"[YARVIS-CHAT] Usage real del proveedor: {usage.get('prompt_tokens')} prompt + {usage.get('completion_tokens')} completion = {usage.get('total_tokens')} total")
-                    yield f"data: {json.dumps({'usage': usage, 'model': modelo_actual})}\n\n"
-                yield f"data: {json.dumps({'done': True, 'cancelled': cancel_event.is_set(), 'model': modelo_actual})}\n\n"
-            except Exception as e:
-                print(f"[YARVIS-CHAT] Error proveedor ({cloud_display}), fallback a local: {e}")
-                yield _stream_fallback_local(request.messages, request.role, ultimo)
-                yield f"data: {json.dumps({'done': True, 'cancelled': False, 'model': 'local-fallback'})}\n\n"
-            finally:
-                _terminar_stream(stream_id)
-
-        return StreamingResponse(generate_cloud(), media_type="text/event-stream")
 
     chat_messages = construir_mensajes(request.role, request.messages, ultimo)
     selected = request.model.lower()

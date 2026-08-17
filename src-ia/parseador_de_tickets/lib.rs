@@ -8,3 +8,7 @@
 pub mod cerebro;
 pub mod formatos;
 pub mod rutas;
+
+// Motor de chat (vive en `src-ia/motor-chat/`, hermano de `parseador_de_tickets/`).
+#[path = "../motor-chat/mod.rs"]
+pub mod motor_chat;

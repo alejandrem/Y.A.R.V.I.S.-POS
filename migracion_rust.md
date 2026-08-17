@@ -10,7 +10,7 @@
 
 | Módulo | Endpoints | Dificultad | Dependencia IA pesada |
 |---|---|---|---|
-| Chat | `/chat`, `/chat_stream`, `/load_model`, `/stop`, `/unload_model`, `/model_status`, `/cloud_models` | **Alta** | llama-cpp (local), APIs HTTP (cloud) |
+| Chat | `/chat`, `/chat_stream`, `/load_model`, `/stop`, `/unload_model`, `/model_status` | **Alta** | llama-cpp (local), APIs HTTP (cloud → Rust) |
 | Parseador | `/analizar_ticket`, `/parsear_con_mapeo`, `/parsear_catalogo_visual`, `/parsear_excel`, `/parsear_carpeta`, `/parsear_carpeta_stream`, `/vincular_inventario`, `/guardar_vinculacion` | **Alta** | llama-cpp (Qwen 0.5/0.8/1.7B) |
 | Profeta | `/recalcular_predicciones` | **Media** | Prophet → Holt-Winters (propia) |
 | Embeddings/RAG | `/generar_embedding`, `/buscar_similar`, `/backfill`, `/insertar_knowledge` | **Baja** | sentence-transformers → ONNX/fastembed |
@@ -40,6 +40,11 @@ Base común que se reimplementa 1 sola vez (crate `yarvis-engine`):
 2. Tauri command `chat_stream` en Rust; frontend cambia `base_url` del fetch de `chat_stream` al `tauri::invoke`.
 3. Port de `_separar_think`/`limpiar_think` (`prompts.py`) — regex + cola de marcadores parciales.
 4. **DoD:** misma salida SSE token a token que Python (comparación con captura real guardada en `/tmp`).
+
+> ✅ HECHO (2026): `src-ia/motor-chat/cloud` porta `apis_cloud.py`, `prompts_api.py` y
+> `variables.py`. Los comandos Tauri `send_chat_message`, `send_chat_stream` y
+> `get_cloud_models` atienden el modo cloud con Rust (con fallback a local), y el
+> paquete `yarvis-IA/chatbot/motor_chat/modelos_API/` se eliminó por completo.
 
 ## FASE 3 — Profeta (reemplaza Prophet sin deps)
 1. Module `profeta` en Rust: Holt-Winters (estacionalidad semanal, ~150 líneas, sin deps).

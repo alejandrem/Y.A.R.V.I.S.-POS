@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "Núcleo de IA en Rust (migración desde yarvis-IA). Port de parseador, RAG, profeta y chat."
 
+# El código vive en `parseador_de_tickets/` (espejo del paquete Python que
+# reemplaza). El crate se importa como `src_ia::...` igual que antes.
+[lib]
+path = "parseador_de_tickets/lib.rs"
+
 [features]
 # Inferencia local con llama.cpp (Qwen GGUF) vía crate llama-cpp-4.
 # Off por defecto para que el núcleo compile rápido en CI; el backend
@@ -17,6 +22,10 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 llama-cpp-4 = { version = "0.5", optional = true }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+async-stream = "0.3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
 
 [profile.dev]
 opt-level = 1
