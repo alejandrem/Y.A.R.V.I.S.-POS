@@ -1,10 +1,9 @@
 // Parser TXT/Visual en Rust.
 // Los comandos de catálogo, mapeo, carpetas y el análisis con LLM usan el
-// crate `src-ia` (migración Python → Rust, FASE 5). El LLM local corre
+// crate `src-ia`. El LLM local corre
 // vía llama.cpp dentro del feature `llm-local` de `src-ia`.
 use std::fs;
 use std::path;
-use crate::models::TicketItem;
 use super::utils::sanitize_path;
 use tauri::Emitter;
 use src_ia::cerebro::analizador::{parsear_linea, MapeoColumnas};
@@ -91,7 +90,7 @@ pub fn leer_archivo_bytes(path: String) -> Result<Vec<u8>, String> {
 }
 
 // ============================================================
-// Parser de catálogo visual (nativo, sin sidecar)
+// Parser de catálogo visual (nativo)
 // ============================================================
 
 #[tauri::command]
@@ -118,44 +117,6 @@ pub fn parsear_catalogo_visual(path: String) -> Result<serde_json::Value, String
         "total": productos.len(),
         "categorias": categorias,
     }))
-}
-
-// ============================================================
-// Parser de tickets
-// ============================================================
-
-#[tauri::command]
-pub fn parsear_ticket(path: String) -> Result<Vec<TicketItem>, String> {
-    let safe_path = sanitize_path(&path)?;
-    let content = fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
-    let mut items = Vec::new();
-
-    for line in content.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 4 {
-            if let Ok(cantidad) = parts[0].parse::<f64>() {
-                if cantidad > 0.0 {
-                    let total_str = parts.last().unwrap().replace('$', "").replace(',', "");
-                    let precio_str = parts[parts.len()-2].replace('$', "").replace(',', "");
-
-                    let total = total_str.parse::<f64>().unwrap_or(0.0);
-                    let precio = precio_str.parse::<f64>().unwrap_or(0.0);
-
-                    let producto = parts[1..parts.len()-2].join(" ");
-
-                    if !producto.is_empty() && total > 0.0 {
-                        items.push(TicketItem {
-                            producto: producto.to_uppercase(),
-                            cantidad,
-                            precio,
-                            total
-                        });
-                    }
-                }
-            }
-        }
-    }
-    Ok(items)
 }
 
 // ============================================================
@@ -202,7 +163,7 @@ pub async fn analizar_ticket_con_ia(texto: String) -> Result<serde_json::Value, 
 }
 
 // ============================================================
-// Parseo con mapeo de columnas (nativo, sin sidecar)
+// Parseo con mapeo de columnas (nativo)
 // ============================================================
 
 #[tauri::command]
@@ -249,7 +210,7 @@ pub fn parsear_con_mapeo(texto: String, mapeo: serde_json::Value) -> Result<serd
 }
 
 // ============================================================
-// Parseo de carpetas (nativo, sin sidecar)
+// Parseo de carpetas (nativo)
 // ============================================================
 
 #[tauri::command]
@@ -303,7 +264,7 @@ pub async fn parsear_carpeta_stream(
 }
 
 /// Procesa los archivos con `src-ia::lote::procesar_archivos` y emite los
-/// mismos eventos SSE (`progress` / `complete`) que emitía el sidecar Python.
+/// mismos eventos SSE (`progress` / `complete`) que emitía el motor original.
 fn emitir_stream_batch(
     app: &tauri::AppHandle,
     archivos: &[String],

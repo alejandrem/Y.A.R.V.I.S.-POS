@@ -1,21 +1,15 @@
 // ============================================================
 // lib.rs — Setup principal de Tauri
-// Inicializa SQLite y lanza el sidecar de Python en background.
+// Inicializa SQLite. Todo corre 100% nativo en Rust.
 // ============================================================
 
 mod backventanas;
 mod models;
-pub mod sidecar;
 
-use std::sync::Arc;
 use tauri::Manager;
-use sidecar::AiSidecar;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let ai_sidecar = Arc::new(AiSidecar::new());
-    let sidecar_for_setup = Arc::clone(&ai_sidecar);
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -23,55 +17,7 @@ pub fn run() {
             let (pool, db_path_str) = backventanas::db::db::initialize_db(app.handle());
             app.manage(pool);
             app.manage(backventanas::db::db::DbPath(db_path_str.clone()));
-
-            app.manage(Arc::clone(&sidecar_for_setup));
-
-            let sidecar_task = Arc::clone(&sidecar_for_setup);
-            let db_path_for_backfill = db_path_str.clone();
-            tauri::async_runtime::spawn(async move {
-                // Python queda DESCONECTADO por defecto: la app corre 100%
-                // nativa (el análisis de tickets ya es Rust/llama.cpp). Solo se
-                // lanza el sidecar si el entorno pide YARVIS_PYTHON=1 (run.sh
-                // lo exporta; ver run.sh).
-                let python_habilitado = std::env::var("YARVIS_PYTHON")
-                    .map(|v| v == "1")
-                    .unwrap_or(false);
-
-                if !python_habilitado {
-                    println!(
-                        "[YARVIS-SIDECAR] Python desconectado (YARVIS_PYTHON!=1). Todo corre en Rust."
-                    );
-                    *sidecar_task.status.lock().unwrap() = sidecar::AiStatus::NotRunning;
-                    return;
-                }
-
-                sidecar::launch_ai_engine(sidecar_task.clone()).await;
-
-                // Cuando el motor de IA esté listo, poblara knowledge_base con
-                // los embeddings de todos los productos que aún no tengan uno.
-                if sidecar_task.get_status() == sidecar::AiStatus::Ready {
-                    println!("[YARVIS-SIDECAR] Motor listo. Generando embeddings del catálogo...");
-                    match backventanas::backadmin::admininventory::inventory::run_backfill(
-                        &sidecar_task, &db_path_for_backfill,
-                    ).await {
-                        Ok(r) => println!(
-                            "[YARVIS-SIDECAR] Backfill completado: {} insertados, {} omitidos ({} productos)",
-                            r.insertados, r.omitidos, r.total_productos
-                        ),
-                        Err(e) => println!("[YARVIS-SIDECAR] Backfill falló: {}", e),
-                    }
-                }
-            });
-
             Ok(())
-        })
-        .on_window_event({
-            let sidecar_cleanup = Arc::clone(&ai_sidecar);
-            move |_window, event| {
-                if let tauri::WindowEvent::Destroyed = event {
-                    sidecar::shutdown_ai_engine(&sidecar_cleanup);
-                }
-            }
         })
 .invoke_handler(tauri::generate_handler![
             // Auth
@@ -173,8 +119,7 @@ pub fn run() {
             // Finanzas - Export (TODO)
             backventanas::backadmin::adminfinanzas::export::exportar_balance_pdf,
             backventanas::backadmin::adminfinanzas::export::exportar_gastos_csv,
-            // IA / Sidecar
-            backventanas::backadmin::admintarvis::ai::get_ai_status,
+            // Chat (local Qwen 1.7B + nube)
             backventanas::backadmin::admintarvis::chat::send_chat_message,
             backventanas::backadmin::admintarvis::chat::send_chat_stream,
             backventanas::backadmin::admintarvis::chat::get_cloud_models,

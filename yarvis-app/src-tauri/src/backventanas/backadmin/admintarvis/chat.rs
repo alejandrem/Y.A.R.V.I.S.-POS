@@ -15,7 +15,7 @@ use src_ia::motor_chat::llm::{
 };
 
 /// Máximo de palabras que se consideran razonamiento en el stream cloud
-/// (espejo del `max_w` que Python usa para `_separar_think`).
+/// (espejo del `max_w` que usaba el motor original para `_separar_think`).
 const CLOUD_MAX_W: usize = 1000;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -24,7 +24,7 @@ pub struct ChatResponse {
     pub model_used: String,
 }
 
-/// Estado de los modelos locales y la RAM del sistema (nativo, sin sidecar Python).
+/// Estado de los modelos locales y la RAM del sistema (nativo).
 #[tauri::command]
 pub async fn get_model_status() -> Result<serde_json::Value, String> {
     let ram_libre = ram_libre_gb().unwrap_or(0.0);
@@ -69,8 +69,8 @@ pub async fn load_chat_model(model: String) -> Result<serde_json::Value, String>
 
 /// Lista los modelos disponibles de un proveedor de nube (dinámico).
 ///
-/// Devuelve `{"models": [{"id": ..., "name": ...}]}` igual que el endpoint
-/// Python `/cloud_models` que reemplaza (mismos modelos, mismo JSON).
+/// Devuelve `{"models": [{"id": ..., "name": ...}]}` con el mismo JSON que
+/// el endpoint `/cloud_models` al que reemplaza.
 #[tauri::command]
 pub async fn get_cloud_models(
     provider: String,
@@ -86,7 +86,7 @@ pub async fn get_cloud_models(
 
 /// Detiene la generación en curso. La inferencia local del 1.7B es a bloqueo
 /// (llama.cpp), así que no hay nada que interrumpir: se responde ok para no
-/// romper el contrato con la UI (idéntico al endpoint `/stop` del sidecar).
+/// romper el contrato con la UI (idéntico al endpoint `/stop` del motor original).
 #[tauri::command]
 pub async fn stop_chat_stream() -> Result<String, String> {
     Ok("ok".to_string())
@@ -119,7 +119,7 @@ pub async fn send_chat_message(
 ) -> Result<ChatResponse, String> {
     let provider = provider.unwrap_or_default();
     // Modo cloud: lo responde Rust directamente (port de generar_completo).
-    // Si falla, cae al modelo local (igual que hacía Python).
+    // Si falla, cae al modelo local.
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
         let chat = construir_mensajes_api(&mensajes_serde_a_rust(&messages));
@@ -137,7 +137,7 @@ pub async fn send_chat_message(
         }
     }
 
-    // Modo local: Qwen 1.7B nativo de Rust (sin sidecar Python).
+    // Modo local: Qwen 1.7B nativo de Rust.
     println!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
@@ -145,7 +145,7 @@ pub async fn send_chat_message(
 }
 
 /// Chat con streaming — modo cloud lo emite Rust (port de generar_stream),
-/// el modo local trocea la respuesta del Qwen 1.7B nativo (sin sidecar Python).
+/// el modo local trocea la respuesta del Qwen 1.7B nativo.
 #[tauri::command]
 pub async fn send_chat_stream(
     app: tauri::AppHandle,
@@ -157,7 +157,7 @@ pub async fn send_chat_stream(
 ) -> Result<String, String> {
     let provider = provider.unwrap_or_default();
 
-    // ---- Modo cloud: streaming en Rust (sin dependencia del sidecar). ----
+    // ---- Modo cloud: streaming en Rust. ----
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
         let chat = construir_mensajes_api(&mensajes_serde_a_rust(&messages));

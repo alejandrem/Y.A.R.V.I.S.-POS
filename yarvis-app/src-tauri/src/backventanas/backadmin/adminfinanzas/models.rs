@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Local, NaiveDate};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GastoRecurrente {
@@ -198,8 +197,3 @@ pub struct FiltrosCortes {
     pub estado: Option<String>,
 }
 
-#[derive(Deserialize)]
-pub struct FiltrosPeriodo {
-    pub fecha_inicio: String,
-    pub fecha_fin: String,
-}

@@ -14,7 +14,6 @@ fn calcular_proxima_fecha(fecha_inicio: &str, frecuencia: &str, dia_pago: Option
     
     match frecuencia {
         "semanal" => {
-            let target_weekday = dia_pago.unwrap_or(1) as u32;
             let mut fecha = inicio;
             while fecha <= desde {
                 fecha += Duration::days(7);

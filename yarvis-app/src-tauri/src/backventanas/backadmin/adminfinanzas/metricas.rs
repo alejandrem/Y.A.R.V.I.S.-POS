@@ -159,17 +159,6 @@ pub async fn get_resumen_periodo(state: tauri::State<'_, SqlitePool>, fecha_inic
     let margen_contribucion_pct = if ventas_totales > 0.0 { ((ventas_totales - costo_ventas) / ventas_totales) * 100.0 } else { 0.0 };
     let punto_equilibrio_ventas = if margen_contribucion_pct > 0.0 { gastos_fijos_mensuales / (margen_contribucion_pct / 100.0) } else { 0.0 };
 
-    // Ticket promedio
-    let row = sqlx::query("SELECT COUNT(*) as count FROM ventas WHERE date(fecha) BETWEEN ? AND ? AND estado = 'completada'")
-        .bind(&fecha_inicio)
-        .bind(&fecha_fin)
-        .fetch_one(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
-    let ticket_count: i64 = row.get("count");
-    let ticket_promedio = if ticket_count > 0 { ventas_totales / ticket_count as f64 } else { 0.0 };
-    let tickets_necesarios = if ticket_promedio > 0.0 { punto_equilibrio_ventas / ticket_promedio } else { 0.0 };
-
     Ok(ResumenPeriodo {
         periodo_inicio: fecha_inicio,
         periodo_fin: fecha_fin,

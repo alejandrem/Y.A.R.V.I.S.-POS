@@ -1,7 +1,5 @@
-use std::sync::Arc;
 use sqlx::SqlitePool;
 use crate::models::{TicketDb, CorteDb, TicketItem};
-use crate::sidecar::{AiSidecar, AiStatus};
 use crate::backventanas::db::db::DbPath;
 
 #[tauri::command]
@@ -131,31 +129,8 @@ pub async fn guardar_ticket_parseado(
 
 #[tauri::command]
 pub async fn get_predictions(
-    days: i32,
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-    db_path: tauri::State<'_, DbPath>,
+    _days: i32,
+    _db_path: tauri::State<'_, DbPath>,
 ) -> Result<serde_json::Value, String> {
-    sidecar.check_process_alive();
-    if sidecar.get_status() != AiStatus::Ready {
-        return Err("Motor de IA no está listo".into());
-    }
-
-    let base_url = sidecar.base_url().ok_or("Sidecar sin puerto")?;
-    let payload = serde_json::json!({ "db_path": db_path.0, "days": days });
-
-    let resp = sidecar
-        .http_client
-        .post(format!("{}/recalcular_predicciones", base_url))
-        .json(&payload)
-        .timeout(std::time::Duration::from_secs(300))
-        .send()
-        .await
-        .map_err(|e| format!("Error llamando a Prophet: {}", e))?;
-
-    let result: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Error decodificando respuesta Prophet: {}", e))?;
-
-    Ok(result)
+    Err("Predicciones no disponibles: Prophet aún no está portado de forma nativa.".to_string())
 }

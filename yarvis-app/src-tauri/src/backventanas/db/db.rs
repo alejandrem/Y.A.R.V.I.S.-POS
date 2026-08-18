@@ -41,7 +41,7 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
 
         // FIX (auditoría): sin busy_timeout, escrituras concurrentes desde
         // distintos comandos Tauri devuelven SQLITE_BUSY en vez de esperar y
-        // reintentar. La versión Python sí lo tenía por conexión (5000ms).
+        // reintentar. El motor original sí lo tenía por conexión (5000ms).
         sqlx::query("PRAGMA busy_timeout = 5000;")
             .execute(&pool)
             .await

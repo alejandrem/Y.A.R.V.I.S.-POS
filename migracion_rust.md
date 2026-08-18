@@ -3,6 +3,9 @@
 > Estrategia: **Strangler Fig**. Código Rust corre en paralelo al sidecar Python.
 > Python NO se elimina hasta que el último endpoint tenga equivalente en Rust verificado.
 > Criterio de éxito de cada fase: endpoint equivalente + tests + misma salida JSON.
+>
+> **ESTADO: COMPLETADA.** El sidecar Python se retiró (`sidecar.rs` eliminado), no queda
+> rastro de Python en el código (arranque = binario único de Tauri + `src-ia`).
 
 ---
 
@@ -73,6 +76,18 @@ Base común que se reimplementa 1 sola vez (crate `yarvis-engine`):
    - Frontend: todos los fetch a `http://127.0.0.1:{port}/...` → `tauri::invoke`/comandos nativos.
    - Eliminar `find_free_port`/`check_process_alive`; arranque = binario único.
 
+> ✅ **HECHO (2026-Ago):** cierre completado.
+> - El chat local usa Qwen 3 1.7B nativo (`src-ia/motor-chat/llm` con llama.cpp) y el cloud
+>   corre en Rust (`src-ia/motor-chat/cloud`), con fallback local. `get_model_status`,
+>   `load_chat_model`, `unload_chat_model`, `stop_chat_stream` son comandos nativos.
+> - El parseo de tickets es 100% Rust/llama.cpp (Qwen 0.5B → 1.7B) en `src-ia`.
+> - `sidecar.rs`, `ai.rs` y `get_ai_status` se ELIMINARON. El arranque de Tauri ya no lanza
+>   Python (`YARVIS_PYTHON` desapareció) ni hace backfill al iniciar: binario único.
+> - `yarvis-IA/` no existe en el repo. `run.sh`/`run.bat`/`reset.sh` no mencionan Python.
+> - Rutas que dependían del motor Python quedaron como stubs con error claro:
+>   `buscar_producto_similar`, `backfill_embeddings`, `get_predictions`, `get_predicciones_financieras`
+>   (embeddings/RAG y Prophet quedan pendientes de reimplementación nativa).
+
 ---
 
 ## Orden recomendado de ataque
@@ -84,5 +99,6 @@ Base común que se reimplementa 1 sola vez (crate `yarvis-engine`):
 - Página Kanban del frontend con streaming (`/chat_stream`): probar timing SSE en Fase 2.
 
 ## Hecho fuera de alcance por ahora
-- NO borrar `yarvis-IA` hasta cerrar Fase 6.
 - NO tocar `yarvis.db` (schema compartido; solo lecturas desde el crate).
+- Reimplementar embeddings/RAG y Prophet en Rust (ONNX/fastembed y Holt-Winters) para
+  reactivar `buscar_producto_similar`/`backfill_embeddings`/`get_predictions`/`get_predicciones_financieras`.

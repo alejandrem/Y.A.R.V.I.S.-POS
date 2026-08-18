@@ -1,6 +1,5 @@
-// Parser Excel en Rust (nativo, sin sidecar Python).
-// El port vive en `src-ia::formatos::lector_excel` (calamine), espejo de
-// `lector_excel.py` de la migración Python → Rust.
+// Parser Excel en Rust (nativo).
+// El port vive en `src-ia::formatos::lector_excel` (calamine).
 use std::collections::BTreeSet;
 
 /// Parsea catálogo Excel (.xlsx/.xls) - recibe bytes del archivo.

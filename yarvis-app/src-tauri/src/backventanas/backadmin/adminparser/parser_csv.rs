@@ -1,4 +1,4 @@
-// Parser CSV en Rust (nativo, sin sidecar).
+// Parser CSV en Rust (nativo).
 // Delega el parseo al crate `src-ia` (port de lector_csv.py).
 use std::fs;
 use crate::models::InventoryItem;

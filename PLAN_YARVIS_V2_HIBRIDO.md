@@ -1,5 +1,11 @@
 # PLAN DE IMPLEMENTACIÓN Y.A.R.V.I.S. V2 — HÍBRIDO
 
+> **⚠️ PLAN HISTÓRICO / SUPERSEDIDO (2026-Ago).** Este plan describía la arquitectura Python
+> (`yarvis-IA/chatbot/motor_chat/...`). Esa carpeta ya NO existe: hubo migración a Rust
+> (`src-ia/motor-chat` + `src-ia/parseador_de_tickets`), el sidecar Python se eliminó y la app
+> es un binario único de Tauri. **TODAS las rutas de Python listadas abajo están MUERTAS.**
+> Ver `migracion_rust.md` para el estado real.
+
 > Objetivo: **Qwen 0.5B local por defecto, OpenCode API con tools cuando hay internet.**
 > El modelo no toca SQL: solo llama a `search_inventory()`, que es la ÚNICA función que lee la DB.
 
@@ -97,9 +103,12 @@ def get_answer(query):
 
 ## Archivos
 
-| Archivo | Rol |
-|---------|-----|
-| `yarvis-IA/chatbot/motor_chat/modelos_local/herramientas.py` | `search_inventory()` + `TOOLS_SCHEMA` (NUEVO) |
-| `yarvis-IA/chatbot/motor_chat/modelos_API/apis_cloud.py` | function calling + fallback 429 (MODIFICADO) |
-| `yarvis-IA/chatbot/motor_chat/endpoints.py` | orquesta tools en `/chat` y `/chat_stream` (MODIFICADO) |
-| `yarvis-IA/chatbot/motor_chat/modelos_local/motor_rag.py` | `buscar_semantico()` (sin cambios) |
+> **RUTAS MUERTAS** — el directorio `yarvis-IA/` fue borrado del repo. Sus reemplazos en Rust:
+
+| Ruta muerta (Python) | Reemplazo actual (Rust) |
+|----------------------|-------------------------|
+| `yarvis-IA/chatbot/motor_chat/modelos_local/herramientas.py` (`search_inventory` + tools) | NO portado (tools cloud omitidas: el modelo ya no llama `search_inventory`) |
+| `yarvis-IA/chatbot/motor_chat/modelos_API/apis_cloud.py` | `src-ia/motor-chat/cloud/apis_cloud.rs` |
+| `yarvis-IA/chatbot/motor_chat/modelos_API/variables.py` | `src-ia/motor-chat/cloud/variables.rs` |
+| `yarvis-IA/chatbot/motor_chat/endpoints.py` | comandos Tauri en `yarvis-app/src-tauri/.../admintarvis/chat.rs` |
+| `yarvis-IA/chatbot/motor_chat/modelos_local/motor_rag.py` (`buscar_semantico`) | NO portado (embeddings/RAG pendientes; `buscar_producto_similar` es stub) |

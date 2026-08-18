@@ -1,7 +1,9 @@
-//! Test de integración REAL: carga el Qwen 1.7B y le pide una respuesta.
+//! Test de integración REAL: carga el Qwen 1.7B y verifica que el system
+//! prompt de TESTING se aplique, con respuesta limpia (`chat_1_7`) y cruda
+//! con bloques think (`chat_1_7_raw`, lo que usa el streaming).
 //! Solo funciona en máquinas con el GGUF descargado.
 //!
-//! Ejecutar:  cargo test --features llm-local -p src-ia --test test_chat_1_7_real -- --nocapture
+//! Ejecutar: cargo test --features llm-local --test test_chat_1_7_real -- --nocapture
 
 #[cfg(feature = "llm-local")]
 #[test]
@@ -23,11 +25,35 @@ fn chat_1_7_responde_algo() {
             println!("{respuesta}");
             println!("─────────────────────────────────────");
             assert!(!respuesta.is_empty(), "La respuesta está vacía");
-            // El modelo debería identificarse como YARVIS o al menos responder algo
             println!("[TEST] Longitud de respuesta: {} chars", respuesta.len());
         }
         Err(e) => {
             panic!("[TEST] ❌ Error del modelo: {e}");
         }
     }
+}
+
+#[cfg(feature = "llm-local")]
+#[test]
+fn chat_1_7_raw_conserva_think_y_system_de_testing() {
+    use src_ia::motor_chat::cloud::prompts::Mensaje;
+    use src_ia::motor_chat::llm::{SYSTEM_PROMPT_TEST, chat_1_7, chat_1_7_raw};
+
+    assert!(
+        SYSTEM_PROMPT_TEST.contains("TESTING"),
+        "el system prompt debe marcar la fase de testing"
+    );
+
+    let historial = vec![Mensaje::new(
+        "user",
+        "Hola Y.A.R.V.I.S., solo prueba rapida: que estas haciendo?",
+    )];
+
+    let respuesta = chat_1_7(&historial).expect("chat_1_7 falló");
+    assert!(!respuesta.trim().is_empty(), "respuesta limpia vacía");
+    println!("[TEST] Respuesta limpia:\n{respuesta}");
+
+    let crudo = chat_1_7_raw(&historial).expect("chat_1_7_raw falló");
+    assert!(!crudo.trim().is_empty(), "respuesta cruda vacía");
+    println!("[TEST] Respuesta cruda (puede incluir bloques think):\n{crudo}");
 }

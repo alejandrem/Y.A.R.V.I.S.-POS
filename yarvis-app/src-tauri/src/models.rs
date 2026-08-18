@@ -56,25 +56,8 @@ pub struct AdminProfile {
 }
 
 // ============================================================
-// MODELOS PARA LA API DE EMBEDDINGS (Python ↔ Rust)
+// MODELOS PARA BÚSQUEDA SEMÁNTICA (IA de embeddings nativo)
 // ============================================================
-
-#[derive(Deserialize)]
-pub struct EmbeddingResponse {
-    #[allow(dead_code)] // used by serde deserialization
-    pub status: String,
-    pub dimensions: usize,
-    pub blob_b64: String,
-}
-
-#[derive(Serialize)]
-pub struct SimilarSearchRequest {
-    pub query: String,
-    pub db_path: String,
-    pub top_k: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub categoria: Option<String>,
-}
 
 #[derive(Deserialize, Debug, Serialize)]
 pub struct SimilarResult {
@@ -82,13 +65,6 @@ pub struct SimilarResult {
     pub contenido: String,
     pub categoria: String,
     pub score: f64,
-}
-
-#[derive(Deserialize)]
-pub struct SimilarSearchResponse {
-    #[allow(dead_code)] // used by serde deserialization
-    pub status: String,
-    pub results: Vec<SimilarResult>,
 }
 
 #[derive(Serialize, Deserialize)]

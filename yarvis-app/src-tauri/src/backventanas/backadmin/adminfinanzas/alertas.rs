@@ -51,23 +51,12 @@ pub async fn marcar_alerta_leida(state: tauri::State<'_, SqlitePool>, id: i64) -
 }
 
 #[tauri::command]
-pub async fn marcar_todas_alertas_leidas(state: tauri::State<'_, SqlitePool>) -> Result<(), String> {
-    sqlx::query("UPDATE alertas_financieras SET leida = 1 WHERE leida = 0")
-        .execute(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn generar_alertas_automaticas(state: tauri::State<'_, SqlitePool>) -> Result<Vec<AlertaFinanciera>, String> {
     generar_alertas_automaticas_impl(&*state).await
 }
 
 pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<AlertaFinanciera>, String> {
     let hoy = chrono::Local::now().date_naive();
-    let en_3_dias = hoy + Duration::days(3);
-    let en_7_dias = hoy + Duration::days(7);
     let hace_30_dias = hoy - Duration::days(30);
 
     let mut nuevas_alertas = Vec::new();
@@ -308,7 +297,6 @@ fn calcular_proxima_fecha_simple(fecha_inicio: &str, frecuencia: &str, dia_pago:
     
     match frecuencia {
         "semanal" => {
-            let target = dia_pago.unwrap_or(1) as u32;
             let mut fecha = inicio;
             while fecha <= desde {
                 fecha += Duration::days(7);
