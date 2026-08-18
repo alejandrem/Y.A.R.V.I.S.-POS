@@ -14,12 +14,10 @@ interface Message {
   timestamp: number;
 }
 
-export type ModelKey = "0.5B" | "0.8B" | "1.7B";
+export type ModelKey = "1.7B";
 
 export const MODEL_OPTIONS: { key: ModelKey; label: string; desc: string; minRam: number }[] = [
-  { key: "1.7B", label: "1.7B", desc: "El más capaz", minRam: 1.3 },
-  { key: "0.8B", label: "0.8B", desc: "Balance ideal", minRam: 0.5 },
-  { key: "0.5B", label: "0.5B", desc: "Rápido y ligero", minRam: 0 },
+  { key: "1.7B", label: "1.7B", desc: "El más capaz", minRam: 1 },
 ];
 
 export const CLOUD_PROVIDERS: { id: string; display: string; defaultModel: string }[] = [
@@ -59,8 +57,6 @@ export function getActiveCloud(): ActiveCloud {
 
 function modelDotClass(model: string): string {
   if (model === "1.7B") return "bg-emerald-500";
-  if (model === "0.8B") return "bg-amber-500";
-  if (model === "0.5B") return "bg-neutral-400";
   return "bg-blue-500";
 }
 

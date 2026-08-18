@@ -17,17 +17,15 @@ const yarvisNav = {
   ),
 };
 
-function pickBestModel(ramGb: number): ModelKey {
-  if (ramGb >= 1.3) return "1.7B";
-  if (ramGb >= 0.5) return "0.8B";
-  return "0.5B";
+function pickBestModel(_ramGb: number): ModelKey {
+  return "1.7B";
 }
 
 export default function Yarvis() {
-  const [selectedModel, setSelectedModel] = useState<ModelKey>("0.5B");
+  const [selectedModel, setSelectedModel] = useState<ModelKey>("1.7B");
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({
-    "0.5B": false, "0.8B": false, "1.7B": false,
+    "1.7B": false,
   });
   const [ramGb, setRamGb] = useState(0);
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -37,11 +35,15 @@ export default function Yarvis() {
 
   const fetchModelStatus = useCallback(async () => {
     try {
-      const status = await invoke<{ models: Record<string, boolean>; ram_gb: number }>("get_model_status");
+      const status = await invoke<{
+        models: Record<string, boolean>;
+        ram_gb: number;
+        ram_libre_gb?: number;
+      }>("get_model_status");
       setLoadedModels(status.models);
-      setRamGb(status.ram_gb);
-      if (!modelAutoSelected && status.ram_gb > 0) {
-        const best = pickBestModel(status.ram_gb);
+      setRamGb(status.ram_libre_gb ?? status.ram_gb);
+      if (!modelAutoSelected && (status.ram_libre_gb ?? 0) > 0) {
+        const best = pickBestModel(status.ram_libre_gb ?? 0);
         setSelectedModel(best);
         setModelAutoSelected(true);
       }
@@ -65,7 +67,7 @@ export default function Yarvis() {
       return;
     }
 
-    const MODEL_RAM: Record<ModelKey, number> = { "0.5B": 0, "0.8B": 0.5, "1.7B": 1.3 };
+    const MODEL_RAM: Record<ModelKey, number> = { "1.7B": 1 };
     const needed = MODEL_RAM[model];
     if (ramGb > 0 && ramGb < needed) {
       setRamWarning(`RAM insuficiente para Qwen ${model}: tienes ${ramGb.toFixed(1)}GB, necesitas ≥${needed}GB`);
@@ -73,18 +75,23 @@ export default function Yarvis() {
       return;
     }
 
-    const currentLoaded = (["1.7B", "0.8B", "0.5B"] as ModelKey[]).find((m) => loadedModels[m]);
+    const currentLoaded = (["1.7B"] as ModelKey[]).find((m) => loadedModels[m]);
     setLoadingModel(model);
     setSelectedModel(model);
     try {
       if (currentLoaded) {
         await invoke("unload_chat_model", { model: currentLoaded });
       }
-      const result = await invoke<{ status: string; models: Record<string, boolean>; ram_gb: number }>("load_chat_model", { model });
+      const result = await invoke<{
+        status: string;
+        models: Record<string, boolean>;
+        ram_gb: number;
+        ram_libre_gb?: number;
+      }>("load_chat_model", { model });
       setLoadedModels(result.models);
-      setRamGb(result.ram_gb);
+      setRamGb(result.ram_libre_gb ?? result.ram_gb);
     } catch {
-      setSelectedModel("0.5B");
+      setSelectedModel("1.7B");
     } finally {
       setLoadingModel(null);
     }
@@ -112,20 +119,20 @@ export default function Yarvis() {
             disabled={!!loadingModel}
             className="flex items-center gap-2 px-3 py-1.5 bg-neutral-100 rounded-lg transition-all disabled:opacity-50"
           >
-            <div className={`w-2 h-2 rounded-full ${loadingModel ? "bg-amber-500 animate-pulse" : selectedModel === "1.7B" ? "bg-emerald-500" : selectedModel === "0.8B" ? "bg-amber-500" : "bg-neutral-400"}`}></div>
+            <div className={`w-2 h-2 rounded-full ${loadingModel ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`}></div>
             <span className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">
               {loadingModel ? `Cargando...` : `Qwen ${selectedModel}`}
             </span>
           </button>
           {showModelPicker && (
             <div className="absolute right-4 top-14 w-60 bg-white border border-neutral-200 rounded-xl shadow-2xl z-50 p-1.5">
-              {(["1.7B", "0.8B", "0.5B"] as ModelKey[]).map((m) => (
+              {(["1.7B"] as ModelKey[]).map((m) => (
                 <button
                   key={m}
                   onClick={() => handleModelSelect(m)}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[11px] font-black transition-all ${selectedModel === m ? "bg-neutral-900 text-white" : "hover:bg-neutral-50 text-neutral-700"}`}
                 >
-                  <div className={`w-2 h-2 rounded-full ${selectedModel === m ? "bg-white" : m === "1.7B" ? "bg-emerald-500" : m === "0.8B" ? "bg-amber-500" : "bg-neutral-400"}`}></div>
+                  <div className={`w-2 h-2 rounded-full ${selectedModel === m ? "bg-white" : "bg-emerald-500"}`}></div>
                   Qwen {m}
                 </button>
               ))}

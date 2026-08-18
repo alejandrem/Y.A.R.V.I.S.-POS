@@ -8,8 +8,8 @@
 //! candidatos de cada modelo, con preferencia de quant.
 //!
 //! Conexión: en Python lo consumen `llm/analizador_llm.py` y
-//! `modelos_local/gestion_hardware.py` vía `qwen0_5`, `qwen0_8`, `qwen1_7`.
-//! El equivalente Rust se expone con `ruta_modelo` / `qwen0_5`/`qwen0_8`/`qwen1_7`.
+//! `modelos_local/gestion_hardware.py` vía `qwen0_5`, `qwen1_7`.
+//! El equivalente Rust se expone con `ruta_modelo` / `qwen0_5`/`qwen1_7`.
 
 use std::env;
 use std::fs;
@@ -34,10 +34,6 @@ const MODELOS_CONFIG: &[(&str, &[&str])] = &[
             "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
             "lmstudio-community/Qwen2.5-0.5B-Instruct-GGUF",
         ],
-    ),
-    (
-        "0.8B",
-        &["unsloth/Qwen3.5-0.8B-GGUF", "Qwen/Qwen3-0.6B-GGUF"],
     ),
     (
         "1.7B",
@@ -140,22 +136,18 @@ fn verificar_en(base: &Path) -> Vec<(&'static str, InfoModelo)> {
 // API pública (conexión con analizador_llm / gestion_hardware)
 // ---------------------------------------------------------------------------
 
-/// Ruta resuelta del modelo para la clave "0.5B" | "0.8B" | "1.7B".
+/// Ruta resuelta del modelo para la clave "0.5B" | "1.7B".
 pub fn ruta_modelo(clave: &str) -> PathBuf {
     let base = obtener_dir_lmstudio();
     let (_, candidatos) = MODELOS_CONFIG
         .iter()
         .find(|(k, _)| *k == clave)
-        .expect("clave de modelo inválida (0.5B/0.8B/1.7B)");
+        .expect("clave de modelo inválida (0.5B/1.7B)");
     resolver(candidatos, &base)
 }
 
 pub fn qwen0_5() -> PathBuf {
     ruta_modelo("0.5B")
-}
-
-pub fn qwen0_8() -> PathBuf {
-    ruta_modelo("0.8B")
 }
 
 pub fn qwen1_7() -> PathBuf {

@@ -30,6 +30,23 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             .await
             .expect("Fallo al activar modo WAL");
 
+        // FIX (auditoría): sin esto, TODAS las FOREIGN KEY ... ON DELETE CASCADE
+        // de este archivo son decorativas. SQLite trae el enforcement de FK
+        // apagado por default; sin este PRAGMA, borrar una venta deja huérfanos
+        // en detalle_ventas para siempre.
+        sqlx::query("PRAGMA foreign_keys = ON;")
+            .execute(&pool)
+            .await
+            .expect("Fallo al activar foreign_keys");
+
+        // FIX (auditoría): sin busy_timeout, escrituras concurrentes desde
+        // distintos comandos Tauri devuelven SQLITE_BUSY en vez de esperar y
+        // reintentar. La versión Python sí lo tenía por conexión (5000ms).
+        sqlx::query("PRAGMA busy_timeout = 5000;")
+            .execute(&pool)
+            .await
+            .expect("Fallo al activar busy_timeout");
+
         // ========================
         // TABLA: usuarios
         // ========================
@@ -86,15 +103,20 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
         // ========================
         // TABLA: productos
         // ========================
+        // FIX (auditoría): se quitó "UNIQUE" inline de codigo_barras aquí.
+        // En SQLite, ALTER TABLE ADD COLUMN no permite agregar UNIQUE, así que
+        // una DB migrada (ver más abajo) nunca obtenía esa restricción aunque
+        // una DB nueva sí. Ahora AMBOS casos usan el mismo índice único parcial
+        // más abajo → mismo comportamiento sin importar la antigüedad de la DB.
         sqlx::query("CREATE TABLE IF NOT EXISTS productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL,
             descripcion TEXT,
-            precio_costo REAL,
-            precio_venta REAL,
+            precio_costo REAL DEFAULT 0,
+            precio_venta REAL DEFAULT 0,
             stock REAL DEFAULT 0,
             stock_minimo REAL DEFAULT 0,
-            codigo_barras TEXT UNIQUE,
+            codigo_barras TEXT,
             categoria TEXT,
             creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
         )").execute(&pool).await.expect("Fallo al crear tabla de productos");
@@ -105,6 +127,22 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
         let _ = sqlx::query("ALTER TABLE productos ADD COLUMN codigo_barras TEXT").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE productos ADD COLUMN stock_minimo REAL DEFAULT 0").execute(&pool).await;
         let _ = sqlx::query("ALTER TABLE productos ADD COLUMN vendido REAL DEFAULT 0").execute(&pool).await;
+
+        // FIX (auditoría): unicidad de código de barras aplicada de forma
+        // UNIFORME vía índice parcial (ignora NULLs, que son la mayoría de
+        // los productos sin código de barras). Funciona igual en DB nueva y
+        // en DB migrada, a diferencia del UNIQUE inline que se quitó arriba.
+        sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_productos_codigo_barras \
+             ON productos(codigo_barras) WHERE codigo_barras IS NOT NULL")
+            .execute(&pool).await.expect("Fallo al crear índice único de codigo_barras");
+
+        // FIX (auditoría): estas dos tablas son las que golpea el chatbot en
+        // CADA pregunta de ventas/productos (obtener_ventas_hoy, top vendidos,
+        // etc.). Sin índices, cada consulta es un table scan completo — con
+        // hasta 30,000 tickets parseados esto se vuelve el cuello de botella
+        // real del sistema, justo lo contrario de para qué migramos a Rust.
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos(nombre)")
+            .execute(&pool).await.expect("Fallo al crear índice idx_productos_nombre");
 
         // ========================
         // TABLA: clientes
@@ -139,6 +177,17 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             FOREIGN KEY (cliente_id) REFERENCES clientes(id)
         )").execute(&pool).await.expect("Fallo al crear tabla de ventas");
 
+        // FIX (auditoría): índices en las columnas más consultadas de ventas.
+        // fecha → obtener_ventas_hoy/7dias/por_periodo (rango de fechas cada query)
+        // cajero → obtener_ventas_por_cajero, obtener_cancelaciones_por_cajero
+        // estado → todas las queries filtran "estado != 'cancelada'"
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha)")
+            .execute(&pool).await.expect("Fallo al crear índice idx_ventas_fecha");
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ventas_cajero ON ventas(cajero)")
+            .execute(&pool).await.expect("Fallo al crear índice idx_ventas_cajero");
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ventas_estado ON ventas(estado)")
+            .execute(&pool).await.expect("Fallo al crear índice idx_ventas_estado");
+
         // ========================
         // TABLA: detalle_ventas
         // ========================
@@ -155,6 +204,15 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE CASCADE,
             FOREIGN KEY (producto_id) REFERENCES productos(id)
         )").execute(&pool).await.expect("Fallo al crear tabla detalle_ventas");
+
+        // FIX (auditoría): venta_id → el JOIN de CADA query de ventas por
+        // producto/top vendidos/reembolsos. producto_nombre → todos los
+        // GROUP BY producto_nombre de consultas_db.py. Sin estos dos, cada
+        // pregunta al chatbot sobre productos escanea toda la tabla.
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_detalle_venta_id ON detalle_ventas(venta_id)")
+            .execute(&pool).await.expect("Fallo al crear índice idx_detalle_venta_id");
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_detalle_producto_nombre ON detalle_ventas(producto_nombre)")
+            .execute(&pool).await.expect("Fallo al crear índice idx_detalle_producto_nombre");
 
         // ========================
         // TABLA: ventas_diarias (historial con clima)

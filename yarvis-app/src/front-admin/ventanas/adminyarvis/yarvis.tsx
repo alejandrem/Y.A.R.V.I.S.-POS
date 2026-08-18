@@ -7,10 +7,8 @@ const API_PROVIDERS = [
   { id: "opencode", name: "OpenCode", placeholder: "sk-..." },
 ];
 
-function pickBestModel(ramGb: number): ModelKey {
-  if (ramGb >= 1.3) return "1.7B";
-  if (ramGb >= 0.5) return "0.8B";
-  return "0.5B";
+function pickBestModel(_ramGb: number): ModelKey {
+  return "1.7B";
 }
 
 const AdminYarvis = () => {
@@ -29,11 +27,11 @@ const AdminYarvis = () => {
 
   const activeCloud = getActiveCloud();
 
-  const [selectedModel, setSelectedModel] = useState<ModelKey>("0.5B");
+  const [selectedModel, setSelectedModel] = useState<ModelKey>("1.7B");
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({
-    "0.5B": false, "0.8B": false, "1.7B": false,
+    "1.7B": false,
   });
   const [ramGb, setRamGb] = useState(0);
   const [clearTrigger, setClearTrigger] = useState(0);
@@ -56,11 +54,15 @@ const AdminYarvis = () => {
 
   const fetchModelStatus = useCallback(async () => {
     try {
-      const status = await invoke<{ models: Record<string, boolean>; ram_gb: number }>("get_model_status");
+      const status = await invoke<{
+        models: Record<string, boolean>;
+        ram_gb: number;
+        ram_libre_gb?: number;
+      }>("get_model_status");
       setLoadedModels(status.models);
-      setRamGb(status.ram_gb);
-      if (!modelAutoSelected && status.ram_gb > 0) {
-        const best = pickBestModel(status.ram_gb);
+      setRamGb(status.ram_libre_gb ?? status.ram_gb);
+      if (!modelAutoSelected && (status.ram_libre_gb ?? 0) > 0) {
+        const best = pickBestModel(status.ram_libre_gb ?? 0);
         setSelectedModel(best);
         setModelAutoSelected(true);
       }
@@ -83,13 +85,17 @@ const AdminYarvis = () => {
 
   const refreshModelStatus = async () => {
     try {
-      const status = await invoke<{ models: Record<string, boolean>; ram_gb: number }>("get_model_status");
+      const status = await invoke<{
+        models: Record<string, boolean>;
+        ram_gb: number;
+        ram_libre_gb?: number;
+      }>("get_model_status");
       setLoadedModels(status.models);
-      setRamGb(status.ram_gb);
-      const loaded = (["1.7B", "0.8B", "0.5B"] as ModelKey[]).find((m) => status.models[m]);
-      setSelectedModel(loaded || "0.5B");
+      setRamGb(status.ram_libre_gb ?? status.ram_gb);
+      const loaded = (["1.7B"] as ModelKey[]).find((m) => status.models[m]);
+      setSelectedModel(loaded || "1.7B");
     } catch {
-      setSelectedModel("0.5B");
+      setSelectedModel("1.7B");
     }
   };
 
@@ -112,7 +118,7 @@ const AdminYarvis = () => {
       return;
     }
 
-    const MODEL_RAM: Record<ModelKey, number> = { "0.5B": 0, "0.8B": 0.5, "1.7B": 1.3 };
+    const MODEL_RAM: Record<ModelKey, number> = { "1.7B": 1 };
     const needed = MODEL_RAM[model];
     if (ramGb > 0 && ramGb < needed) {
       setRamWarning(`RAM insuficiente para Qwen ${model}: tienes ${ramGb.toFixed(1)}GB, necesitas ≥${needed}GB`);
@@ -121,7 +127,7 @@ const AdminYarvis = () => {
       return;
     }
 
-    const currentLoaded = (["1.7B", "0.8B", "0.5B"] as ModelKey[]).find((m) => loadedModels[m]);
+    const currentLoaded = (["1.7B"] as ModelKey[]).find((m) => loadedModels[m]);
     if (currentLoaded) {
       setLoadingModel(model);
       setSelectedModel(model);
@@ -131,9 +137,10 @@ const AdminYarvis = () => {
           status: string;
           models: Record<string, boolean>;
           ram_gb: number;
+          ram_libre_gb?: number;
         }>("load_chat_model", { model });
         setLoadedModels(result.models);
-        setRamGb(result.ram_gb);
+        setRamGb(result.ram_libre_gb ?? result.ram_gb);
       } catch {
         await refreshModelStatus();
       } finally {
@@ -147,9 +154,10 @@ const AdminYarvis = () => {
           status: string;
           models: Record<string, boolean>;
           ram_gb: number;
+          ram_libre_gb?: number;
         }>("load_chat_model", { model });
         setLoadedModels(result.models);
-        setRamGb(result.ram_gb);
+        setRamGb(result.ram_libre_gb ?? result.ram_gb);
       } catch {
         await refreshModelStatus();
       } finally {
@@ -253,7 +261,7 @@ const AdminYarvis = () => {
                 disabled={!!loadingModel}
                 className="flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm hover:bg-white hover:shadow-md transition-all disabled:opacity-50"
               >
-                <div className={`w-2.5 h-2.5 rounded-full ${loadingModel ? "bg-amber-500 animate-pulse" : activeCloud.provider ? "bg-blue-500" : selectedModel === "1.7B" ? "bg-emerald-500" : selectedModel === "0.8B" ? "bg-amber-500" : "bg-neutral-400"}`}></div>
+                <div className={`w-2.5 h-2.5 rounded-full ${loadingModel ? "bg-amber-500 animate-pulse" : activeCloud.provider ? "bg-blue-500" : "bg-emerald-500"}`}></div>
                 <span className="text-[11px] font-black text-neutral-600 uppercase tracking-widest">
                   {loadingModel ? `Cargando...` : activeCloud.provider ? activeCloud.display : `Qwen ${currentModel.label}`}
                 </span>
@@ -326,9 +334,7 @@ const AdminYarvis = () => {
                           <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isLoadingThis ? "bg-amber-500 animate-pulse"
                             : isLoaded ? "bg-emerald-500"
                               : selectedModel === opt.key ? "bg-white"
-                                : opt.key === "1.7B" ? "bg-emerald-500"
-                                  : opt.key === "0.8B" ? "bg-amber-500"
-                                    : "bg-neutral-400"
+                                : "bg-emerald-500"
                             }`}></div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
@@ -368,7 +374,7 @@ const AdminYarvis = () => {
                           : `Modelo local: Qwen ${currentModel.label}`}
                       </p>
                       <p className="text-[10px] font-bold text-neutral-400">
-                        RAM: {ramGb > 0 ? `${ramGb.toFixed(1)}GB` : "..."}
+                        RAM libre: {ramGb > 0 ? `${ramGb.toFixed(1)}GB` : "..."}
                       </p>
                     </div>
                   </div>

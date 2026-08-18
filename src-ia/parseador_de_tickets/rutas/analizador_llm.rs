@@ -1,10 +1,9 @@
 //! analizador_llm.rs — Port de `yarvis-IA/parseador_de_tickets/llm/analizador_llm.py`
 //!
 //! Parsing de tickets mediante LLM local (Qwen GGUF) con `llama-cpp-4`.
-//! Escalada de confianza idéntica a Python:
-//!   1. Carga el 0.5B; si la confianza es < 0.8, reintenta con el 0.8B.
-//!   2. Si la confianza sigue < 0.8, reintenta con el 1.7B.
-//!   3. Si un modelo no devuelve JSON válido, se salta directo al siguiente.
+//! Escalada de confianza (el 0.5B quedó SOLO para parseo de tickets):
+//!   1. Carga el 0.5B; si la confianza es < 0.8, reintenta con el 1.7B.
+//!   2. Si un modelo no devuelve JSON válido, se salta directo al siguiente.
 //!
 //! La inferencia llama.cpp queda detrás del feature `llm-local` (off por
 //! defecto): así el núcleo compila rápido en CI y solo el backend Tauri
@@ -21,7 +20,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(feature = "llm-local")]
-use super::rutas_modelos::{qwen0_5, qwen0_8, qwen1_7};
+use super::rutas_modelos::{qwen0_5, qwen1_7};
 
 #[cfg(feature = "llm-local")]
 use std::num::NonZeroU32;
@@ -82,9 +81,8 @@ FORMATO DE RESPUESTA:
 
 // Nombre de los modelos para los mensajes (espejo de _NOMBRES_MODELO).
 #[cfg(feature = "llm-local")]
-const NOMBRES_MODELO: [(&str, &str); 3] = [
+const NOMBRES_MODELO: [(&str, &str); 2] = [
     ("0.5B", "Qwen 2.5 0.5B"),
-    ("0.8B", "Qwen 3.5 0.8B"),
     ("1.7B", "Qwen 3 1.7B"),
 ];
 
@@ -96,7 +94,6 @@ const NOMBRES_MODELO: [(&str, &str); 3] = [
 fn ruta_modelo(clave: &str) -> PathBuf {
     match clave {
         "0.5B" => qwen0_5(),
-        "0.8B" => qwen0_8(),
         _ => qwen1_7(),
     }
 }
@@ -187,7 +184,7 @@ fn backend_global() -> Resultado<&'static LlamaBackend> {
     BACKEND.get().ok_or_else(|| "llama.cpp no inicializado".to_string())
 }
 
-/// Caché global de modelos cargados (0.5B / 0.8B / 1.7B), igual que el dict
+/// Caché global de modelos cargados (0.5B / 1.7B), igual que el dict
 /// `_MODELOS_LLM` de Python. `send`+`sync` porque los tipos lo son.
 #[cfg(feature = "llm-local")]
 static CACHE: OnceLock<Mutex<HashMap<String, Arc<ModeloChat>>>> = OnceLock::new();
@@ -198,7 +195,7 @@ static CACHE: OnceLock<Mutex<HashMap<String, Arc<ModeloChat>>>> = OnceLock::new(
 #[cfg(feature = "llm-local")]
 static INFERENCIA_LOCK: Mutex<()> = Mutex::new(());
 
-/// Carga el modelo Qwen indicado (0.5B / 0.8B / 1.7B) o devuelve el ya
+/// Carga el modelo Qwen indicado (0.5B / 1.7B) o devuelve el ya
 /// cargado. Es un port de `analizador_llm::_cargar_modelo` + `puede_cargar_modelo`.
 /// Se expone `pub(crate)` para que el chat local (`motor-chat/llm`) reutilice
 /// el MISMO caché: así el 1.7B de conversación y el del parseo comparten
@@ -409,24 +406,9 @@ pub fn analizar_ticket(texto_ticket: &str) -> serde_json::Value {
             let confianza = resultado.get("confianza").and_then(|c| c.as_f64()).unwrap_or(0.0);
             resultado["confianza"] = serde_json::json!(confianza);
 
-            // Intento 2: confianza < 0.8 → Qwen 3.5 0.8B.
+            // Intento 2: confianza < 0.8 → Qwen 3 1.7B.
             if confianza < 0.8 {
-                println!("[YARVIS-IA] Confianza baja ({confianza}), reintentando con Qwen 3.5 0.8B...");
-                if let Some(m_0_8) = cargar_con_log("0.8B") {
-                    if let Some(mut r_0_8) = ejecutar_analisis(&m_0_8, texto_ticket) {
-                        if r_0_8.get("mapeo").is_some() {
-                            let conf_0_8 = r_0_8.get("confianza").and_then(|c| c.as_f64()).unwrap_or(0.0);
-                            if conf_0_8 > confianza {
-                                r_0_8["confianza"] = serde_json::json!(conf_0_8);
-                                r_0_8["reintentado_con"] = serde_json::json!("qwen3_5_0_8b");
-                                return con_status_ok(r_0_8);
-                            }
-                        }
-                    }
-                }
-
-                // Intento 3: confianza sigue < 0.8 → Qwen 3 1.7B.
-                println!("[YARVIS-IA] Confianza aún baja ({confianza}), reintentando con Qwen 3 1.7B...");
+                println!("[YARVIS-IA] Confianza baja ({confianza}), reintentando con Qwen 3 1.7B...");
                 if let Some(m_1_7) = cargar_con_log("1.7B") {
                     if let Some(mut r_1_7) = ejecutar_analisis(&m_1_7, texto_ticket) {
                         if r_1_7.get("mapeo").is_some() {
@@ -446,21 +428,8 @@ pub fn analizar_ticket(texto_ticket: &str) -> serde_json::Value {
         }
     }
 
-    // El 0.5B no devolvió JSON válido → Qwen 3.5 0.8B directo.
-    println!("[YARVIS-IA] Qwen 0.5B no pudo analizar, usando Qwen 3.5 0.8B directamente...");
-    if let Some(m_0_8) = cargar_con_log("0.8B") {
-        if let Some(mut r_0_8) = ejecutar_analisis(&m_0_8, texto_ticket) {
-            if r_0_8.get("mapeo").is_some() {
-                let conf_0_8 = r_0_8.get("confianza").and_then(|c| c.as_f64()).unwrap_or(0.0);
-                r_0_8["confianza"] = serde_json::json!(conf_0_8);
-                r_0_8["reintentado_con"] = serde_json::json!("qwen3_5_0_8b");
-                return con_status_ok(r_0_8);
-            }
-        }
-    }
-
-    // Ni 0.8B → Qwen 3 1.7B directo.
-    println!("[YARVIS-IA] Qwen 0.8B no pudo analizar, usando Qwen 3 1.7B directamente...");
+    // El 0.5B no devolvió JSON válido → Qwen 3 1.7B directo.
+    println!("[YARVIS-IA] Qwen 0.5B no pudo analizar, usando Qwen 3 1.7B directamente...");
     if let Some(m_1_7) = cargar_con_log("1.7B") {
         if let Some(mut r_1_7) = ejecutar_analisis(&m_1_7, texto_ticket) {
             if r_1_7.get("mapeo").is_some() {
@@ -493,6 +462,34 @@ pub fn descargar_modelos() -> usize {
     count
 }
 
+/// ¿Está cargada la clave indicada en el caché? (consume `motor-chat/llm`).
+#[cfg(feature = "llm-local")]
+pub(crate) fn modelo_cargado(clave: &str) -> bool {
+    CACHE
+        .get()
+        .map(|cache| cache.lock().unwrap_or_else(|p| p.into_inner()).contains_key(clave))
+        .unwrap_or(false)
+}
+
+/// Descarga SOLO la clave indicada del caché (devuelve true si estaba cargada).
+#[cfg(feature = "llm-local")]
+pub(crate) fn descargar_modelo(clave: &str) -> bool {
+    let quitado = CACHE
+        .get()
+        .map(|cache| {
+            cache
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(clave)
+                .is_some()
+        })
+        .unwrap_or(false);
+    if quitado {
+        println!("[YARVIS-IA] Modelo {clave} descargado de RAM/VRAM.");
+    }
+    quitado
+}
+
 // ===========================================================================
 // Sin feature `llm-local`: API presente pero reporta que no hay backend.
 // ===========================================================================
@@ -508,6 +505,16 @@ pub fn analizar_ticket(_texto_ticket: &str) -> serde_json::Value {
 #[cfg(not(feature = "llm-local"))]
 pub fn descargar_modelos() -> usize {
     0
+}
+
+#[cfg(not(feature = "llm-local"))]
+pub(crate) fn modelo_cargado(_clave: &str) -> bool {
+    false
+}
+
+#[cfg(not(feature = "llm-local"))]
+pub(crate) fn descargar_modelo(_clave: &str) -> bool {
+    false
 }
 
 // ---------------------------------------------------------------------------

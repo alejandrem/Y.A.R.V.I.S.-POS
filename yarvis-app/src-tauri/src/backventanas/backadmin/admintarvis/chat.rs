@@ -1,17 +1,18 @@
 // ============================================================
 // admintarvis/chat.rs — Comandos IPC para el chatbot de Y.A.R.V.I.S.
-// Soporte streaming: lee SSE de Python y envía tokens vía Tauri events.
+// Soporte streaming: cloud emitido por Rust; local = Qwen 1.7B nativo.
 // ============================================================
 
-use std::sync::Arc;
 use tauri::Emitter;
-use crate::sidecar::AiSidecar;
 
 use src_ia::motor_chat::cloud::apis_cloud::{generar_completo, generar_stream, nombre_proveedor, Evento};
 use src_ia::motor_chat::cloud::prompts::{construir_mensajes_api, Mensaje};
 use src_ia::motor_chat::cloud::think::{SeparadorThink, TipoFragmento};
 use futures_util::StreamExt;
-use src_ia::motor_chat::llm::{MODELO_CHAT, chat_1_7};
+use src_ia::motor_chat::llm::{
+    MODELO_CHAT, RAM_GB_MINIMA_1_7, cargar_modelo_1_7, chat_1_7, descargar_modelo_1_7,
+    modelo_1_7_cargado, ram_libre_gb, ram_total_gb,
+};
 
 /// Máximo de palabras que se consideran razonamiento en el stream cloud
 /// (espejo del `max_w` que Python usa para `_separar_think`).
@@ -23,39 +24,47 @@ pub struct ChatResponse {
     pub model_used: String,
 }
 
-/// Estado de los modelos y RAM del sistema.
+/// Estado de los modelos locales y la RAM del sistema (nativo, sin sidecar Python).
 #[tauri::command]
-pub async fn get_model_status(
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-) -> Result<serde_json::Value, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible")?;
-    let resp = sidecar.http_client
-        .get(format!("{}/model_status", base_url))
-        .send().await
-        .map_err(|e| e.to_string())?;
-    resp.json().await.map_err(|e| e.to_string())
+pub async fn get_model_status() -> Result<serde_json::Value, String> {
+    let ram_libre = ram_libre_gb().unwrap_or(0.0);
+    let ram_total = ram_total_gb().unwrap_or(0.0);
+    Ok(serde_json::json!({
+        "status": "ok",
+        // Único modelo local para conversar: el 1.7B (0.5B quedó para parseo).
+        "models": { MODELO_CHAT: modelo_1_7_cargado() },
+        "ram_gb": ram_total,
+        "ram_libre_gb": ram_libre,
+    }))
 }
 
-/// Carga un modelo bajo demanda (0.5B, 0.8B, 1.7B).
+/// Carga el modelo local de conversación (1.7B) SOLO si hay ≥1GB de RAM libre.
 #[tauri::command]
-pub async fn load_chat_model(
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-    model: String,
-) -> Result<serde_json::Value, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible")?;
-    let resp = sidecar.http_client
-        .post(format!("{}/load_model", base_url))
-        .json(&serde_json::json!({"model": model}))
-        .send().await
-        .map_err(|e| e.to_string())?;
-
-    if !resp.status().is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(text);
+pub async fn load_chat_model(model: String) -> Result<serde_json::Value, String> {
+    if model != MODELO_CHAT {
+        return Err(format!(
+            "El único modelo local para conversar es {MODELO_CHAT}. El 0.5B quedó reservado para el parseo de tickets."
+        ));
     }
-    resp.json().await.map_err(|e| e.to_string())
+
+    let libre = ram_libre_gb()?;
+    if libre < RAM_GB_MINIMA_1_7 {
+        return Err(format!(
+            "RAM insuficiente para {MODELO_CHAT}: hay {libre:.2}GB libres, se necesitan ≥{RAM_GB_MINIMA_1_7}GB."
+        ));
+    }
+
+    let modelo = tokio::task::spawn_blocking(cargar_modelo_1_7)
+        .await
+        .map_err(|e| format!("El hilo de carga falló: {e}"))??;
+
+    Ok(serde_json::json!({
+        "status": "ok",
+        "model": modelo,
+        "models": { MODELO_CHAT: true },
+        "ram_gb": ram_total_gb().unwrap_or(0.0),
+        "ram_libre_gb": ram_libre_gb().unwrap_or(0.0),
+    }))
 }
 
 /// Lista los modelos disponibles de un proveedor de nube (dinámico).
@@ -75,34 +84,28 @@ pub async fn get_cloud_models(
     Ok(serde_json::json!({ "models": modelos }))
 }
 
-/// Detiene la generación en curso (local o nube) en el motor de IA.
+/// Detiene la generación en curso. La inferencia local del 1.7B es a bloqueo
+/// (llama.cpp), así que no hay nada que interrumpir: se responde ok para no
+/// romper el contrato con la UI (idéntico al endpoint `/stop` del sidecar).
 #[tauri::command]
-pub async fn stop_chat_stream(
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-) -> Result<String, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible")?;
-    let resp = sidecar.http_client
-        .post(format!("{}/stop", base_url))
-        .send().await
-        .map_err(|e| format!("Error al detener: {}", e))?;
-    resp.text().await.map_err(|e| e.to_string())
+pub async fn stop_chat_stream() -> Result<String, String> {
+    Ok("ok".to_string())
 }
 
-/// Descarga un modelo para liberar RAM.
+/// Descarga el modelo local de conversación (1.7B) para liberar RAM.
 #[tauri::command]
-pub async fn unload_chat_model(
-    sidecar: tauri::State<'_, Arc<AiSidecar>>,
-    model: String,
-) -> Result<serde_json::Value, String> {
-    let base_url = sidecar.base_url()
-        .ok_or("El motor de IA no está disponible")?;
-    let resp = sidecar.http_client
-        .post(format!("{}/unload_model", base_url))
-        .json(&serde_json::json!({"model": model}))
-        .send().await
-        .map_err(|e| e.to_string())?;
-    resp.json().await.map_err(|e| e.to_string())
+pub async fn unload_chat_model(model: String) -> Result<serde_json::Value, String> {
+    let descargado = tokio::task::spawn_blocking(descargar_modelo_1_7)
+        .await
+        .map_err(|e| format!("El hilo de descarga falló: {e}"))?;
+    println!("[YARVIS-CHAT] Descarga pedida para {model}: descargado = {descargado}");
+
+    Ok(serde_json::json!({
+        "status": "ok",
+        "models": { MODELO_CHAT: false },
+        "ram_gb": ram_total_gb().unwrap_or(0.0),
+        "ram_libre_gb": ram_libre_gb().unwrap_or(0.0),
+    }))
 }
 
 /// Chat sin streaming (respuesta completa).

@@ -46,7 +46,7 @@ pub fn construir_mensajes_locales(messages: &[Mensaje]) -> Vec<Mensaje> {
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "llm-local")]
-use crate::rutas::analizador_llm::{cargar_modelo, generar_bajo_lock};
+use crate::rutas::analizador_llm::{cargar_modelo, descargar_modelo, generar_bajo_lock, modelo_cargado};
 #[cfg(feature = "llm-local")]
 use regex::Regex;
 #[cfg(feature = "llm-local")]
@@ -118,6 +118,75 @@ pub fn chat_1_7_raw(messages: &[Mensaje]) -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Gestión del modelo de conversación + RAM disponible (para `get_model_status`
+// y `load_chat_model` del backend Tauri: carga local SIN sidecar Python).
+// ---------------------------------------------------------------------------
+
+/// RAM mínima (GB *disponibles*) para poder cargar el 1.7B de conversación.
+pub const RAM_GB_MINIMA_1_7: f64 = 1.0;
+
+/// RAM disponible del sistema en GB (`MemAvailable` de `/proc/meminfo`).
+pub fn ram_libre_gb() -> Result<f64, String> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo")
+        .map_err(|e| format!("No se pudo leer /proc/meminfo: {e}"))?;
+    for linea in meminfo.lines() {
+        if let Some(resto) = linea.strip_prefix("MemAvailable:") {
+            let kb: f64 = resto
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .ok_or_else(|| "MemAvailable sin valor en /proc/meminfo".to_string())?;
+            return Ok(kb / (1024.0 * 1024.0));
+        }
+    }
+    Err("No se encontró MemAvailable en /proc/meminfo".to_string())
+}
+
+/// RAM total del sistema en GB (`MemTotal` de `/proc/meminfo`).
+pub fn ram_total_gb() -> Result<f64, String> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo")
+        .map_err(|e| format!("No se pudo leer /proc/meminfo: {e}"))?;
+    for linea in meminfo.lines() {
+        if let Some(resto) = linea.strip_prefix("MemTotal:") {
+            let kb: f64 = resto
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .ok_or_else(|| "MemTotal sin valor en /proc/meminfo".to_string())?;
+            return Ok(kb / (1024.0 * 1024.0));
+        }
+    }
+    Err("No se encontró MemTotal en /proc/meminfo".to_string())
+}
+
+/// Carga el modelo de conversación 1.7B (mismo caché que el parseo de
+/// tickets) SOLO si hay RAM disponible suficiente. Real-RAM de "fin de plazo"
+/// usado por `load_chat_model` del Tauri.
+#[cfg(feature = "llm-local")]
+pub fn cargar_modelo_1_7() -> Result<String, String> {
+    let libre = ram_libre_gb().unwrap_or(0.0);
+    if libre < RAM_GB_MINIMA_1_7 {
+        return Err(format!(
+            "RAM insuficiente para {MODELO_CHAT}: hay {libre:.2}GB libres, se necesitan ≥{RAM_GB_MINIMA_1_7}GB."
+        ));
+    }
+    cargar_modelo(MODELO_CHAT)?;
+    Ok(MODELO_CHAT.to_string())
+}
+
+/// ¿Está cargado el modelo de conversación 1.7B?
+#[cfg(feature = "llm-local")]
+pub fn modelo_1_7_cargado() -> bool {
+    modelo_cargado(MODELO_CHAT)
+}
+
+/// Descarga el 1.7B de conversación para liberar RAM (devuelve si estaba cargado).
+#[cfg(feature = "llm-local")]
+pub fn descargar_modelo_1_7() -> bool {
+    descargar_modelo(MODELO_CHAT)
+}
+
+// ---------------------------------------------------------------------------
 // Sin feature `llm-local`: API presente pero reporta que no hay backend.
 // ---------------------------------------------------------------------------
 
@@ -129,6 +198,21 @@ pub fn chat_1_7(_messages: &[Mensaje]) -> Result<String, String> {
 #[cfg(not(feature = "llm-local"))]
 pub fn chat_1_7_raw(_messages: &[Mensaje]) -> Result<String, String> {
     Err("El feature 'llm-local' de src-ia no está habilitado (sin soporte llama.cpp).".to_string())
+}
+
+#[cfg(not(feature = "llm-local"))]
+pub fn cargar_modelo_1_7() -> Result<String, String> {
+    Err("El feature 'llm-local' de src-ia no está habilitado (sin soporte llama.cpp).".to_string())
+}
+
+#[cfg(not(feature = "llm-local"))]
+pub fn modelo_1_7_cargado() -> bool {
+    false
+}
+
+#[cfg(not(feature = "llm-local"))]
+pub fn descargar_modelo_1_7() -> bool {
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -167,15 +251,6 @@ mod tests {
             assert!(chat_1_7(&[]).is_err());
             assert!(chat_1_7_raw(&[]).is_err());
         }
-    }
-
-    #[cfg(feature = "llm-local")]
-    #[test]
-    fn temp_real_raw_se_limpia() {
-        let raw = std::fs::read_to_string("/tmp/chat_raw3.txt").unwrap();
-        let limpio = limpiar_think_local(&raw);
-        println!("LIMPIO=[{limpio}]");
-        assert!(!limpio.contains("thinking"), "sigue el marcador");
     }
 
     #[cfg(feature = "llm-local")]
