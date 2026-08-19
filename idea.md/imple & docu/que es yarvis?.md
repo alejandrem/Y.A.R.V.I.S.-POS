@@ -1,5 +1,7 @@
 # Y.A.R.V.I.S. POS — Documentación Completa de Implementación
 
+> ⚠️ **ACTUALIZADO (2026-Ago):** documentación sincronizada con el estado real. La IA ya es **100% Rust** (`src-ia`), sin sidecar Python. Ver `migracion_rust.md`.
+
 ## Índice
 
 1. [Visión General](#1-visión-general)
@@ -7,420 +9,210 @@
 3. [Estructura de Archivos](#3-estructura-de-archivos)
 4. [Frontend (React + TypeScript)](#4-frontend-react--typescript)
 5. [Backend Rust (Tauri)](#5-backend-rust-tauri)
-6. [Backend Python (FastAPI Sidecar)](#6-backend-python-fastapi-sidecar)
+6. [Motor IA en Rust (src-ia)](#6-motor-ia-en-rust-src-ia)
 7. [Modelos de IA](#7-modelos-de-ia)
 8. [Base de Datos](#8-base-de-datos)
-9. [Flujo de Datos](#9-flujo-de-datos)
-10. [Endpoint API (Python)](#10-endpoint-api-python)
-11. [Comandos Tauri (Rust)](#11-comandos-tauri-rust)
-12. [Historial de Implementación](#12-historial-de-implementación)
-13. [Problemas Resueltos](#13-problemas-resueltos)
+9. [Comandos Tauri (Rust)](#9-comandos-tauri-rust)
+10. [Casos pendientes (stubs)](#10-casos-pendientes-stubs)
+11. [Problemas Resueltos](#11-problemas-resueltos)
 
 ---
 
 ## 1. Visión General
 
-Y.A.R.V.I.S. POS es un sistema de punto de venta de escritorio con capacidades de inteligencia artificial. Permite:
+Y.A.R.V.I.S. POS es un sistema de punto de venta de escritorio con capacidades de inteligencia artificial, pensado para tiendas medianas/pequeñas de México. Es un **binario único de Tauri v2** (React + Rust) con motor de IA nativo.
 
-- **Parseo de tickets** usando LLM (Qwen 2.5 0.5B / Qwen 3 1.7B) para detectar automáticamente columnas
-- **Importación de catálogos** desde archivos Excel (.xlsx), CSV y TXT
-- **Procesamiento por lotes** de miles de tickets .txt con streaming SSE
-- **Búsqueda semántica** de productos usando embeddings (all-MiniLM-L6-v2, 384 dimensiones)
-- **Predicción de ventas** con Facebook Prophet
-- **Gestión de inventario** con CRUD completo y alertas de stock bajo
-- **Gestión de corte de caja** y historial de ventas
+Capacidades:
 
-**Stack tecnológico:**
-- Frontend: React + TypeScript + Tailwind CSS
-- Backend: Rust (Tauri v2) + Python (FastAPI)
-- IA: llama-cpp-python (Qwen GGUF) + sentence-transformers + Prophet
-- Base de datos: SQLite (WAL mode) via sqlx
-- Seguridad: Argon2id para contraseñas
+- **Registro de ventas** (POS de caja del empleado) y gestión de inventario con CRUD completo.
+- **Atención a clientes** con CRM básico lite (perfil, historial).
+- **Cortes de caja X/Z**, gastos recurrentes, alertas financieras, métricas y exportación.
+- **Empleados**: metas/bonos, turnos, salario, resumen de ventas.
+- **Parseo de tickets y catálogos** (TXT/CSV/Excel) con reglas + **LLM local** para mapeo automático de columnas y procesamiento por lotes con streaming.
+- **Chat con IA**: cloud (OpenCode Zen/Gemini) con fallback a local (Qwen 3 1.7B).
+
+**Stack tecnológico (verificado):**
+- Frontend: React 19 + TypeScript 5.8 + Tailwind CSS 3 + Vite 7 (+ recharts, morphicons, react-markdown).
+- Backend: Rust, Tauri 2.11, sqlx 0.8 (SQLite), tokio, serde, argon2, reqwest.
+- IA: crate `src-ia` — chat local con llama-cpp-4 (Qwen GGUF), chat cloud con HTTP/SSE y fallback.
+- Base de datos: SQLite (WAL) via sqlx.
+- Seguridad: Argon2id para contraseñas; Google OAuth.
 
 ---
 
 ## 2. Arquitectura del Sistema
 
-    // ... (Código omitido para brevedad) ...
+```
+  Frontend (React + Vite)  ──invoke──►  Backend Rust (Tauri, ~91 comandos)  ──►  SQLite (WAL)
+        ▲                                        │
+        └──── respuesta IPC ◄────────────────────┘
+  Motor IA (crate src-ia, en proceso): chat cloud (SSE) + chat local (llama.cpp) + parseador.
+```
 
-**Flujo de ciclo de vida:**
-1. El usuario ejecuta `run.sh` → `npm run tauri dev`
-2. Rust `lib.rs` inicializa SQLite y lanza el sidecar Python en un puerto libre
-3. El sidecar Python levanta FastAPI con uvicorn en ese puerto
-4. El frontend se comunica con Rust via `invoke()` (IPC de Tauri)
-5. Rust se comunica con Python via HTTP (reqwest)
-6. Los modelos de IA se cargan lazy cuando se necesitan y se descargan al terminar
+**Ciclo de vida:**
+1. `run.sh`/`run.bat` → `npm run tauri dev` (o el binario empaquetado).
+2. `lib.rs` inicializa SQLite (WAL, tablas) y registra los comandos.
+3. `App.tsx` decide la pantalla por `check_setup_done` (PrimerInicio / Login / Dashboard).
+4. El frontend se comunica con Rust vía `invoke()` (IPC nativo; sin HTTP ni puertos).
+5. La IA corre dentro del mismo proceso (crate `src-ia`); el LLM local se carga bajo demanda.
 
 ---
 
 ## 3. Estructura de Archivos
 
-### 3.1 Frontend (`yarvis-app/src/`)
+Ver el árbol completo y verificado en `../opencode/arquitectura.md`. Resumen:
 
-    // ... (Código omitido para brevedad) ...
-
-### 3.2 Backend Rust (`yarvis-app/src-tauri/src/`)
-
-    // ... (Código omitido para brevedad) ...
-
-### 3.3 Backend Python (`yarvis-IA/`)
-
-    // ... (Código omitido para brevedad) ...
+- `src-ia/` — crate Rust con el motor de IA (parseador + chat cloud/local).
+- `yarvis-app/src/` — frontend (front-admin, front-empleado, hooks).
+- `yarvis-app/src-tauri/src/backventanas/` — comandos Tauri por dominio (backadmin/backempleado).
 
 ---
 
 ## 4. Frontend (React + TypeScript)
 
-### 4.1 `types.ts` — Interfaces Compartidas
+### 4.1 `App.tsx` — Orquestador de pantallas
 
-    // ... (Código omitido para brevedad) ...
+Estados de paso: `0 = PrimerInicio`, `1 = Login`, `2 = AdminDashboard`, `3 = EmployeeDashboard`. La primer pantalla visible depende de `check_setup_done`.
 
-### 4.2 `Configuracion.tsx` — Panel de Configuración + Parseo
+### 4.2 `PrimerInicio.tsx` — Setup
 
-**Propósito:** Panel principal de configuración con 3 modos de parseo de archivos.
+Alta de **administrador** (nombre + contraseña con confirmación), **tienda** (nombre/identidad) y **empleados** opcionales (`+ AGREGAR EMPLEADO` con nombre + contraseña). Campos con **ojos espejados** (morphicons). Solo se muestra una vez (hasta que haya admin).
 
-**Estados principales:**
-- `parserMode`: `"catalogo"` | `"entrenar IA"` | `"insertar"`
-- `parsedItems`: Items parseados actualmente
-- `llmAnalysis`: Resultado del análisis de la IA
-- `catalogParsed`, `iaTrained`, `ticketsParsed`: Flags de progreso del pipeline
-- `lastCatalogPath`, `lastCatalogItems`: Persistencia del último catálogo parseado
+### 4.3 `Login` (App.tsx)
 
-**Funciones clave:**
+- Dos botones de rol: **ADMINISTRADOR** (escudo → corona al seleccionar) y **EMPLEADO** (persona+ → espada al seleccionar).
+- Campo de contraseña con ojo abierto/cerrado (espejado) y botón **ENTRAR AL POS** que en hover morph la **flecha → palomita**.
 
-| Función | Descripción |
-|---------|-------------|
-| `handleFileSelect()` | Abre diálogo de archivos, detecta extensión (.txt/.csv/.xlsx), delega al parser correcto |
-| `handleGuardarTicket(items, analysis)` | Guarda ticket en DB via `invoke("guardar_ticket_parseado")`, actualiza flags de pipeline |
-| `handleTrainIA()` | Para modo "catalogo": importa catálogo al inventario. Para "insertar": no hace nada |
+### 4.4 `front-admin/` — Panel del Administrador
 
-**Flujo por modo:**
+- `AdminDashboard.tsx`: sidebar + enrutador (ventas, inventario, tickets, finanzas, clientes, empleados, configuración, yarvis).
+- **`adminconfig/`**: Configuración refactorizada en componentes (`ConfigHeader`, `IdentityForm`, `SecurityForm`, `AppearanceForm`, `importmodule/`) + hooks (`useAdminData`, `useParserActions`).
+- **`parseadodetickets/`**: `BatchProcessor` (lotes con SSE), `ColumnMapper` (mapeo con IA), `CatalogosParseados`.
+- **`adminfinanzas/`**: dashboard, alertas, cortes X/Z, gastos, gráficas, metrías.
+- **`admininventario/`**: CRUD + importar catálogo + búsqueda semántica (stub).
+- **`adminempleados/`**: empleados + modales de edición, metas y turnos.
+- **`adminyarvis/`**: chat (`ChatWidget`).
+- **`adminticket/`**: tickets + gráficas (usan `get_predictions` — stub).
 
-1. **"entrenar IA"**: Carga archivo → ColumnMapper aparece → Analiza con IA → "Guardar Ticket" → Guarda en DB
-2. **"catalogo"**: Carga archivo → Parsea catálogo → Preview → "Entrenar IA con Catálogo" → Importa a inventario
-3. **"insertar"**: Selecciona carpeta → BatchProcessor aparece → Procesa todos los .txt → Vincula productos
+### 4.5 `front-empleado/` — Punto de Venta
 
-**Indicador de estado del pipeline:**
-- Gris: "Esperando datos"
-- Naranja: "Esperando entrenamiento de IA"
-- Amarillo: "Esperando parseamiento de tickets"
-- Verde: "N tickets parseado(s) con éxito"
+- `EmployeeDashboard.tsx`: nueva venta, inventario, tickets/cortes, clientes, perfil, yarvis, ajustes.
+- `nueva_venta.tsx`: carrito con búsqueda (usa `buscar_producto_similar` — stub), modal de venta y vista de ticket.
 
-### 4.3 `ColumnMapper.tsx` — Mapeo de Columnas con IA
+### 4.6 Hooks globales
 
-**Propósito:** Interfaz para que la IA detecte las columnas del ticket y el usuario ajuste el mapeo.
-
-**Props:**
-- `onGuardarTicket(items, analysis)`: Callback para guardar el ticket
-- `onPreviewUpdate(items)`: Callback para actualizar la previsualización en el padre
-- `fileContent`: Texto crudo del archivo
-- `selectedPath`: Ruta del archivo seleccionado
-
-**Flujo:**
-1. Usuario hace clic en "Analizar con IA"
-2. Se llama `invoke("analizar_ticket_con_ia", { texto: fileContent })`
-3. La IA retorna `LLMAnalysis` con mapeo de columnas y `ejemplo_parseado`
-4. Se normaliza `producto` de número a array: `2` → `[2]`
-5. Se muestra panel de ajuste con 5 dropdowns (Cantidad, Producto, Precio, Total, Descuento)
-6. `useEffect` pasa `ejemplo_parseado` al padre via `onPreviewUpdate`
-7. Usuario hace clic en "Guardar Ticket" → se llama `onGuardarTicket`
-
-**Nota importante:** `previewItems` usa `analysis.ejemplo_parseado` (los items que la IA ya parseó) en vez de re-parsear el texto. Esto es porque `esLineaUtil` filtra líneas con metadata del ticket (fecha, cajero, subtotal, etc.) y las primeras 10 líneas suelen ser metadata.
-
-### 4.4 `BatchProcessor.tsx` — Procesamiento por Lotes
-
-**Propósito:** Procesar una carpeta completa de archivos .txt de tickets.
-
-**Funcionamiento:**
-1. Selecciona carpeta
-2. Llama `invoke("parsear_carpeta_stream", { carpeta, mapeo, dbPath })`
-3. Recibe respuesta SSE con progreso
-4. Muestra estadísticas: procesados, exitosos, errores, ventas creadas
-5. Al terminar, muestra productos nuevos y ofrece "Vincular con Inventario Existente"
-
-**Mapeo hardcodeado:** `{ cantidad: 0, producto: [1], precio_unitario: 2, total: 3 }`
+- `ParserContext.tsx`: estado global del parseo (items, modo, análisis LLM).
+- `ThemeContext.tsx`/`useTheme.ts`: temas claro/oscuro.
 
 ---
 
 ## 5. Backend Rust (Tauri)
 
-### 5.1 `lib.rs` — Setup Principal
+### 5.1 `lib.rs` — Setup principal
 
-**Función `run()`:**
-1. Crea `AiSidecar` compartido via `Arc`
-2. Inicializa SQLite via `db::initialize_db()`
-3. Registra todos los comandos Tauri
-4. Lanza el sidecar Python en background via `tauri::async_runtime::spawn`
-5. Al cerrar la ventana, llama `shutdown_ai_engine()` para matar Python
+Inicializa DB, registra ~91 comandos en el `invoke_handler` (21 archivos), plugins (`opener`, `dialog`).
 
-**Comandos registrados (28 total):**
-- Auth: 7 comandos
-- Inventario: 6 comandos
-- Parser: 14 comandos (incluyendo los de parser_rs)
-- Tickets: 3 comandos
-- IA: 1 comando
+### 5.2 `db.rs` — Inicialización de SQLite
 
-### 5.2 `sidecar.rs` — Ciclo de Vida del Sidecar
+Tablas principales: `usuarios` (Argon2), `productos`, `ventas`, `detalle_ventas`, `clientes`, `ventas_diarias`, `cortes_caja`, `predicciones_futuras`. **WAL activado.**
 
-**Estructura `AiSidecar`:**
-    // ... (Código omitido para brevedad) ...
+### 5.3 Módulos `backventanas/`
 
-**Métodos:**
-| Método | Descripción |
-|--------|-------------|
-| `base_url()` | Retorna `Some("http://127.0.0.1:{port}")` o `None` |
-| `get_status()` | Retorna el estado actual del sidecar |
-| `check_process_alive()` | Verifica si Python sigue vivo, limpia si murió |
-
-**Flujo de arranque (`launch_ai_engine`):**
-1. `find_two_free_ports()` — Busca 2 puertos libres via bind a `127.0.0.1:0`
-2. Guarda puertos en el estado
-3. `start_python(port)` — Lanza `python3 main.py {port}` con `LD_LIBRARY_PATH` para CUDA
-4. `wait_health_check(port, 30)` — Polling cada 500ms por 30 segundos
-5. Si responde: status = `Ready`. Si no: status = `Error`, mata el proceso
-
-**CUDA/LD_LIBRARY_PATH:**
-El sidecar busca libs CUDA en rutas de LM Studio y nvidia pip packages, y las agrega a `LD_LIBRARY_PATH` antes de lanzar Python.
-
-### 5.3 `db.rs` — Inicialización de SQLite
-
-**Tablas creadas (8):**
-1. `usuarios` — Admin y empleados (Argon2id hash)
-2. `productos` — Inventario con precios y stock
-3. `ventas` — Cabeceras de venta (total, IVA, cajero, método pago)
-4. `detalle_ventas` — Líneas de venta (producto, cantidad, precio, descuento)
-5. `ventas_diarias` — Resumen diario para Prophet
-6. `cortes_caja` — Cortes de caja
-7. `predicciones_futuras` — Predicciones de Prophet
-8. `knowledge_base` — Embeddings de productos para búsqueda semántica
-
-**WAL mode:** Habilitado para mejor concurrencia.
-
-### 5.4 `models.rs` — Modelos de Datos
-
-    // ... (Código omitido para brevedad) ...
-
-### 5.5 `commands/inventory.rs` — CRUD de Inventario
-
-**Funciones:**
-
-| Función | Descripción |
-|---------|-------------|
-| `get_inventory()` | Retorna todos los productos |
-| `add_inventory_item()` | Inserta producto + genera embedding en background |
-| `update_inventory_item()` | Actualiza producto + regenera embedding |
-| `delete_inventory_item()` | Elimina producto por ID |
-| `importar_catalogo()` | Inserta múltiples productos + genera embeddings |
-| `buscar_producto_similar()` | Búsqueda semántica via Python `/buscar_similar` |
-
-**Generación de embeddings:**
-- Se ejecuta en `tokio::spawn` (background, no bloquea)
-- Verifica `sidecar.get_status() == Ready` antes de llamar
-- Usa `check_process_alive()` para detectar procesos muertos
-- Si falla, imprime advertencia una sola vez (AtomicBool)
-
-### 5.6 `commands/parser.rs` — Puente al Sidecar
-
-| Función | Endpoint Python | Descripción |
-|---------|----------------|-------------|
-| `get_db_path()` | — | Retorna la ruta de la DB (managed state) |
-| `vincular_inventario()` | POST /vincular_inventario | Vincula productos parseados con inventario existente |
-| `guardar_vinculacion()` | POST /guardar_vinculacion | Guarda vinculaciones en la DB |
-| `descargar_modelos()` | POST /unload_llm | Descarga modelos Qwen de VRAM |
-
-### 5.7 `parser_rs/` — Parsers Locales en Rust
-
-| Archivo | Funciones | Descripción |
-|---------|-----------|-------------|
-| `utils.rs` | `sanitize_path()` | Canonicaliza rutas, bloquea directorios del sistema |
-| `parser_csv.rs` | `parsear_catalogo()` | Parser CSV auto-detect (separador, header, columnas numéricas) |
-| `parser_excel.rs` | `parsear_excel()` | Envía bytes al sidecar Python `/parsear_excel` |
-| `parser_txt.rs` | `leer_archivo_raw()`, `leer_archivo_bytes()`, `parsear_ticket()`, `parsear_catalogo_visual()`, `analizar_ticket_llm()`, `analizar_ticket_con_ia()`, `parsear_con_mapeo()`, `parsear_carpeta()`, `parsear_carpeta_stream()` | wrappers de Tauri commands que delegan a Python |
+| Módulo | Contenido |
+|---|---|
+| `backadmin/adminconfig` | auth (setup + login + datos admin/empleado), google (OAuth) |
+| `backadmin/admininventory` | CRUD inventario, `importar_catalogo`, stubs embeddings |
+| `backadmin/adminparser` | parseo TXT/CSV/Excel, carpetas, vinculación, modelos |
+| `backadmin/admintickets` | tickets, cortes; `get_predictions` (stub) |
+| `backadmin/adminfinanzas` | gastos, cortes de caja, alertas, métricas, gráficas, export |
+| `backadmin/adminempleados` | empleados + modales (metas, turnos) |
+| `backadmin/admintarvis` | chat (send_chat_message/stream, modelos, status) |
+| `backempleado` | venta nueva (`completar_venta`, `get_next_ticket_number`), perfil |
 
 ---
 
-## 6. Backend Python (FastAPI Sidecar)
+## 6. Motor IA en Rust (src-ia)
 
-### 6.1 `main.py` — Entry Point
+### 6.1 `parseador_de_tickets/`
 
-    // ... (Código omitido para brevedad) ...
+- `cerebro/`: reglas (analizador_tickets), filtrador (3 niveles), parseador_masivo (lotes SSE, transacción por archivo), vinculador_inventario.
+- `formatos/`: lector CSV, Excel (`calamine`), TXT.
+- `rutas/`: resolución de modelos GGUF + análisis LLM (`analizar_ticket`, `generar_bajo_lock`).
 
-### 6.2 `parseador_de_tickets/cerebro/analizador.py` — Endpoints de Parseo
+### 6.2 `motor-chat/`
 
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/analizar_ticket` | POST | Recibe `{"texto": "..."}`, llama a Qwen, retorna mapeo + ejemplo_parseado JSON. **Descarga modelos al terminar.** |
-| `/parsear_con_mapeo` | POST | Parsea texto usando mapeo de columnas confirmado por el usuario (sin LLM) |
-| `/parsear_excel` | POST | Recibe bytes de Excel, retorna productos detectados |
-
-### 6.3 `parseador_de_tickets/cerebro/lote.py` — Procesamiento Masivo
-
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/parsear_carpeta_stream` | POST | Procesa carpeta con SSE streaming asíncrono. |
-
-**Descarga modelos de VRAM antes de empezar** para liberar memoria.
-
-**Flujo de `/parsear_carpeta_stream`:**
-1. Carga estado de productos existentes de la DB
-2. Procesa archivos en batches optimizados
-3. Yield de eventos SSE con progreso después de cada batch
-4. Evento final con estadísticas completas
-
-### 6.4 `chatbot/embeddings/endpoints.py` — Vectores Semánticos
-
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/generar_embedding` | POST | `{"texto": "..."}` → vector 384d → base64 |
-| `/buscar_similar` | POST | Búsqueda por cosine similarity en knowledge_base |
-
-### 6.5 `chatbot/motor_chat/endpoints.py` — Chat y Cerebro LLM
-
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/chat` | POST | Inferencia con RAG y SQL tools |
-| `/load_llm` | POST | Carga modelo forzando reserva de memoria RAM |
-| `/unload_llm` | POST | Libera RAM manualmente |
+- `cloud/`: proveedores (OpenCode Zen, Gemini), generación (completo/stream), catálogo de modelos, lector SSE, cola de fallback 429, separador de bloques `思考`, variables/API keys.
+- `llm/`: Qwen 3 1.7B vía llama-cpp-4 (feature `llm-local`), CPU.
 
 ---
 
 ## 7. Modelos de IA
 
-### 7.1 LLM del Parseador (`parseador_de_tickets/llm/analizador_llm.py`)
+### 7.1 LLM Local (chat + parseo)
 
-**Modelos (Escalada por Confianza):**
+- **Qwen 3 1.7B GGUF** — único modelo local; se carga bajo demanda (chat y análisis de tickets). Resolución de rutas: `src-ia/rutas/rutas_modelos_*` (incluye detección de modelos de LM Studio).
 
-**Flujo de análisis:**
-1. Intenta con Qwen 0.5B
-2. Si confianza < 0.8, reintenta con Qwen 1.7B
-3. Si 0.5B falla, usa 1.7B directamente
-4. **Descarga modelos después de cada análisis** para liberar VRAM
+### 7.2 Cloud
 
-**Parámetros de carga:**
-    // ... (Código omitido para brevedad) ...
+- **OpenCode Zen / Gemini** — HTTP + SSE, con relevo automático ante 429 (`max_tokens` 39800). El thinking se separa del texto de respuesta.
 
-**Función `descargar_modelos()`:**
-    // ... (Código omitido para brevedad) ...
+### 7.3 Embeddings / Prophet (PENDIENTE — stubs)
 
-**Prompt del sistema:**
-Le pide a la IA que analice un ticket y retorne JSON con:
-- `mapeo.columnas` — Índices de cada columna
-- `ejemplo_parseado` — Items parseados
-- `confianza` — Nivel de confianza (0-1)
-
-### 7.2 LLM del Chatbot (`chatbot/motor_chat/gestion_hardware.py`)
-
-A diferencia del parseador, el chatbot NO escala de esta manera. En su arranque **activa un único modelo (Lazy Loading)** permanentemente mientras la pestaña del chat esté abierta, para asegurar velocidad y respuesta conversacional fluida. `gestion_hardware.py` valida la RAM contra `_RAM_REQUERIDA` (Q4: 0.5B → 0.0GB, 0.8B → 0.5GB, 1.7B → 1.3GB) y el frontend descarga el modelo actual antes de cargar otro (solo uno a la vez).
-
-### 7.3 Embeddings (`chatbot/embeddings/modelo.py`)
-
-**Modelo:** all-MiniLM-L6-v2 (sentence-transformers)
-- Dimensiones: 384
-- Normalización: L2
-- Uso: Base de Conocimiento (RAG) y coincidencia de inventarios
-
-**Funciones:**
-- `texto_a_embedding(texto)` → vector 384d
-- `embedding_a_blob(vec)` → bytes base64 para SQLite
-
-### 7.3 Prophet (`modelos/profeta/predictor.py`)
-
-**Modelo:** Facebook Prophet
-- Entrena con `ventas_diarias`
-- Genera predicciones N días hacia adelante
-- Incluye intervalos de confianza
+- Embeddings (RAG) y pronósticos (Prophet) quedaron **fuera de alcance** de la migración. Ver [sección 10](#10-casos-pendientes-stubs).
 
 ---
 
 ## 8. Base de Datos
 
-### Esquema SQLite
-
-    -- (Tablas omitidas: usuarios, productos, ventas, detalle_ventas, ventas_diarias, cortes_caja, predicciones_futuras, knowledge_base)
+SQLite, un archivo (`yarvis.db`), modo WAL, acceso asíncrono con `sqlx`. **Único escritor: Rust.** Tablas: `usuarios`, `productos`, `ventas`, `detalle_ventas`, `clientes`, `ventas_diarias`, `cortes_caja`, `predicciones_futuras`.
 
 ---
 
-## 9. Flujo de Datos
+## 9. Comandos Tauri (Rust)
 
-### 9.1 Flujo de Parseo de Ticket (entrenar IA)
-*(Flujo omitido. Consultar código fuente.)*
-    // ... (Código omitido para brevedad) ...
-### 9.2 Flujo de Importación de Catálogo
-*(Flujo omitido. Consultar código fuente.)*
-    // ... (Código omitido para brevedad) ...
-### 9.3 Flujo de Procesamiento por Lotes
-*(Flujo omitido. Consultar código fuente.)*
-    // ... (Código omitido para brevedad) ...
-## 10. Endpoint API (Python)
+**~91 comandos `#[tauri::command]` en 21 archivos** de `backventanas/`. Resumen por módulo:
 
-### Tabla Completa de Endpoints
+**Auth / Setup** (`adminconfig/auth.rs`, `google.rs`)
+`check_setup_done`, `guardar_admin`, `validar_login_admin`, `get_admin_data`, `update_admin_data`, `guardar_empleado`, `validar_login_empleado`, `login_con_google`
 
-| # | Endpoint | Método | Router | Descripción |
-|---|----------|--------|--------|-------------|
-| 1 | `/` | GET | main | Health check |
-| 2 | `/generar_embedding` | POST | embeddings | Genera embedding 384d de texto |
-| 3 | `/buscar_similar` | POST | embeddings | Búsqueda semántica en knowledge_base |
-| 4 | `/insertar_knowledge` | POST | embeddings | Inserta en knowledge_base |
-| 5 | `/recalcular_predicciones` | POST | predictions | Ejecuta Prophet y guarda predicciones |
-| 6 | `/analizar_ticket` | POST | parser | Analiza ticket con LLM + descarga modelos |
-| 7 | `/parsear_con_mapeo` | POST | parser | Parsea texto con mapeo de columnas |
-| 8 | `/parsear_catalogo_visual` | POST | parser | Parsea catálogo visual |
-| 9 | `/parsear_excel` | POST | parser | Parsea Excel (bytes) |
-| 10 | `/parsear_carpeta` | POST | carpeta | Procesa carpeta sincrónicamente |
-| 11 | `/parsear_carpeta_stream` | POST | carpeta | Procesa carpeta con SSE + descarga modelos |
-| 12 | `/vincular_inventario` | POST | matching | Vincula productos con inventario |
-| 13 | `/guardar_vinculacion` | POST | matching | Guarda vinculaciones |
-| 14 | `/chat` | POST | chat | Placeholder chatbot |
-| 15 | `/load_llm` | POST | chat | Placeholder carga LLM |
-| 16 | `/unload_llm` | POST | chat | Descarga modelos de VRAM |
+**Inventario** (`admininventory/inventory.rs`)
+`get_inventory`, `add_inventory_item`, `update_inventory_item`, `delete_inventory_item`, `importar_catalogo`, `get_catalogos_importados`, `get_productos_por_catalogo`, `buscar_producto_similar` *(stub)*, `backfill_embeddings` *(stub)*
+
+**Parser** (`adminparser/*`)
+`listar_archivos_carpeta`, `leer_archivo_raw`, `leer_archivo_bytes`, `parsear_catalogo_visual`, `parsear_catalogo_csv`, `parsear_excel`, `analizar_ticket_llm`, `analizar_ticket_con_ia`, `parsear_con_mapeo`, `parsear_carpeta`, `parsear_carpeta_stream`, `get_db_path`, `vincular_inventario`, `guardar_vinculacion`, `descargar_modelos`
+
+**Tickets y cortes** (`admintickets/tickets.rs`)
+`get_tickets`, `get_cortes`, `guardar_ticket_parseado`, `get_predictions` *(stub)*
+
+**Empleados** (`adminempleados/*`)
+`get_empleados`, `get_empleado_ventas`, `get_resumen_empleados`, `get_cortes_empleado`, `update_empleado`, `delete_empleado`, `get_salario_info`, `save_salario`, `get_employee_goals`, `save_employee_goal`, `save_custom_goal`, `delete_employee_goal`, `check_employee_goals`, `get_turnos_empleados`
+
+**Finanzas** (`adminfinanzas/*`)
+Gastos: `get_gastos_recurrentes`, `crear_gasto`, `actualizar_gasto`, `eliminar_gasto`, `registrar_pago_gasto`, `get_pagos_gasto`, `get_proximos_vencimientos`, `actualizar_estados_gastos`; Cortes: `get_cortes_caja`, `get_corte_detalle`, `crear_corte_x`, `crear_corte_z`, `cerrar_corte`, `agregar_movimiento_caja`, `get_movimientos_corte`, `get_cortes_...`; Métricas, gráficas, alertas y export.
+
+**Chat** (`admintarvis/chat.rs`)
+`send_chat_message`, `send_chat_stream`, `get_cloud_models`, `get_model_status`, `load_chat_model`, `unload_chat_model`, `stop_chat_stream`
+
+**Empleado operativo** (`backempleado/*`)
+`completar_venta`, `get_next_ticket_number`, `get_tienda_info`, `get_employee_profile`
 
 ---
 
-## 11. Comandos Tauri (Rust)
+## 10. Casos pendientes (stubs)
 
-### Tabla Completa de Comandos
+| Comando | Función | Estado |
+|---|---|---|
+| `buscar_producto_similar` | Búsqueda semántica en inventario / nueva venta | STUB |
+| `backfill_embeddings` | Generar embeddings de la base | STUB |
+| `get_predictions` | Pronósticos de ventas (gráficas tickets) | STUB |
+| `get_predicciones_financieras` | Pronósticos financieros (GraficasPanel) | STUB |
 
-| # | Comando | Módulo | Descripción |
-|---|---------|--------|-------------|
-| 1 | `check_setup_done` | auth | Verifica si hay admin configurado |
-| 2 | `guardar_admin` | auth | Crea admin (Argon2id hash) |
-| 3 | `validar_login_admin` | auth | Login de admin |
-| 4 | `get_admin_data` | auth | Obtiene datos del admin |
-| 5 | `update_admin_data` | auth | Actualiza datos del admin |
-| 6 | `guardar_empleado` | auth | Crea empleado |
-| 7 | `validar_login_empleado` | auth | Login de empleado |
-| 8 | `get_inventory` | inventory | Lista todos los productos |
-| 9 | `add_inventory_item` | inventory | Agrega producto + embedding |
-| 10 | `update_inventory_item` | inventory | Actualiza producto + embedding |
-| 11 | `delete_inventory_item` | inventory | Elimina producto |
-| 12 | `importar_catalogo` | inventory | Importa catálogo + embeddings |
-| 13 | `buscar_producto_similar` | inventory | Búsqueda semántica |
-| 14 | `get_db_path` | parser | Retorna ruta de la DB |
-| 15 | `vincular_inventario` | parser | Vincula productos |
-| 16 | `guardar_vinculacion` | parser | Guarda vinculaciones |
-| 17 | `descargar_modelos` | parser | Descarga modelos de VRAM |
-| 18 | `get_tickets` | tickets | Historial de ventas |
-| 19 | `get_cortes` | tickets | Cortes de caja |
-| 20 | `guardar_ticket_parseado` | tickets | Guarda ticket parseado |
-| 21 | `get_ai_status` | ai | Estado del sidecar |
-| 22 | `leer_archivo_raw` | parser_rs | Lee archivo como texto |
-| 23 | `leer_archivo_bytes` | parser_rs | Lee archivo como bytes |
-| 24 | `parsear_catalogo` | parser_rs | Parser CSV local |
-| 25 | `parsear_catalogo_csv` | parser_rs | Parser CSV |
-| 26 | `parsear_catalogo_visual` | parser_rs | Parser visual |
-| 27 | `parsear_excel` | parser_rs | Parser Excel (→ Python) |
-| 28 | `parsear_ticket` | parser_rs | Parser ticket |
-| 29 | `analizar_ticket_llm` | parser_rs | Análisis LLM |
-| 30 | `analizar_ticket_con_ia` | parser_rs | Análisis IA (→ Python) |
-| 31 | `parsear_con_mapeo` | parser_rs | Parseo con mapeo |
-| 32 | `parsear_carpeta` | parser_rs | Procesamiento de carpeta |
-| 33 | `parsear_carpeta_stream` | parser_rs | Procesamiento con SSE |
+**Planes:** embeddings ONNX (`all-MiniLM-L6-v2` + `ort`/`fastembed-rs`) y pronósticos **Holt-Winters** (sin deps pesadas). Detalles en `migracion_rust.md`. Impresión térmica ESC/POS y facturación electrónica: pendientes.
 
 ---
 
-## 12. Historial de Implementación
+## 11. Problemas Resueltos
 
-*(Historial de fases consolidado en Git.)*
-## 13. Problemas Resueltos
-
-*(Problemas menores resueltos, ver commits.)*
+- **Migración Python → Rust completa**: sidecar eliminado, binario único (commit histórico; ver `migracion_rust.md`).
+- **Parseo robusto**: bugfixes A1/A3/A4/Bug8 (líneas útiles, volúmenes, separador, transacciones) conservados en el port (detalle en `Bugs resueltos uwu.md` y `PARSEADOR.md`).
+- **UI/UX refinada**: primer inicio con confirmación de contraseña y ojos espejados; login con morph de iconos por rol; botón ENTRAR AL POS con morph flecha→palomita; botón Cancelar con borde punteado.

@@ -4,7 +4,7 @@
 > (`yarvis-IA/chatbot/motor_chat/...`). Esa carpeta ya NO existe: hubo migración a Rust
 > (`src-ia/motor-chat` + `src-ia/parseador_de_tickets`), el sidecar Python se eliminó y la app
 > es un binario único de Tauri. **TODAS las rutas de Python listadas abajo están MUERTAS.**
-> Ver `migracion_rust.md` para el estado real.
+> Ver `idea.md/imple & docu/migracion_rust.md` para el estado real.
 
 > Objetivo: **Qwen 0.5B local por defecto, OpenCode API con tools cuando hay internet.**
 > El modelo no toca SQL: solo llama a `search_inventory()`, que es la ÚNICA función que lee la DB.

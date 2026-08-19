@@ -1,377 +1,156 @@
 # Documentación de Parseo - Y.A.R.V.I.S. POS
 
+> ⚠️ **ACTUALIZADO (2026-Ago):** el parseador ya no vive en Python (`yarvis-IA/...`) ni se habla por HTTP con un servidor FastAPI. Todo el motor quedó portado a **Rust** en el crate `src-ia/parseador_de_tickets`, expuesto al frontend vía **comandos Tauri** (`adminparser/parser_*.rs`). Esta doc describe el estado real.
+
 ## Resumen General
 
-Sistema de parseo de productos y catálogos para el módulo de importación inteligente. Soporta múltiples formatos (TXT, CSV, Excel) con IA para interpretación automática de columnas.
+Sistema de parseo de tickets y catálogos para el Módulo de Importación Inteligente. Soporta TXT, CSV y Excel con análisis LLM local para interpretación automática de columnas, más procesamiento por lotes con streaming.
 
 ---
 
-## 1. Estructura Modular de Parsers
-
-### **Python (`yarvis-IA/parseador_de_tickets/`)**
-
-El módulo original `parser_py/` fue refactorizado y dividido en subcarpetas para separar lógicas:
+## 1. Estructura Modular (Rust — `src-ia/parseador_de_tickets/`)
 
 ```
 parseador_de_tickets/
-├── cerebro/             # Lógica de negocio y procesamiento masivo
-│   ├── analizador.py
-│   ├── filtrador.py
-│   ├── lote.py
-│   └── vinculador.py
-├── formatos/            # Lectores específicos por formato de archivo
-│   ├── lector_csv.py
-│   ├── lector_excel.py
-│   └── lector_txt.py
-└── llm/                 # Inteligencia Artificial
-    ├── analizador_llm.py
-    └── rutas_modelos.py
+├── lib.rs                          # Entry point: declara cerebro, formatos, rutas, motor_chat.
+├── cerebro/                        # Lógica de negocio y procesamiento masivo (sin modelos).
+│   ├── analizador_tickets/         #   parser.rs, encabezado.rs, fechas.rs, pagos.rs,
+│   │                               #   segmentador.rs, totales.rs, esquema.rs
+│   ├── filtrador/                  #   Filtro de líneas útiles (niveles 1/2/3).
+│   ├── parseador_masivo/           #   archivos.rs, procesador.rs, items.rs, resumen.rs, almacen.rs
+│   └── vinculador_inventario/      #   inventario.rs, similitud.rs, vinculo.rs, persistencia.rs
+├── formatos/                       # Lectores mecánicos por formato.
+│   ├── lector_csv.rs               #   CSV (auto-detect separador/header).
+│   ├── lector_excel.rs             #   Excel (calamine).
+│   └── lector_txt.rs               #   Tickets .txt y catálogo visual.
+└── rutas/                          # Resolución de modelos + análisis LLM.
+    ├── analizador_ticket.rs        #   analizar_ticket (LLM local 1.7B).
+    ├── analizador_prompt.rs        #   SISTEMA_PROMPT.
+    ├── analizador_json.rs          #   extraer_json.
+    ├── analizador_modelos.rs       #   descargar/cargar/verificar modelos GGUF.
+    ├── analizador_inferencia.rs    #   generar_bajo_lock (llama.cpp).
+    └── rutas_modelos_api.rs|config.rs|detect.rs   # API + config + detección (LM Studio).
 ```
 
-#### **`formatos/` (Lectores)**
-- Contiene `lector_csv.py`, `lector_excel.py` y `lector_txt.py`.
-- Su trabajo es puramente mecánico: extraer el texto plano de los archivos. No toman decisiones inteligentes.
+### Backend Tauri (exposición de comandos — `yarvis-app/src-tauri/src/backventanas/backadmin/adminparser/`)
 
-#### **`llm/` (Modelos)**
-- **`analizador_llm.py`**: Motor central que envía las líneas de texto al modelo Qwen. Implementa la lógica de escalada de confianza (0.5B → 0.8B → 1.7B).
-- **`rutas_modelos.py`**: Contiene las constantes con las rutas absolutas a los archivos `.gguf`.
+| Archivo | Comandos que expone |
+|---|---|
+| `parser_txt.rs` | `listar_archivos_carpeta`, `leer_archivo_raw`, `leer_archivo_bytes`, `parsear_catalogo_visual`, `analizar_ticket_llm`, `analizar_ticket_con_ia`, `parsear_con_mapeo`, `parsear_carpeta`, `parsear_carpeta_stream` |
+| `parser_csv.rs` | `parsear_catalogo_csv` (auto-detect separador/header/columnas numéricas) |
+| `parser_excel.rs` | `parsear_excel` |
+| `parser_commands.rs` | `get_db_path`, `vincular_inventario`, `guardar_vinculacion`, `descargar_modelos` |
+| `utils.rs` | Utilidades compartidas (rutas, precio limpio) |
 
-#### **`cerebro/` (Orquestadores)**
-- **`lote.py`**: Antes conocido como `carpeta.py` o `BatchProcessor`. Se encarga de procesar miles de tickets de forma asíncrona enviando eventos SSE (Server-Sent Events) al frontend.
-- **`analizador.py`**: El puente principal para la API que unifica el lector con el LLM.
-- **`filtrador.py` / `vinculador.py`**: Funciones de limpieza de caracteres y cruce de datos.
+Última referencia a Python en el backend: comentarios tipo `// port de lector_csv.py` (migración).
 
 ---
 
-### **Rust (`parser_rs/`)**
+## 2. Funciones Eliminadas de ColumnMapper.tsx (ya resueltas)
 
-```
-parser_rs/
-├── lib.rs               # Módulos públicos
-├── parser_txt.rs        # Parseo de tickets TXT
-├── parser_csv.rs        # Parseo de catálogos CSV
-└── utils.rs             # Funciones compartidas
-```
+Estas funciones se eliminaron porque el preview ahora lo da el LLM (o el parser de reglas):
 
-#### **`lib.rs`**
-- Exporta `parsear_txt` y `parsear_csv`
-
-#### **`parser_txt.rs`**
-- `parsear_txt(ruta)`: Parsea archivos TXT
-
-#### **`parser_csv.rs`**
-- `parsear_csv(ruta)`: Parsea archivos CSV
-
-#### **`utils.rs`**
-- `sanitize_path(path)`: Normaliza rutas de archivos
-- `limpiar_precio(precio_str)`: Limpia formato de precios
-
----
-
-## 2. Funciones Eliminadas de ColumnMapper.tsx
-
-Estas funciones se eliminaron porque el preview ahora viene del LLM:
-
-### **`parsearLinea(linea)`**
-- Parseaba una línea del catálogo
-- Extraía producto y precio
-- **Eliminada:** Preview viene de `analysis.ejemplo_parseado`
-
-### **`esLineaUtil(linea)`**
-- Filtraba metadata de tickets (fecha, cajero, subtotal, etc.)
-- **Eliminada:** No se necesita para previsualizar
-
-### **`resolverIndice(columnas, nombre)`**
-- Resolvía índice de columna por nombre
-- **Eliminada:** Mapeo ahora se hace con AI
-
-### **`limpiarPrecio(precioStr)`**
-- Limpiaba caracteres especiales de precios
-- **Eliminada:** Precio viene limpio del LLM
-
-### **`limpiarProducto(productoStr)`**
-- Limpiaba caracteres especiales de productos
-- **Eliminada:** Producto viene limpio del LLM
+- `parsearLinea(linea)` — re-parseaba líneas. **Eliminada:** el preview viene de `analysis.ejemplo_parseado`.
+- `esLineaUtil(linea)` — filtraba metadata. **Eliminada:** no se necesita para previsualizar.
+- `resolverIndice(columnas, nombre)` — mapeo manual. **Eliminada:** el mapeo lo sugiere la IA.
+- `limpiarPrecio(precioStr)` / `limpiarProducto(productoStr)` — **Eliminadas:** viene limpio de Rust (`utils.rs` / `filtrador`).
 
 ---
 
 ## 3. Fix de `producto` tipo Array
 
-### **Problema**
-La IA retornaba:
-```json
-{
-  "producto": 2,
-  "nombre": "Producto Ejemplo",
-  "precio": 100
-}
-```
+La IA o el parser pueden retornar `producto` como número (`2`) en lugar de array (`[2]`). Se normaliza siempre:
 
-El frontend esperaba:
-```json
-{
-  "producto": [2],
-  "nombre": "Producto Ejemplo",
-  "precio": 100
-}
-```
-
-### **Solución**
-En `handleAnalizar` (Configuracion.tsx):
 ```typescript
-const normalizedItems = analysis.ejemplo_parseado.map(item => ({
-  ...item,
-  producto: Array.isArray(item.producto) ? item.producto : [item.producto]
-}));
+producto: Array.isArray(item.producto) ? item.producto : [item.producto]
 ```
+
+En el flow actual se hace en el hook `useParserActions.ts` (config → import) antes de guardar.
 
 ---
 
-## 4. Preview con `ejemplo_parseado` del LLM
+## 4. Preview con `ejemplo_parseado` del LLM (o del parseador de reglas)
 
-### **Antes**
-```typescript
-// Re-parseaba primeras 10 líneas
-const lines = fileContent.split('\n').filter(line => line.trim());
-const previewItems = lines.slice(0, 10).map(line => parsearLinea(line));
-```
-
-### **Ahora**
-```typescript
-// Usa el ejemplo parseado por la IA
-const previewItems = analysis.ejemplo_parseado || [];
-```
-
-### **Por qué**
-- `esLineaUtil` filtraba metadata de tickets (fecha, cajero, subtotal)
-- Las primeras 10 líneas no siempre son productos
-- El LLM ya parseó correctamente el contenido
+- **Antes:** se re-parseaban las primeras 10 líneas (fallaba por metadata: fecha, cajero, subtotal).
+- **Ahora:** el preview usa `analysis.ejemplo_parseado || []` — lo que ya parseó el análisis LLM, o el resultado del parseo de reglas con mapeo confirmado.
 
 ---
 
 ## 5. Persistencia de Catálogo
 
-### **Estados Nuevos en Configuracion.tsx**
+Estados en el frontend (`ImportModule` / `useParserActions`):
+
 ```typescript
 const [lastCatalogPath, setLastCatalogPath] = useState<string>('');
 const [lastCatalogItems, setLastCatalogItems] = useState<Producto[]>([]);
 ```
 
-### **Flujo**
-1. **Parsea catálogo** → se guarda en `lastCatalogPath` + `lastCatalogItems`
-2. **Cambia a modo "entrenar IA"** → catálogo persiste en memoria
-3. **Vuelve a modo "catálogo"** → catálogo restaurado automáticamente
-
-### **Código de restauración**
-```typescript
-useEffect(() => {
-  if (parserMode === 'catalogo' && lastCatalogPath && lastCatalogItems.length > 0) {
-    setSelectedPath(lastCatalogPath);
-    setParsedItems(lastCatalogItems);
-  }
-}, [parserMode]);
-```
+Flujo: parsea catálogo → se guarda en memoria → cambia de modo → vuelve → se restaura la selección automáticamente.
 
 ---
 
 ## 6. Botones Unificados
 
-### **Antes**
-1. **ColumnMapper.tsx:** "Aceptar Mapeo" (guardaba mapeo)
-2. **Configuracion.tsx:** "Guardar Ticket Analizado" (persistía en DB)
+Antes existían "Aceptar Mapeo" + "Guardar Ticket Analizado" por separado; ahora el guardado une **mapeo + persistencia en DB** en un solo comando/acción (`guardar_ticket_parseado`).
 
-### **Ahora**
-1. **ColumnMapper.tsx:** "Guardar Ticket" (guarda mapeo + persiste en DB)
+---
 
-### **Código de unified save**
-```typescript
-// ColumnMapper.tsx
-const handleGuardarTicket = async () => {
-  // 1. Guarda mapeo
-  onGuardarTicket(columnMapping);
-  
-  // 2. Persiste en DB
-  await invoke('guardar_ticket', {
-    ticketData: {
-      ruta_archivo: selectedPath,
-      contenido: fileContent,
-      mapeo_columnas: columnMapping,
-      productos_parseados: parsedItems
-    }
-  });
-  
-  // 3. Limpia estado
-  setShowColumnMapper(false);
-};
+## 7. VRAM / descarga de modelos — (HISTÓRICO, era Python)
+
+La gestión `descargar_modelos()` de Python (auto-unload en `finally`, endpoints `/unload_llm`) **ya no existe como HTTP**. Hoy:
+
+- El comando Tauri `descargar_modelos` existe por compatibilidad (`adminparser/parser_commands.rs`).
+- El análisis de tickets usa el LLM local **bajo demanda** (`rutas/analizador_inferencia.rs` con lock) y **no deja cargado** el modelo global a menos que el chat lo necesite.
+
+---
+
+## 8. Errores Comunes y Soluciones (vigentes)
+
+| Error | Causa | Solución |
+|---|---|---|
+| `producto` no es array | Parser retorna entero | Normalizar con `Array.isArray()` |
+| Preview no muestra productos | Metadata filtraba todo | Usar `ejemplo_parseado` del LLM |
+| Catálogo pierde datos al cambiar modo | Estado no persistía | `lastCatalogPath` + `lastCatalogItems` |
+| Nombre con " -- " (separador del catálogo) | Patrón SIN_SEP se comía el separador | Bug 8 resuelto en Rust: reorden de patrones; los lectores no arrastran el separador (ver `Bugs resueltos uwu.md`) |
+| Produto legítimo descartado ("GATORADE TOTAL", "CAJA DE MADERA") | substring `if x in linea_lower` | `_es_linea_util` con 3 niveles + word-boundary (portado a `cerebro/filtrador`) |
+
+> Los bugfix A1 (transacción por archivo con rollback), A3 (filtro 3 niveles), A4 (volúmenes) y Bug 8 (separador robado) fueron **verificados en Python y conservados en el port a Rust**.
+
+---
+
+## 9. Flujos de Datos (estado actual)
+
+### Flujo de Parseo de Ticket (entrenar IA)
+```
+1. Usuario sube TXT/CSV/Excel en el Módulo de Importación Inteligente.
+2. Frontend llama al comando correspondiente (analizar_ticket_con_ia / parsear_*).
+3. Rust (src-ia) lee el archivo con el lector de formatos correspondiente.
+4. El LLM (o reglas) deduce columnas; retorna LLMAnalysis con ejemplo_parseado JSON.
+5. Se muestra preview en ColumnMapper; el usuario ajusta el mapeo.
+6. "Guardar Ticket" → guarda mapeo + persiste en DB (Rust escribe SQLite).
+7. El modelo no se queda cargado en RAM.
+```
+
+### Flujo de Parseo de Catálogo
+```
+1. Usuario sube archivo (TXT/CSV/Excel).
+2. Comando parsear_catalogo_* → Rust parsea según formato.
+3. Retorna productos parseados → TablaPreview → mapeo → "Guardar" persiste en DB.
+```
+
+### Flujo de Batch Processing
+```
+1. Usuario selecciona carpeta.
+2. parsear_carpeta_stream procesa con eventos SSE.
+3. Rust procesa cada archivo con SU PROPIA transacción (rollback ante fallo).
+4. Frontend muestra progreso en tiempo real (BatchProcessor).
+5. Al terminar: vincular con inventario existente (vincular_inventario / guardar_vinculacion).
 ```
 
 ---
 
-## 7. VRAM Management
+## 10. Tipos TypeScript (vigentes)
 
-### **Función `descargar_modelos()` en parser_llm.py**
-```python
-def descargar_modelos():
-    global modelo_txt, modelo_excel
-    
-    # Elimina modelos globales
-    if modelo_txt is not None:
-        del modelo_txt
-        modelo_txt = None
-    
-    if modelo_excel is not None:
-        del modelo_excel
-        modelo_excel = None
-    
-    # Limpia memoria
-    gc.collect()
-    print("Modelos descargados de VRAM")
-```
-
-### **Auto-unload en 2 puntos**
-
-#### **1. Antes de batch processing (`cerebro/lote.py`)**
-```python
-@app.post("/parsear_carpeta_stream")
-async def parsear_carpeta_stream(carpeta_data: CarpetaData):
-    # Descarga modelos antes de empezar para liberar RAM
-    descargar_modelos()
-    
-    # Procesa carpeta de forma asíncrona...
-```
-
-#### **2. Después de ticket analysis (`cerebro/analizador.py`)**
-```python
-@app.post("/analizar_ticket")
-async def analizar_ticket(ticket: TicketRequest):
-    try:
-        # Analiza ticket usando analizador_llm.py...
-        return resultado
-    finally:
-        # Descarga modelos después de analizar para no bloquear al cajero
-        descargar_modelos()
-```
-
-### **Endpoint `/unload_llm` en chat.py**
-```python
-@app.post("/unload_llm")
-async def unload_llm():
-    descargar_modelos()
-    return {"status": "ok", "message": "Modelos descargados de VRAM"}
-```
-
-### **Comando Tauri `descargar_modelos` en commands/parser.rs**
-```rust
-#[tauri::command]
-pub async fn descargar_modelos(sidecar: tauri::State<'_, Arc<AiSidecar>>) -> Result<(), String> {
-    sidecar.get("unload_llm").await.map_err(|e| e.to_string())?;
-    Ok(())
-}
-```
-
----
-
-## 8. Fix de `check_process_alive`
-
-### **Problema**
-```rust
-// No compilaba
-*guard.take()
-```
-
-### **Solución**
-```rust
-// Ahora compila
-*guard = None
-```
-
----
-
-## 9. Errores de Embedding Reducidos
-
-### **Problema**
-- `/generar_embedding` fallaba 4 veces por batch (ruido en consola)
-
-### **Solución**
-```rust
-// AtomicBool para asegurar error print solo 1 vez
-static EMBEDDING_ERROR_PRINTED: AtomicBool = AtomicBool::new(false);
-
-// En generar_embedding
-if EMBEDDING_ERROR_PRINTED.compare_and_swap(false, true, Ordering::SeqCst) {
-    eprintln!("Error generando embedding: {}", error);
-}
-```
-
----
-
-## 10. Funciones Compartidas
-
-### **Python `utils.py`**
-```python
-def limpiar_producto(texto: str) -> str:
-    # Elimina caracteres especiales
-    texto = re.sub(r'[^\w\sáéíóúñ]', '', texto)
-    return texto.strip()
-
-def es_categoria(linea: str) -> bool:
-    # Detecta líneas que son categorías
-    categorias = ['CATEGORIA', 'SECCION', 'DEPARTAMENTO']
-    return any(c in linea.upper() for c in categorias)
-```
-
-### **Rust `utils.rs`**
-```rust
-pub fn sanitize_path(path: &str) -> String {
-    // Normaliza rutas
-    path.replace('\\', "/")
-}
-
-pub fn limpiar_precio(precio_str: &str) -> f64 {
-    // Limpia formato de precios
-    let cleaned = precio_str.replace(['$', ',', ' '], "");
-    cleaned.parse().unwrap_or(0.0)
-}
-```
-
----
-
-## 11. Configuración de IA
-
-### **Parámetros de parseo**
-- `temperature`: 0.1 (baja para respuestas consistentes)
-- `max_tokens`: 1000
-- `top_p`: 0.9
-
-### **Modelos utilizados**
-- **Qwen 2.5 0.5B:** Para parseo inicial ultra-rápido de tickets.
-- **Qwen 3.5 0.8B:** Modelo intermedio para tickets con formato extraño.
-- **Qwen 3 1.7B:** Modelo pesado para catálogos altamente complejos.
-
-### **Fallback automático (Escalada de Confianza)**
-- 1. Qwen 0.5B analiza el ticket.
-- 2. Si la confianza es < 0.80 → descarga modelo y reintenta con Qwen 0.8B.
-- 3. Si la confianza sigue siendo < 0.80 → descarga modelo y saca la artillería pesada (Qwen 1.7B).
-
----
-
-## 12. Endpoints Relacionados
-
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/analizar_ticket` | POST | Analiza ticket individual |
-| `/parsear_carpeta_stream` | POST | Procesa carpeta con streaming |
-| `/parsear_excel` | POST | Parsea archivos Excel |
-| `/parsear_catalogo_visual` | POST | Parsea catálogos visuales |
-| `/generar_embedding` | POST | Genera embedding de producto |
-| `/buscar_producto_similar` | POST | Busca producto similar |
-| `/unload_llm` | POST | Descarga modelos de VRAM |
-
----
-
-## 13. Tipos TypeScript
-
-### **ColumnMapping**
 ```typescript
 interface ColumnMapping {
   [key: string]: {
@@ -380,20 +159,14 @@ interface ColumnMapping {
     indice: number;
   };
 }
-```
 
-### **LLMAnalysis**
-```typescript
 interface LLMAnalysis {
   columnas_detectadas: string[];
   mapeo_sugerido: { [key: string]: string };
   ejemplo_parseado: Producto[];
   confianza: number;
 }
-```
 
-### **Producto**
-```typescript
 interface Producto {
   producto: number[];
   nombre: string;
@@ -405,82 +178,9 @@ interface Producto {
 
 ---
 
-## 14. Flujos de Datos
+## 11. Notas Importantes
 
-### **Flujo de Parseo de Ticket**
-```
-1. Usuario selecciona archivo TXT/CSV/Excel
-2. Frontend envía a `/analizar_ticket`
-3. Python lee el archivo con el `lector_*` correspondiente.
-4. Python (`analizador_llm.py`) parsea 20 líneas con Qwen 0.5B.
-5. Si confianza < 0.80 → retry con Qwen 0.8B. Si falla → retry con Qwen 1.7B.
-6. Retorna LLMAnalysis con ejemplo_parseado JSON.
-7. Frontend muestra preview visual en ColumnMapper.
-8. Usuario ajusta mapeo de columnas.
-9. Click "Guardar Ticket" → persiste en DB.
-10. Modelos se descargan de VRAM (auto-unload).
-```
-
-### **Flujo de Parseo de Catálogo**
-```
-1. Usuario selecciona archivo (TXT/CSV/Excel)
-2. Frontend envía a `/parsear_catalogo_visual`
-3. Python parsea archivo según formato
-4. Retorna productos parseados
-5. Frontend muestra en TablaPreview
-6. Usuario ajusta mapeo si es necesario
-7. Click "Guardar" → persiste en DB
-```
-
-### **Flujo de Batch Processing**
-```
-1. Usuario selecciona carpeta
-2. Frontend envía a `/parsear_carpeta_stream`
-3. Python descarga modelos de VRAM
-4. Python procesa cada archivo en carpeta
-5. Retorna resultados por SSE
-6. Frontend muestra progreso en tiempo real
-7. Al finalizar, modelos se descargan
-```
-
----
-
-## 15. Errores Comunes y Soluciones
-
-### **Error: `producto` no es array**
-- **Causa:** IA retorna entero en lugar de array
-- **Solución:** Normalizar con `Array.isArray()`
-
-### **Error: Preview no muestra productos**
-- **Causa:** `esLineaUtil` filtraba metadata
-- **Solución:** Usar `ejemplo_parseado` del LLM
-
-### **Error: VRAM llena después de análisis**
-- **Causa:** Modelos no se descargaban
-- **Solución:** Auto-unload en `finally` block
-
-### **Error: Catálogo pierde datos al cambiar modo**
-- **Causa:** Estado no persistía
-- **Solución:** `lastCatalogPath` + `lastCatalogItems`
-
-### **Error: Embedding falla 4 veces por batch**
-- **Causa:** Error se imprimía por cada archivo
-- **Solución:** `AtomicBool` para imprimir solo 1 vez
-
----
-
-## 16. Próximos Pasos
-
-1. **Verificar app completa end-to-end** con todos los cambios
-2. **Implementar gráficas** para predicciones Prophet
-3. **Test de catálogo Excel** con flujo completo Tauri → Python → Frontend
-
----
-
-## 17. Notas Importantes
-
-- **Sin precios = productos con $0:** Todos los parsers retornan productos incluso sin columnas de precio
-- **ColumnMapper inline:** Aparece dentro de "MÓDULO DE IMPORTACIÓN INTELIGENTE"
-- **GPU auto-detect:** `LD_LIBRARY_PATH` se establece por el sidecar para CUDA
-- **Lazy loading:** Modelos se cargan bajo demanda y se descargan después de usar
-- **Idioma:** Sistema diseñado en español para México (pesos mexicanos)
+- **Sin precios = productos con $0:** todos los parsers retornan productos aunque falte la columna de precio.
+- **ColumnMapper inline**: aparece dentro del "MÓDULO DE IMPORTACIÓN INTELIGENTE" (reutilizado en `adminconfig/components/importmodule/`).
+- **Rust como escritor único**: el parseo lee archivos, pero la escritura en DB siempre pasa por comandos Tauri.
+- **Idioma**: español para México (pesos mexicanos).

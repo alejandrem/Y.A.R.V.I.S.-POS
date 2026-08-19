@@ -1,3 +1,9 @@
+# Lógica de Proceso / Spec de UI-UX — Y.A.R.V.I.S. POS
+
+> ⚠️ **NOTA DE ESTADO (2026-Ago):** este documento es el **spec de diseño UI/UX** que guió la implementación. La mayoría de los flujos ya están **implementados**: el primer inicio ahora también registra la **tienda** y permite agregar **empleados** (con contraseña), el login funciona por roles (Admin → correona, Empleado → espada), y existen los dashboards de admin y empleado con los menús descritos. Los mockups ASCII de abajo son referenciales (el diseño real usa Tailwind). Lo demás del documento sigue vigente como referencia de negocio y futuras iteraciones (impresión, facturación, auditorías, atajos F5–F8).
+
+---
+
 primero una interfaz de primer inicio tipo asi dando las gracias y la bienvenida al pos, del lado derecho de la pantalla del primer inicio pediremos datos principales:
 - nombre del administrador
 - Nombre de la Tienda
@@ -439,4 +445,6 @@ ________________________________________________________________________________
 |______________|________________________________________________________________________________|_______________________|
 
 en este punto el archivo que tenemos de app.txs ya habra superado las 600 lineas y sera hora de dividir el admin y al empleado en diferentes carpetas el front-admin y el front-empleado ahi vivran las interfaces.
+
+> ✅ **Ya cumplido:** `App.tsx` quedó como orquestador (setup → login → dashboard) y las interfaces viven en `front-admin/` y `front-empleado/`, con el backend espejo en `backventanas/` (`backadmin/` y `backempleado/`).
 

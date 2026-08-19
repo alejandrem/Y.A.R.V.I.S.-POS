@@ -1,5 +1,7 @@
 # Idea a vender del software
 
+> **ESTADO ACTUAL (2026-Ago):** gran parte de esta visión ya está implementada (venta rápida, inventario, clientes, reportes/cortes, tickets, parseador local, chat). Pendientes: **predicciones de ventas** (`get_predictions`/`get_predicciones_financieras` = stubs), **búsqueda semántica/embeddings** (stubs), impresión térmica y facturación electrónica. Ver `../imple & docu/implementacion.md`.
+
 
 **Venta Ultra-Rápida:** El cajero no puede esperar. Debe soportar escáner de códigos de barras, búsqueda rápida por teclado y múltiples métodos de pago (efectivo, tarjeta, transferencia).
 

@@ -1,139 +1,88 @@
 # Plan de Implementación Riguroso - Y.A.R.V.I.S. POS 🚀
 
-Bienvenido al mapa de batalla. Este no es un proyecto de fin de semana, es una obra de ingeniería. Para asegurar que Y.A.R.V.I.S. sea un software robusto, escalable y mantenible a lo largo de los años, seguiremos este plan de implementación dividido en "Olas". 
+> ⚠️ **ACTUALIZADO (2026-Ago):** este documento ya no es un "mockup a futuro de Python". Es el **estado real** de la implementación en Rust. Las olas marcadas ✅ están **implementadas** y verificadas. Las zonas sin ✅ son planes pendientes.
+
+Bienvenido al mapa de batalla. Este no es un proyecto de fin de semana, es una obra de ingeniería. Para asegurar que Y.A.R.V.I.S. sea un software robusto, escalable y mantenible a lo largo de los años, se implementó por fases.
 
 > ⚠️ **REGLA DE ORO DEL CÓDIGO** ⚠️
-> **Ningún archivo (ya sea `.rs`, `.py`, `.ts` o `.tsx`) deberá pasar de las 600 a 650 líneas de código.** 
-> Si un archivo (por ejemplo, el gestor de inventario en Rust o el endpoint del LLM en Python) llega a las 650 líneas, debes detenerte, crear un nuevo archivo y dividir la lógica a la mitad (modularización). Archivos enormes equivalen a deuda técnica e imposibilidad de rastrear bugs. ¡Mantenlo modular!
+> **Ningún archivo (ya sea `.rs`, `.ts` o `.tsx`) deberá pasar de las 600 a 650 líneas de código.**
+> Si un archivo llega a las 650 líneas, detente, crea un archivo nuevo y divide la lógica a la mitad (modularización). Archivos enormes = deuda técnica = imposible rastrear bugs. ¡Mantenlo modular!
 
 ---
 
-## 🌊 Primera Ola: La Fundación de Hierro (Infraestructura y BD)
+## ✅ Ola 1: La Fundación de Hierro (Infraestructura y BD) — COMPLETADA
 
-El objetivo de esta ola es que el Punto de Venta pueda funcionar en "Modo Clásico" (como una caja registradora normal), sin tocar la IA. Si la caja no funciona perfecto, la IA no tiene propósito.
+Punto de Venta funcionando en "Modo Clásico" (caja registradora normal). La caja no depende de la IA.
 
-**Paso 1.1: El Esqueleto del Workspace**
-- Inicializarás el proyecto usando Tauri + Vite + React + TypeScript.
-- Configurarás `tailwind.css` y `shadcn/ui` para empezar a construir la interfaz.
-- En la carpeta `src-tauri`, prepararás tu `Cargo.toml` con las librerías críticas: `sqlx`, `tokio`, y `serde`.
-usando como principal socio al comando `npm create tauri-app@latest`. con este comando se aplicaran los cambios indemadiatamente
-aqui los comandos 
-alee@alee-Vivobook-Go-E1404FA-E1404FA:~/Documentos/Y.A.R.V.I.S. POS$ npm create tauri-app@latest
-✔ Project name · yarvis-app
-✔ Identifier · com.yarvis.pos
-✔ Choose which language to use for your frontend · TypeScript / JavaScript - (pnpm, yarn, npm, deno, bun)
-✔ Choose your package manager · npm
-✔ Choose your UI template · React - (https://react.dev/)
-✔ Choose your UI flavor · TypeScript
+- **Workspace**: Tauri v2 + Vite + React + TypeScript, Tailwind CSS.
+- **Base de datos híbrida**: SQLite (`yarvis.db`) con **modo WAL**. Tablas clásicas (`productos`, `ventas`, `detalle_ventas`, `clientes`, `usuarios`, `cortes_caja`, `ventas_diarias`, `predicciones_futuras`) creadas en `src-tauri/src/backventanas/db/db.rs`.
+- **Conexión Rust ↔ Interfaz**: CRUD y cobro vía **comandos Tauri** (`#[tauri::command]` en `backventanas/`), consumidos con `invoke()` desde React.
+- **Regla de escritura**: Rust es el ÚNICO que escribe en SQLite.
 
-Template created!
+## ✅ Ola 2: El Cerebro Asíncrono (el Jefe ya no llama al Empleado: no hay sidecar) — COMPLETADA
 
-Your system is missing dependencies (or they do not exist in $PATH):
-╭────────────────────┬───────────────────────────────────────────────────────────────────╮
-│ Rust               │ Visit https://www.rust-lang.org/learn/get-started#installing-rust │
-├────────────────────┼───────────────────────────────────────────────────────────────────┤
-│ webkit2gtk & rsvg2 │ Visit https://tauri.app/guides/prerequisites/#linux               │
-╰────────────────────┴───────────────────────────────────────────────────────────────────╯
+La idea original era un motor Python tipo sidecar con FastAPI en puertos libres. **Se descartó y se migró todo a Rust nativo** (ver `migracion_rust.md`).
 
-Make sure you have installed the prerequisites for your OS: https://tauri.app/start/prerequisites/, then run:
-  cd yarvis-app
-  npm install
-  npm run tauri android init
+- **Motor de IA en Rust**: crate local `src-ia` (se enlaza por ruta desde `yarvis-app/src-tauri/Cargo.toml` con la feature `llm-local`).
+- **Arranque**: binario único. Sin `python3 main.py`, sin `find_free_port`, sin `ai_service.exe`, sin `LD_LIBRARY_PATH`.
+- **Chat cloud**: `src-ia/motor-chat/cloud` (OpenCode Zen / Gemini vía `reqwest` + SSE) con **fallback a local**.
+- **Chat local**: Qwen 3 1.7B GGUF con `llama-cpp-4` (`src-ia/motor-chat/llm`), carga bajo demanda (lazy).
+- **Lightweight**: el sidecar Python se eliminó; no queda rastro en `.gitignore` (solo patrones fantasma), `run.sh`/`run.bat` ni `tauri.conf.json` (`externalBin` vacío).
 
-For Desktop development, run:
-  npm run tauri dev
+## ✅ Ola 3: El Parseador y la Ingesta Masiva — COMPLETADA (reglas en Rust)
 
-For Android development, run:
-  npm run tauri android dev
+- **Parseador de tickets/catálogos**: `src-ia/parseador_de_tickets` (regex + reglas en `cerebro/`, lectores en `formatos/`).
+- **Procesamiento por lotes**: `cerebro/parseador_masivo/` (eventos SSE al frontend; transacción por archivo con rollback).
+- **Vinculación con inventario**: `cerebro/vinculador_inventario/` (similitud + persistencia).
+- **Análisis LLM**: `rutas/` → `analizar_ticket` con Qwen local bajo demanda + detección de modelos GGUF.
+- **Comandos**: `adminparser/parser_*.rs` (`parsear_catalogo_visual`, `parsear_carpeta_stream`, `analizar_ticket_con_ia`, `parsear_con_mapeo`, `parsear_catalogo_csv`, `parsear_excel`, `vincular_inventario`, `descargar_modelos`, ...).
+- **Frontend**: `parseadodetickets/` (BatchProcessor, ColumnMapper, CatalogosParseados) integrado en el **Módulo de Importación Inteligente** (`adminconfig/components/importmodule/`).
 
+### ⏳ Pendiente en parseador
+- Embeddings/RAG para **búsqueda semántica** de productos (`buscar_producto_similar`, `backfill_embeddings` son stubs).
 
-me aparecio eso por que no tenia instalados lenguajes principales pero tu si instalalos. para que no te aparezca eso 
-usaremos CSS Tailwind 3
+## ✅ Ola 4: El Chatbot y su motor — COMPLETADA (cloud + local)
 
-**Paso 1.2: Diseñar la Base de Datos Híbrida**
-- Crearás el archivo `yarvis.db` y forzarás a SQLite a activar el **Modo WAL** (`PRAGMA journal_mode=WAL;`).
-- Primero crearás las tablas clásicas: `productos`, `ventas`, `detalle_ventas`, `clientes` y `ventas_diarias` (esta última tendrá columnas `temperatura_promedio` y `clima` para guardar el historial meteorológico).
-- Después, configurarás la tabla para las proyecciones: `predicciones_futuras`.
-- Y finalmente la tabla vectorial con `sqlite-vec`: `knowledge_base` (donde vivirán los embeddings).
+- **Comandos nativos** (`admintarvis/chat.rs`): `send_chat_message`, `send_chat_stream`, `get_cloud_models`, `get_model_status`, `load_chat_model`, `unload_chat_model`, `stop_chat_stream`.
+- **Separador de bloques `思考`**: el thinking se aisla del texto de respuesta (`cloud/think.rs`).
+- **Cola de fallback 429**: relevo automático entre proveedores cloud (máx 3 modelos, espera 2–4 s), `max_tokens` 39800.
+- El usuario siempre recibe respuesta: si la nube falla → cae al modelo local (degradación graceful).
+- **Frontend**: `adminyarvis/ChatWidget.tsx` + `front-empleado/empleayarvis/yarvis.tsx`.
 
-**Paso 1.3: Conexión Rust <-> Interfaz**
-- En Rust, programarás los `Tauri Commands` (`#[tauri::command]`) para hacer el CRUD: crear productos, cobrar tickets, ver inventario.
-- En TypeScript (React), consumirás estos comandos. Aquí probarás que la caja registradora funciona al 100% y que Rust escribe perfectamente en SQLite.
+### ⏳ Pendiente en IA
+- **Predicciones de ventas** con intervalos de confianza (`get_predictions`, `get_predicciones_financieras`): stubs. Plan: **Holt-Winters** propio (estacionalidad semanal, ~150 líneas, sin deps pesadas).
+- **RAG / knowledge_base**: embeddings nativos en Rust (ONNX/fastembed) para reactivar búsqueda semántica y base de conocimiento.
 
----
+## ✅ Ola 5: Domo, seguridad y producción — COMPLETADA (parcial)
 
-## 🌊 Segunda Ola: El Cerebro Asíncrono (El Jefe llama al Empleado)
+- **Autenticación**: Argon2 para admins y empleados; login por roles (`adminconfig/auth.rs`); Google OAuth (`google.rs`).
+- **Gestión comercial** (admin): inventario, tickets, cortes de caja X/Z, finanzas (gastos recurrentes, alertas, métricas, exportación), empleados (metas/bonos, turnos, salario), clientes.
+- **Gestión operativa** (empleado): nueva venta (+ `buscar_producto_similar` stub), perfil, tickets, cortes, chat.
+- **Empaquetado**: `npm run tauri build` → binario único. Sin PyInstaller.
+- **Primer inicio**: `PrimerInicio.tsx` (alta de admin + tienda + empleado) con ojos espejados y morphicons.
+- **Temas**: ThemeProvider light/dark (config → AppearanceForm).
 
-Aquí es donde entra la magia del "Sidecar". Vas a crear el motor de Python aislado y conectarás a Rust con él de manera invisible para el usuario.
-
-**Paso 2.1: El Motor en Python**
-- Crearás la carpeta `ai_engine` y configurarás un entorno virtual (`venv`).
-- Programarás un servidor `FastAPI` súper rápido con rutas vacías: `GET /health`, `POST /load_llm`, `POST /generar_embedding`.
-- Configurarás que Python arranque **únicamente** con el modelo pequeño de embeddings de 40MB (`all-MiniLM-L6-v2.gguf`). El LLM grande aún no se toca.
-
-**Paso 2.2: La Secuencia de Boot (Arranque)**
-- En Rust, modificarás el método de inicio. Rust buscará dos puertos TCP libres (ej. 54321 y 54322).
-- Rust usará `std::process::Command` para ejecutar `ai_service.exe` pasándole esos puertos por argumentos.
-- Rust creará un bucle esperando (timeout 30s) haciendo peticiones a `GET /health` hasta que Python responda "OK, estoy listo".
-- *Control Anti-Apagones:* Justo al arrancar, Rust leerá la tabla `predicciones_futuras`. Si los datos son de ayer, activará una bandera para forzar una actualización en cuanto la CPU esté libre.
-
-**Paso 2.3: La Prueba de Fuego de los Embeddings**
-- Desde la interfaz de React, agregarás un producto: "Galletas de Chocolate".
-- Rust lo insertará en la tabla `productos`.
-- Inmediatamente, Rust hará una llamada `HTTP POST` a Python (a `127.0.0.1:54321/generar_embedding`).
-- Python masticará las palabras "Galletas de Chocolate", devolverá el vector `[0.15, -0.42...]`, y **Rust** (obedeciendo la Regla de Oro) insertará ese vector en `knowledge_base`.
+### ⏳ Pendiente en Producción
+- Impresión térmica ESC/POS y facturación electrónica (XML/PAC): **aún sin implementar** (flujo visual preparado).
+- Predicciones de compra con clima histórico e intervalos de confianza.
+- Auditorías inventario físico vs. sistema.
 
 ---
 
-## 🌊 Tercera Ola: El Profeta y la Ingesta Masiva
+## Orden de ataque de lo pendiente (sugerido)
 
-Es hora de enseñar a Y.A.R.V.I.S. a ver el futuro.
+1. **Pronósticos nativos (Holt-Winters)** → reactiva `get_predictions` y `get_predicciones_financieras`.
+2. **Embeddings/RAG en Rust (ONNX/fastembed)** → reactiva `buscar_producto_similar` y `backfill_embeddings`.
+3. **Impresión térmica (ESC/POS)** y facturación electrónica.
+4. End-to-end y portabilidad en equipos viejos de Windows.
 
-**Paso 3.1: El Parseador Integrado (Batch Processing)**
-- Rust mandará los tickets desde la interfaz a través de la carpeta seleccionada usando SSE.
-- Python traga los 12,000 tickets históricos y devuelve progreso asíncrono al POS sin congelarlo.
+## Archivos clave
 
-**Paso 3.2: El Corte Z y el Ping del Futuro**
-- En Rust, cuando el cajero presione "Hacer Corte de Caja", Rust primero hará un `HTTP GET` a la API de clima (ej. OpenWeather), guardará la temperatura del día en la tabla de ventas, y cerrará la caja.
-- Luego, Rust enviará un `HTTP POST` a Python: `/recalcular_predicciones`.
-- Python despertará a Meta Prophet. Prophet leerá las ventas pasadas y el clima histórico, y calculará los próximos 7 días (ej. Venderás 40 panes mañana).
-- Python enviará un `POST` de regreso a Rust con un JSON masivo, y Rust actualizará la tabla `predicciones_futuras`.
-
----
-
-## 🌊 Cuarta Ola: El Chatbot y el "Lazy Loading" 
-
-Aquí el usuario finalmente sentirá la inteligencia del sistema.
-
-**Paso 4.1: Gestión de RAM y Lazy Loading**
-- En React, el usuario da clic en la pestaña "Consultar Y.A.R.V.I.S.".
-- Rust captura el clic y le pide a Python (FastAPI) que despierte el Chatbot.
-- Python, a través de `gestion_hardware.py`, carga el modelo verificando la RAM disponible
-  contra los umbrales de `_RAM_REQUERIDA` (Q4: 0.5B → 0.0GB, 0.8B → 0.5GB, 1.7B → 1.3GB).
-- El chat se abre y el modelo se queda cargado permanentemente para no alentar la conversación (Lazy Loading).
-
-**Paso 4.2: RAG y Function Calling**
-- Crearás el *System Prompt* en Python explicándole los límites a Qwen ("Si te preguntan cruces muy complejos, sé educado y di que no puedes").
-- Conectarás las herramientas: Si el modelo pide la utilidad, Python leerá `yarvis.db` (ventas) y le devolverá el número. Si el modelo pide pronósticos, leerá `predicciones_futuras`. Si pide un producto, usará el vector para consultar `knowledge_base`.
-
----
-
-## 🌊 Quinta Ola: Producción, Periféricos y Guerrillas
-
-Esta es la ola del dolor. Convertir código hermoso en un ejecutable que sobreviva en la jungla de Windows.
-
-**Paso 5.1: Domando a la Impresora**
-- En Rust, escribirás el módulo `impresion.rs`. Utilizarás los comandos ESC/POS básicos.
-- Probarás mandar comandos por medio del "Print Spooler" nativo de Windows. Imprimirás tickets, cortarás papel y abrirás la caja registradora de metal enviando el código hex `27 112 0 25 250`.
-
-**Paso 5.2: El "Infierno del Empaquetado"**
-- Ejecutarás `PyInstaller` para el servidor de Python. Asegúrate de incluir las banderas `--onedir` o `--onefile` (recomendable `--onedir` para evitar que Windows Defender lo detecte falso positivo por desempaquetado en RAM).
-- Moverás ese ejecutable compilado a la carpeta `/engine`.
-- En Rust, cambiarás todas tus rutas quemadas por `std::env::current_exe()` para que busque a Python de manera relativa.
-- Ejecutarás `npm run tauri build` para obtener tu joya final: `yarvis-app.exe`.
-
-**Paso 5.3: Prueba de Trinchera**
-- Agarrarás la carpeta resultante, la meterás en una memoria USB y te irás a la laptop con Windows 10 más vieja de un amigo o familiar.
-- Insertarás la USB, darás doble clic y rezarás. Si Windows Defender salta, modificarás las firmas. Si falta un DLL, lo agregarás al empaquetado. 
-
-¡Una vez finalices la Quinta Ola, tendrás un POS invencible!
+| Componente | Ubicación |
+|---|---|
+| Frontend admin | `yarvis-app/src/front-admin/` |
+| Frontend empleado | `yarvis-app/src/front-empleado/` |
+| Backend Rust (comandos) | `yarvis-app/src-tauri/src/backventanas/` |
+| Motor de IA (Rust) | `src-ia/` |
+| Registro de comandos | `yarvis-app/src-tauri/src/lib.rs` |
+| DB (init + WAL) | `yarvis-app/src-tauri/src/backventanas/db/db.rs` |

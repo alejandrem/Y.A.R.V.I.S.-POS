@@ -1,5 +1,7 @@
 # 🧠 Auditoría Completa de Y.A.R.V.I.S. IA — Veredicto de Claudio
 
+> ⚠️ **NOTA DE ESTADO (2026-Ago):** esta es la **bitácora histórica** de la era Python (FastAPI). El motor ya se migró a **Rust** (`src-ia`); los archivos `.py` que se citan abajo ya no existen. **Los bugfixes siguen siendo relevantes**: fueron la especificación para el port y se conservaron en Rust (p. ej. filtro de 3 niveles, transacciones por archivo, separador `--` del catálogo). Se mantiene como historial y como lista de trampas conocidas al trabajar el parseo/chat.
+
 Revisé **cada archivo** del proyecto. Aquí va el diagnóstico honesto, separando **bugs reales** de **cosas que parecen bugs pero NO lo son**.
 
 ---
