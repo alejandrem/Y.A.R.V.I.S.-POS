@@ -1,3 +1,6 @@
+// Formulario encargado de gestionar la configuración visual de la aplicación 
+// como el cambio entre modo claro y modo oscuro.
+
 import { useThemeContext } from "../../../../hooks/ThemeContext";
 
 const AppearanceForm = () => {

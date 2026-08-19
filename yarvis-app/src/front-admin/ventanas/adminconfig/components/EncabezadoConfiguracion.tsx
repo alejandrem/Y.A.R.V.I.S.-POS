@@ -1,3 +1,8 @@
+// Encabezado de la página de Configuración.
+// Muestra el título de la sección y el mensaje de éxito cuando se guardan cambios.
+// Renderiza el título y la descripción de la página de configuración. 
+// También se encarga de mostrar mensajes de éxito o error al guardar cambios.
+
 interface ConfigHeaderProps {
   successMessage: string;
 }

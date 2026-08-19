@@ -1,10 +1,15 @@
-import { useAdminData } from "./hooks/useAdminData";
-import { useParserActions } from "./hooks/useParserActions";
-import ConfigHeader from "./components/ConfigHeader";
-import IdentityForm from "./components/IdentityForm";
-import SecurityForm from "./components/SecurityForm";
-import AppearanceForm from "./components/AppearanceForm";
-import ImportModule from "./components/importmodule/ImportModule";
+// Ventana de Configuración del Administrador.
+// Coordina la identidad de la tienda (FormularioIdentidad), la seguridad del
+// admin (FormularioSeguridad), la apariencia/tema (FormularioApariencia) y el
+// Módulo de Importación Inteligente de tickets (ModuloImportacion).
+// Usa useDatosAdmin para cargar/guardar los datos y useAccionesParser para el parseo.
+import { useDatosAdmin } from "./hooks/useDatosAdmin";
+import { useAccionesParser } from "./hooks/useAccionesParser";
+import EncabezadoConfiguracion from "./components/EncabezadoConfiguracion";
+import FormularioIdentidad from "./components/FormularioIdentidad";
+import FormularioSeguridad from "./components/FormularioSeguridad";
+import FormularioApariencia from "./components/FormularioApariencia";
+import ModuloImportacion from "./components/importarmodulo/ModuloImportacion";
 
 interface ConfiguracionProps {
   adminName: string;
@@ -36,7 +41,7 @@ const Configuracion = ({
     successMessage,
     handleUpdate,
     handleSaveIdentity,
-  } = useAdminData(adminName, storeName, initialLocation, initialCp);
+  } = useDatosAdmin(adminName, storeName, initialLocation, initialCp);
 
   const {
     isAnalyzing,
@@ -49,14 +54,14 @@ const Configuracion = ({
     handleTrainIA,
     handleSyncEmbeddings,
     handleChangeMode,
-  } = useParserActions();
+  } = useAccionesParser();
 
   return (
     <div className="flex-1 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
-      <ConfigHeader successMessage={successMessage} />
+      <EncabezadoConfiguracion successMessage={successMessage} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <IdentityForm
+        <FormularioIdentidad
           currentAdminName={currentAdminName}
           setCurrentAdminName={setCurrentAdminName}
           currentStoreName={currentStoreName}
@@ -69,7 +74,7 @@ const Configuracion = ({
         />
 
         <div className="space-y-6">
-          <SecurityForm
+          <FormularioSeguridad
             currentPass={currentPass}
             setCurrentPass={setCurrentPass}
             passwordChanged={passwordChanged}
@@ -77,11 +82,11 @@ const Configuracion = ({
             onSave={handleUpdate}
           />
 
-          <AppearanceForm />
+          <FormularioApariencia />
         </div>
       </div>
 
-      <ImportModule
+      <ModuloImportacion
         isAnalyzing={isAnalyzing}
         isSyncing={isSyncing}
         syncResult={syncResult}

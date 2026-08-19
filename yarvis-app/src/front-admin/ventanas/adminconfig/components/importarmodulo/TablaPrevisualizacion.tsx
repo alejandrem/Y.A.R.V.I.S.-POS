@@ -1,3 +1,6 @@
+// Tabla interactiva que previsualiza cómo el sistema interpretó los datos
+// (producto, precio, cantidad) para que el usuario valide antes de guardarlos.
+
 import { useParserContext } from "../../../../../hooks/ParserContext";
 
 interface PreviewTableProps {

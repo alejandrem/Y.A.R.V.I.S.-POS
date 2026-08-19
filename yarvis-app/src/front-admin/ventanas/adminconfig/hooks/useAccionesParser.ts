@@ -1,9 +1,11 @@
+// Hook personalizado que maneja toda la lógica compleja de análisis e importación de tickets 
+// (interacción con la IA local/cloud, parseo de texto y sincronización con la BD).
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useParserContext } from "../../../../hooks/ParserContext";
 
-export function useParserActions() {
+export function useAccionesParser() {
   const {
     parsedItems, setParsedItems,
     fileContent, setFileContent,

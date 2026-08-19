@@ -1,4 +1,6 @@
-import { PASS_PLACEHOLDER } from "../hooks/useAdminData";
+// Formulario dedicado a la seguridad de la cuenta del administrador, 
+// específicamente para actualizar y validar el cambio de la contraseña maestra.
+import { PASS_PLACEHOLDER } from "../hooks/useDatosAdmin";
 
 interface SecurityFormProps {
   currentPass: string;

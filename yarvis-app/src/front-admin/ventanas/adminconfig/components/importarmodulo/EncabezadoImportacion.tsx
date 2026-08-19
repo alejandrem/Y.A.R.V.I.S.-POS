@@ -1,3 +1,5 @@
+// Renderiza el título, la descripción y los íconos informativos de la sección específica
+// de importación de datos y tickets viejos.
 import { useParserContext } from "../../../../../hooks/ParserContext";
 
 interface ImportHeaderProps {

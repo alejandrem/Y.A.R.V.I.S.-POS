@@ -1,3 +1,5 @@
+// Tarjeta visual que exhibe los metadatos del análisis extraídos por el motor de IA 
+// (formato detectado, confianza, mapeo de columnas y si detectó IVA/descuentos).
 interface LlmAnalysisCardProps {
   analysis: any;
 }

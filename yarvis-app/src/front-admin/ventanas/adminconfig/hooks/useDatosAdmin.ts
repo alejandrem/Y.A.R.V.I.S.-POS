@@ -1,9 +1,12 @@
+// Hook personalizado para cargar, manejar el estado y guardar (persistir) 
+// los datos generales del administrador y la tienda (nombres, ubicación, etc).
+
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 export const PASS_PLACEHOLDER = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 
-export function useAdminData(
+export function useDatosAdmin(
   adminName: string,
   storeName: string,
   initialLocation = "",
