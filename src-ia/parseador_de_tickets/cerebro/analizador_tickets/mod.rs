@@ -119,6 +119,28 @@ mod tests {
     }
 
     #[test]
+    fn productos_con_unidades_de_medida_no_se_descartan() {
+        for p in [
+            "COCA-COLA 600ML $25.00 $25.00",
+            "AGUA CIEL 1.5L $22.00",
+            "CABLE HDMI 1.5M $120.00",
+            "LAMINA GALVANIZADA 15MM $85.00",
+            "HARINA DE TRIGO 1KG $32.00",
+            "MADERA 30X30 $120.00",
+        ] {
+            assert!(es_linea_util(p), "Producto con unidad perdido: {p}");
+        }
+    }
+
+    #[test]
+    fn producto_con_unidad_y_palabra_de_cabecera_no_se_descarta() {
+        // La unidad (32GB) cuenta como dato de producto: la línea no se
+        // descarta aunque el primer token sea de la lista PRIMERAS_CABECERAS.
+        assert!(es_linea_util("TARJETA MEMORIA 32GB $250.00 $250.00"));
+        assert!(es_linea_util("PAGO FACIL RECARGAS 1KG $400.00 $400.00"));
+    }
+
+    #[test]
     fn linea_solo_separadores() {
         assert!(!es_linea_util("----------------"));
         assert!(!es_linea_util("===================="));

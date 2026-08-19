@@ -31,6 +31,20 @@ fn es_token_numero(token: &str) -> bool {
     RE_TOKEN_NUM.is_match(&sin_dolar)
 }
 
+/// Unidades de medida/empaque que acompañan a productos: 600ML, 32GB, 1.5L,
+/// 680GR, 30X30, 2X1, 1.5M, 15MM, 1KG, 250MB…
+static RE_TOKEN_MEDIDA: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)^\d+(?:[.,]\d+)?(?:ml|lt|l|lb|gr|g|kg|oz|cc|gb|mb|mm|cm|m|pz|pzas|pza|und|un|ud|x)(?:x\d+(?:[.,]\d+)?)*$",
+    )
+    .expect("regex token medida")
+});
+
+/// True si el token parece una medida/empaque (600ML, 32GB, 30X30, 1.5L).
+fn es_token_medida(token: &str) -> bool {
+    RE_TOKEN_MEDIDA.is_match(token.trim())
+}
+
 const FRASES_NIVEL1: &[&str] = &[
     "factura",
     "cfdi",
@@ -104,6 +118,7 @@ pub fn es_linea_util(linea: &str) -> bool {
 
     let tokens: Vec<&str> = linea_lower.split_whitespace().collect();
     let nums = tokens.iter().filter(|t| es_token_numero(t)).count();
+    let medidas = tokens.iter().filter(|t| es_token_medida(t)).count();
 
     // Nivel 1: frases que NUNCA aparecen en un nombre de producto.
     for frase in FRASES_NIVEL1 {
@@ -112,8 +127,10 @@ pub fn es_linea_util(linea: &str) -> bool {
         }
     }
 
-    // Nivel 3: cabeceras de total/pago que arrancan la línea.
-    if nums < 3 && !tokens.is_empty() {
+    // Nivel 3: cabeceras de total/pago que arrancan la línea. Las unidades
+    // de medida (600ML, 32GB, 30X30…) cuentan como dato de producto, así un
+    // "TARJETA MEMORIA 32GB $250 $250" no se confunde con un encabezado.
+    if nums + medidas < 3 && !tokens.is_empty() {
         let primer = tokens[0].trim_end_matches([':', '.']);
         if PRIMERAS_CABECERAS.contains(&primer) {
             return false;
@@ -125,8 +142,8 @@ pub fn es_linea_util(linea: &str) -> bool {
         return false;
     }
 
-    // Nivel 2: word-boundary, solo si NO hay columnas numéricas.
-    if nums == 0 && RE_PALABRAS_NIVEL2.is_match(&linea_lower) {
+    // Nivel 2: word-boundary, solo si NO hay columnas numéricas ni medidas.
+    if nums == 0 && medidas == 0 && RE_PALABRAS_NIVEL2.is_match(&linea_lower) {
         return false;
     }
 

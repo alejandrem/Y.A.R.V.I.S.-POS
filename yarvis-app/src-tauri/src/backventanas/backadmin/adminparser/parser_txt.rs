@@ -263,8 +263,10 @@ pub async fn parsear_carpeta_stream(
     .map_err(|e| format!("Error en el worker de procesamiento: {}", e))?
 }
 
-/// Procesa los archivos con `src-ia::lote::procesar_archivos` y emite los
-/// mismos eventos SSE (`progress` / `complete`) que emitía el motor original.
+/// Procesa los archivos con `src-ia::parseador_masivo::procesar_archivos` y
+/// emite los mismos eventos (`progress` / `complete`) que emitía el motor
+/// original, ahora en TIEMPO REAL: el productor corre en su propio hilo para
+/// que el loop emisor no se quede bloqueado mientras procesa la carpeta.
 fn emitir_stream_batch(
     app: &tauri::AppHandle,
     archivos: &[String],
@@ -273,8 +275,18 @@ fn emitir_stream_batch(
     total: usize,
 ) -> Result<String, String> {
     let (tx, rx) = std::sync::mpsc::channel::<ArchivoResultado>();
-    procesar_archivos(archivos, mapeo, db_path, &tx);
-    drop(tx);
+
+    // `procesar_archivos` es CPU-bound pesado (SQLite + parseo por archivo).
+    // Si corriese aquí, ningún `progress` saldría hasta terminar TODA la
+    // carpeta (12000 tickets = muchos minutos en 0%). En su propio hilo el
+    // loop de abajo va emitiendo resultados conforme se procesan.
+    let archivos_owned: Vec<String> = archivos.to_vec();
+    let mapeo_owned = mapeo.clone();
+    let db_owned = db_path.to_string();
+    let _worker = std::thread::spawn(move || {
+        procesar_archivos(&archivos_owned, &mapeo_owned, &db_owned, &tx);
+        drop(tx);
+    });
 
     let mut procesados = 0usize;
     let mut exitosos = 0usize;

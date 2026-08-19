@@ -54,6 +54,7 @@ const BatchProcessor = ({ onVolver, initialFolder }: BatchProcessorProps) => {
   const [isVinculando, setIsVinculando] = useState(false);
   const [dbPath, setDbPath] = useState("");
   const unlistenRef = useRef<(() => void) | null>(null);
+  const completeRef = useRef(false);
 
   useEffect(() => {
     if (initialFolder) {
@@ -112,6 +113,7 @@ const BatchProcessor = ({ onVolver, initialFolder }: BatchProcessorProps) => {
     setProgress(null);
     setIsComplete(false);
     setError("");
+    completeRef.current = false;
 
     try {
       const unlisten = await listen<ProgressData>("batch-progress", (event) => {
@@ -119,8 +121,13 @@ const BatchProcessor = ({ onVolver, initialFolder }: BatchProcessorProps) => {
         setProgress(data);
 
         if (data.type === "complete") {
+          completeRef.current = true;
           setIsComplete(true);
           setIsProcessing(false);
+          if (unlistenRef.current) {
+            unlistenRef.current();
+            unlistenRef.current = null;
+          }
         }
       });
       unlistenRef.current = unlisten;
@@ -131,8 +138,22 @@ const BatchProcessor = ({ onVolver, initialFolder }: BatchProcessorProps) => {
         dbPath: dbPath,
       });
 
-      unlisten();
-      unlistenRef.current = null;
+      // El worker terminó. El `complete` se emitió justo antes del retorno del
+      // comando, así que `invoke` pudo resolver ANTES de que el evento llegara
+      // al frontend (no hay orden garantizado entre ambos canales IPC) y el
+      // listener se cerraría sin haberlo visto. Se da un margen; si aún así no
+      // llega, se fuerza el cierre (el worker ya terminó de todas formas).
+      if (!completeRef.current) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+        if (!completeRef.current) {
+          setIsComplete(true);
+          setIsProcessing(false);
+          if (unlistenRef.current) {
+            unlistenRef.current();
+            unlistenRef.current = null;
+          }
+        }
+      }
     } catch (err: any) {
       setError(err.message || err || "Error desconocido");
       setIsProcessing(false);
