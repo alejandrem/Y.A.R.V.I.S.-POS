@@ -35,5 +35,9 @@ serde_json = "1"
 sha2 = "0.10"
 # Fechas y tiempo para módulo Finanzas
 chrono = { version = "0.4", features = ["serde"] }
+# Google OAuth (login con Google, PKCE + loopback)
+base64 = "0.22"
+url = "2"
+reqwest = { version = "0.12", features = ["json"] }
 # Núcleo de IA migrado a Rust (strangler fig): parseador, catálogos y vinculador
 src-ia = { path = "../../src-ia", features = ["llm-local"] }

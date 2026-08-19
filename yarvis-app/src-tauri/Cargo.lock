@@ -6376,9 +6376,11 @@ name = "yarvis-app"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "base64 0.22.1",
  "chrono",
  "futures-util",
  "rand",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2",
@@ -6389,6 +6391,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tokio",
+ "url",
 ]
 
 [[package]]

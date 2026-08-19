@@ -28,6 +28,7 @@ pub fn run() {
             backventanas::backadmin::adminconfig::auth::update_admin_data,
             backventanas::backadmin::adminconfig::auth::guardar_empleado,
             backventanas::backadmin::adminconfig::auth::validar_login_empleado,
+            backventanas::backadmin::adminconfig::google::login_con_google,
             // Inventario
             backventanas::backadmin::admininventory::inventory::get_inventory,
             backventanas::backadmin::admininventory::inventory::add_inventory_item,

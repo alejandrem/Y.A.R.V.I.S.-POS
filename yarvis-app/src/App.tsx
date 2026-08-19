@@ -1,10 +1,39 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MorphIcon } from "morphicons/react";
+import type { IconInput } from "morphicons/react";
 import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
 import { ParserProvider } from "./hooks/ParserContext";
 import "./App.css";
+
+const ICONOS_LOGO: IconInput[] = [
+  "m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10",
+  "M9 10h.01M15 10h.01M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z",
+  "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z M9 10h.01M15 10h.01 M9.5 15a3.5 3.5 0 0 0 5 0",
+  "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z",
+  "M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z",
+  "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
+  "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z",
+  "M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zM5 20h14",
+];
+
+function LogoMorphing() {
+  const [idx, setIdx] = useState(0);
+  const [paso, setPaso] = useState(0);
+
+  useEffect(() => {
+    const retardo = paso < 10 ? Math.min(120 * Math.pow(1.4, paso), 1000) : 1000;
+    const t = setTimeout(() => {
+      setIdx((i) => (i + 1) % ICONOS_LOGO.length);
+      setPaso((p) => p + 1);
+    }, retardo);
+    return () => clearTimeout(t);
+  }, [paso]);
+
+  return <MorphIcon icon={ICONOS_LOGO[idx]} size={32} strokeWidth={1.8} className="text-neutral-400" />;
+}
 
 function App() {
   // 0 = Registro Inicial, 1 = Login, 2 = Dashboard Administrador, 3 = Dashboard Empleado
@@ -188,7 +217,7 @@ function App() {
           </header>
 
           <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl shadow-neutral-200 border border-neutral-100 mb-8">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
+            <LogoMorphing />
           </div>
 
           <p className="text-neutral-500 font-medium text-lg leading-relaxed mb-6">Nos emociona acompañarte en el crecimiento de tu negocio.</p>
