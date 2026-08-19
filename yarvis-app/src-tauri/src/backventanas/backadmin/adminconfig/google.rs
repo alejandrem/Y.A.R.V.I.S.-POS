@@ -68,7 +68,7 @@ pub async fn login_con_google(app: tauri::AppHandle) -> Result<PerfilGoogle, Str
         .local_addr()
         .map_err(|e| format!("Puerto inválido: {e}"))?
         .port();
-    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+    let redirect_uri = format!("http://localhost:{port}/callback");
 
     let mut url = url::Url::parse(AUTH_URL).map_err(|e| e.to_string())?;
     {

@@ -19,6 +19,24 @@ const ICONOS_LOGO: IconInput[] = [
   "M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zM5 20h14",
 ];
 
+const ESCUDO: IconInput = "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10";
+const CORONA: IconInput = "M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zM5 20h14";
+
+const PERSONA_PLUS: IconInput =
+  "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M19 8v6 M22 11h-6";
+const ESPADA: IconInput =
+  "M14.5 17.5 3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2";
+const FLECHA: IconInput = "M5 12h14 M12 5l7 7-7 7";
+const CHECK: IconInput = "M20 6 9 17l-5-5";
+
+const INVERTIR = "translate(24,0) scale(-1,1)";
+const OJO_INVERTIDO: IconInput = [
+  ["path", { d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0 m15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0", transform: INVERTIR }],
+];
+const OJO_OCULTO_INVERTIDO: IconInput = [
+  ["path", { d: "M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20", transform: INVERTIR }],
+];
+
 function LogoMorphing() {
   const [idx, setIdx] = useState(0);
   const [paso, setPaso] = useState(0);
@@ -64,6 +82,8 @@ function App() {
   const [employeeLoginPass, setEmployeeLoginPass] = useState("");
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [showEmployeeLoginPass, setShowEmployeeLoginPass] = useState(false);
+  const [hoverLoginCheck, setHoverLoginCheck] = useState(false);
+  const [hoverEmployeeCheck, setHoverEmployeeCheck] = useState(false);
 
   // Al cargar la app, checar si ya se hizo el registro inicial
   useEffect(() => {
@@ -261,7 +281,9 @@ function App() {
                         <p className={`text-[9px] font-black tracking-widest uppercase mb-1 ${selectedRole === 'admin' ? 'text-neutral-500' : 'text-neutral-400'}`}>Perfil Maestro</p>
                         <p className={`text-base font-bold ${selectedRole === 'admin' ? 'text-white' : 'text-neutral-900'}`}>ADMINISTRADOR</p>
                       </div>
-                      <div className={`${selectedRole === 'admin' ? 'text-white' : 'text-neutral-300'}`}><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" /></svg></div>
+                      <div className={`${selectedRole === 'admin' ? 'text-white' : 'text-neutral-300'}`}>
+                        <MorphIcon icon={selectedRole === 'admin' ? CORONA : ESCUDO} size={20} strokeWidth={2.2} />
+                      </div>
                     </div>
                   </button>
 
@@ -271,12 +293,14 @@ function App() {
                         <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">Contraseña</label>
                         <div className="relative">
                           <input type={showLoginPass ? "text" : "password"} value={loginPass} onChange={(e) => setLoginPass(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLoginAdmin()} placeholder="••••••••" className="w-full px-4 py-2 pr-10 rounded-xl bg-neutral-50 border border-neutral-100 text-sm focus:outline-none focus:border-neutral-900" />
-                          <button onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-300 hover:text-neutral-500 transition-colors">
-                            {showLoginPass ? "👁️" : "🙈"}
+                          <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} aria-label={showLoginPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-300 hover:text-neutral-500 transition-colors">
+                            <MorphIcon icon={showLoginPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
                           </button>
                         </div>
                       </div>
-                      <button onClick={handleLoginAdmin} className="w-full py-3 rounded-xl bg-neutral-900 text-white text-[10px] font-black tracking-[0.2em] hover:bg-neutral-800 transition-all uppercase shadow-lg shadow-neutral-200">ENTRAR AL POS →</button>
+                      <button onClick={handleLoginAdmin} onMouseEnter={() => setHoverLoginCheck(true)} onMouseLeave={() => setHoverLoginCheck(false)} className="w-full py-3 rounded-xl bg-neutral-900 text-white text-[10px] font-black tracking-[0.2em] hover:bg-neutral-800 transition-all uppercase shadow-lg shadow-neutral-200 inline-flex items-center justify-center gap-2">ENTRAR AL POS
+                        <MorphIcon icon={hoverLoginCheck ? CHECK : FLECHA} size={18} strokeWidth={2.5} />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -288,7 +312,9 @@ function App() {
                       <p className={`text-[9px] font-black tracking-widest uppercase mb-1 ${selectedRole === 'employee' ? 'text-neutral-500' : 'text-neutral-400'}`}>Acceso Operativo</p>
                       <p className={`text-base font-bold ${selectedRole === 'employee' ? 'text-white' : 'text-neutral-900'}`}>EMPLEADO</p>
                     </div>
-                    <div className={selectedRole === 'employee' ? 'text-white' : 'text-neutral-300'}><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></div>
+                    <div className={selectedRole === 'employee' ? 'text-white' : 'text-neutral-300'}>
+                        <MorphIcon icon={selectedRole === 'employee' ? ESPADA : PERSONA_PLUS} size={20} strokeWidth={2.2} />
+                      </div>
                   </button>
 
                   {selectedRole === 'employee' && (
@@ -304,12 +330,14 @@ function App() {
                             placeholder="••••"
                             className="w-full px-4 py-2 pr-10 rounded-xl bg-neutral-50 border border-neutral-100 text-sm focus:outline-none focus:border-neutral-900"
                           />
-                          <button onClick={() => setShowEmployeeLoginPass(!showEmployeeLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-300 hover:text-neutral-500 transition-colors">
-                            {showEmployeeLoginPass ? "👁️" : "🙈"}
+                          <button type="button" onClick={() => setShowEmployeeLoginPass(!showEmployeeLoginPass)} aria-label={showEmployeeLoginPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-300 hover:text-neutral-500 transition-colors">
+                            <MorphIcon icon={showEmployeeLoginPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
                           </button>
                         </div>
                       </div>
-                      <button onClick={handleLoginEmployee} className="w-full py-3 rounded-xl bg-neutral-900 text-white text-[10px] font-black tracking-[0.2em] hover:bg-neutral-800 transition-all uppercase shadow-lg shadow-neutral-200">ENTRAR AL POS →</button>
+                      <button onClick={handleLoginEmployee} onMouseEnter={() => setHoverEmployeeCheck(true)} onMouseLeave={() => setHoverEmployeeCheck(false)} className="w-full py-3 rounded-xl bg-neutral-900 text-white text-[10px] font-black tracking-[0.2em] hover:bg-neutral-800 transition-all uppercase shadow-lg shadow-neutral-200 inline-flex items-center justify-center gap-2">ENTRAR AL POS
+                        <MorphIcon icon={hoverEmployeeCheck ? CHECK : FLECHA} size={18} strokeWidth={2.5} />
+                      </button>
                     </div>
                   )}
                 </div>

@@ -101,6 +101,7 @@ const PrimerInicio = ({
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showNewEmpConfirmPass, setShowNewEmpConfirmPass] = useState(false);
   const [hoverEmpleado, setHoverEmpleado] = useState(false);
 
   const handleLoginGoogle = async () => {
@@ -141,7 +142,7 @@ const PrimerInicio = ({
               <MorphIcon icon={ICONO_CANDADO} size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <input type={showNewEmpPass ? "text" : "password"} value={newEmployeePass} onChange={(e) => setNewEmployeePass(e.target.value)} className={`${INPUT_CLS} pr-10`} />
               <button type="button" onClick={() => setShowNewEmpPass(!showNewEmpPass)} aria-label={showNewEmpPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors">
-                <MorphIcon icon={showNewEmpPass ? OJO_OCULTO : OJO} size={18} strokeWidth={1.8} />
+                <MorphIcon icon={showNewEmpPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
               </button>
             </div>
           </div>
@@ -149,13 +150,16 @@ const PrimerInicio = ({
             <label className={LABEL_CLS}>Confirmar contraseña</label>
             <div className="relative">
               <MorphIcon icon={ICONO_CANDADO} size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-              <input type="password" value={newEmployeeConfirmPass} onChange={(e) => setNewEmployeeConfirmPass(e.target.value)} className={INPUT_CLS} />
+              <input type={showNewEmpConfirmPass ? "text" : "password"} value={newEmployeeConfirmPass} onChange={(e) => setNewEmployeeConfirmPass(e.target.value)} className={`${INPUT_CLS} pr-10`} />
+              <button type="button" onClick={() => setShowNewEmpConfirmPass(!showNewEmpConfirmPass)} aria-label={showNewEmpConfirmPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors">
+                <MorphIcon icon={showNewEmpConfirmPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
+              </button>
             </div>
           </div>
 
           <div className="pt-2 space-y-3">
             <button type="button" onClick={handleSaveEmployee} className="w-full py-3.5 rounded-xl bg-neutral-900 text-white text-xs font-black uppercase tracking-[0.2em] hover:bg-neutral-800 hover:shadow-lg transition-all shadow-md">Guardar Usuario</button>
-            <button type="button" onClick={() => setShowAddEmployeeForm(false)} className="w-full py-2.5 text-[10px] font-bold text-neutral-400 uppercase tracking-widest hover:text-neutral-600 transition-colors">Cancelar</button>
+            <button type="button" onClick={() => setShowAddEmployeeForm(false)} className="w-full py-2.5 rounded-xl border border-dashed border-neutral-300 text-[10px] font-bold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 hover:bg-neutral-50 transition-all uppercase tracking-widest">Cancelar</button>
           </div>
         </div>
       </div>
@@ -164,9 +168,10 @@ const PrimerInicio = ({
 
   return (
     <div>
-      <header className="mb-7 text-center">
+<header className="mb-7 text-center">
         <p className="text-[10px] font-semibold tracking-[0.2em] text-neutral-400 uppercase mb-1">Primeros pasos</p>
-        <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight">INICIAR SESIÓN</h2>
+        <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight">Configuración de Acceso</h2>
+        <div className="h-0.5 w-8 bg-neutral-900 mx-auto mt-2 rounded-full" />
         <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mt-1">Introduce los datos iniciales</p>
       </header>
 
