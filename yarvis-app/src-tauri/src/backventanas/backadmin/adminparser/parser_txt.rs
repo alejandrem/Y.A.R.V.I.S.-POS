@@ -4,6 +4,8 @@
 // vía llama.cpp dentro del feature `llm-local` de `src-ia`.
 use std::fs;
 use std::path;
+use std::collections::HashMap;
+use rand::seq::SliceRandom;
 use super::utils::sanitize_path;
 use tauri::Emitter;
 use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};
@@ -167,6 +169,133 @@ pub async fn analizar_ticket_con_ia(auth: tauri::State<'_, AuthState>, texto: St
     })
     .await
     .map_err(|e| format!("Tarea de análisis abortada: {}", e))?
+}
+
+/// Analiza hasta cinco tickets elegidos al azar y obtiene un mapeo estable
+/// para procesar automáticamente el resto de la carpeta.
+///
+/// Esto es calibración de estructura, no fine-tuning del modelo GGUF: el
+/// modelo actual es de inferencia y no modifica sus pesos. Se vota entre los
+/// mapeos válidos para evitar que un ticket anómalo defina toda la importación.
+#[tauri::command]
+pub async fn analizar_muestras_carpeta(
+    app_handle: tauri::AppHandle,
+    auth: tauri::State<'_, AuthState>,
+    carpeta: String,
+) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
+
+    let mut archivos = src_ia::cerebro::parseador_masivo::obtener_archivos_txt(&carpeta);
+    if archivos.is_empty() {
+        return Err("No se encontraron archivos .txt en la carpeta".to_string());
+    }
+
+    archivos.shuffle(&mut rand::thread_rng());
+    archivos.truncate(5);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let total = archivos.len();
+        let mut votos: HashMap<String, (serde_json::Value, usize)> = HashMap::new();
+        let mut exitosos = 0usize;
+        let mut muestras = Vec::with_capacity(total);
+
+        for (indice, archivo) in archivos.iter().enumerate() {
+            let nombre = path::Path::new(archivo)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(archivo)
+                .to_string();
+
+            let resultado = match fs::read(archivo) {
+                Ok(bytes) => {
+                    let texto = String::from_utf8_lossy(&bytes);
+                    src_ia::rutas::analizar_ticket(&texto)
+                }
+                Err(error) => serde_json::json!({
+                    "status": "error",
+                    "error": format!("No se pudo leer el archivo: {error}")
+                }),
+            };
+
+            if let Some(mapeo) = normalizar_mapeo_analisis(&resultado) {
+                let clave = serde_json::to_string(&mapeo)
+                    .map_err(|e| format!("No se pudo serializar el mapeo: {e}"))?;
+                let entrada = votos.entry(clave).or_insert_with(|| (mapeo.clone(), 0));
+                entrada.1 += 1;
+                exitosos += 1;
+                muestras.push(serde_json::json!({
+                    "archivo": nombre,
+                    "estado": "ok"
+                }));
+                let _ = app_handle.emit("parser-training-progress", serde_json::json!({
+                    "indice": indice + 1,
+                    "total": total,
+                    "archivo": muestras.last().and_then(|m| m.get("archivo")).and_then(|v| v.as_str()).unwrap_or("ticket"),
+                    "estado": "ok",
+                    "mensaje": format!("Ticket {} de {} analizado", indice + 1, total)
+                }));
+            } else {
+                let error = resultado
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("El modelo no devolvió un mapeo válido");
+                muestras.push(serde_json::json!({
+                    "archivo": nombre,
+                    "estado": "error",
+                    "error": error
+                }));
+                let _ = app_handle.emit("parser-training-progress", serde_json::json!({
+                    "indice": indice + 1,
+                    "total": total,
+                    "archivo": muestras.last().and_then(|m| m.get("archivo")).and_then(|v| v.as_str()).unwrap_or("ticket"),
+                    "estado": "error",
+                    "mensaje": format!("Ticket {} de {} necesita revisión", indice + 1, total)
+                }));
+            }
+        }
+
+        let (_, (mapeo, votos_ganadores)) = votos
+            .into_iter()
+            .max_by_key(|(_, (_, cantidad))| *cantidad)
+            .ok_or_else(|| "Ninguno de los tickets de muestra produjo un mapeo válido".to_string())?;
+
+        Ok(serde_json::json!({
+            "status": "ok",
+            "mapeo": mapeo,
+            "muestras": muestras,
+            "analizados": exitosos,
+            "total_muestras": total,
+            "votos_ganadores": votos_ganadores
+        }))
+    })
+    .await
+    .map_err(|e| format!("Error en la calibración de tickets: {e}"))?
+}
+
+fn normalizar_mapeo_analisis(resultado: &serde_json::Value) -> Option<serde_json::Value> {
+    let columnas = resultado.get("mapeo")?.get("columnas")?;
+    let cantidad = columnas.get("cantidad")?.as_i64()? as i32;
+    let precio_unitario = columnas.get("precio_unitario")?.as_i64()? as i32;
+    let total = columnas.get("total")?.as_i64()? as i32;
+    let producto = match columnas.get("producto")? {
+        serde_json::Value::Array(valores) => valores
+            .iter()
+            .filter_map(|valor| valor.as_i64().map(|v| v as i32))
+            .collect::<Vec<_>>(),
+        valor => vec![valor.as_i64()? as i32],
+    };
+
+    if producto.is_empty() {
+        return None;
+    }
+
+    Some(serde_json::json!({
+        "cantidad": cantidad,
+        "producto": producto,
+        "precio_unitario": precio_unitario,
+        "total": total,
+        "descuento": columnas.get("descuento").and_then(|v| v.as_i64()).map(|v| v as i32)
+    }))
 }
 
 // ============================================================

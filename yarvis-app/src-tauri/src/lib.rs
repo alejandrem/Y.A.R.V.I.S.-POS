@@ -49,6 +49,7 @@ pub fn run() {
             backventanas::backadmin::adminparser::parsear_excel,
             backventanas::backadmin::adminparser::analizar_ticket_llm,
             backventanas::backadmin::adminparser::analizar_ticket_con_ia,
+            backventanas::backadmin::adminparser::analizar_muestras_carpeta,
             backventanas::backadmin::adminparser::parsear_con_mapeo,
             backventanas::backadmin::adminparser::parsear_carpeta,
             backventanas::backadmin::adminparser::parsear_carpeta_stream,

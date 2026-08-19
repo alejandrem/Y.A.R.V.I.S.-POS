@@ -1,15 +1,12 @@
 // Ventana de Configuración del Administrador.
 // Coordina la identidad de la tienda (FormularioIdentidad), la seguridad del
-// admin (FormularioSeguridad), la apariencia/tema (FormularioApariencia) y el
-// Módulo de Importación Inteligente de tickets (ModuloImportacion).
-// Usa useDatosAdmin para cargar/guardar los datos y useAccionesParser para el parseo.
+// admin (FormularioSeguridad) y la apariencia/tema (FormularioApariencia).
+// El parseador de tickets vive en su propia ventana del panel administrativo.
 import { useDatosAdmin } from "./hooks/useDatosAdmin";
-import { useAccionesParser } from "./hooks/useAccionesParser";
 import EncabezadoConfiguracion from "./components/EncabezadoConfiguracion";
 import FormularioIdentidad from "./components/FormularioIdentidad";
 import FormularioSeguridad from "./components/FormularioSeguridad";
 import FormularioApariencia from "./components/FormularioApariencia";
-import ModuloImportacion from "./components/importarmodulo/ModuloImportacion";
 
 interface ConfiguracionProps {
   adminName: string;
@@ -43,19 +40,6 @@ const Configuracion = ({
     handleSaveIdentity,
   } = useDatosAdmin(adminName, storeName, initialLocation, initialCp);
 
-  const {
-    isAnalyzing,
-    showBatchProcessor,
-    setShowBatchProcessor,
-    isSyncing,
-    syncResult,
-    handleFileSelect,
-    handleGuardarTicket,
-    handleTrainIA,
-    handleSyncEmbeddings,
-    handleChangeMode,
-  } = useAccionesParser();
-
   return (
     <div className="flex-1 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
       <EncabezadoConfiguracion successMessage={successMessage} />
@@ -85,19 +69,6 @@ const Configuracion = ({
           <FormularioApariencia />
         </div>
       </div>
-
-      <ModuloImportacion
-        isAnalyzing={isAnalyzing}
-        isSyncing={isSyncing}
-        syncResult={syncResult}
-        showBatchProcessor={showBatchProcessor}
-        setShowBatchProcessor={setShowBatchProcessor}
-        onFileSelect={handleFileSelect}
-        onGuardarTicket={handleGuardarTicket}
-        onTrainIA={handleTrainIA}
-        onSyncEmbeddings={handleSyncEmbeddings}
-        onChangeMode={handleChangeMode}
-      />
     </div>
   );
 };

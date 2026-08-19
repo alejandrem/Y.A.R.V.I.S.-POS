@@ -5,7 +5,6 @@ import type { IconInput } from "morphicons/react";
 import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
-import { ParserProvider } from "./hooks/ParserContext";
 import "./App.css";
 
 const ICONOS_LOGO: IconInput[] = [
@@ -22,10 +21,8 @@ const ICONOS_LOGO: IconInput[] = [
 const ESCUDO: IconInput = "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10";
 const CORONA: IconInput = "M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zM5 20h14";
 
-const PERSONA_PLUS: IconInput =
-  "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M19 8v6 M22 11h-6";
-const ESPADA: IconInput =
-  "M14.5 17.5 3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2";
+const PERSONA_PLUS: IconInput = "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M19 8v6 M22 11h-6";
+const ESPADA: IconInput = "M14.5 17.5 3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2";
 const FLECHA: IconInput = "M5 12h14 M12 5l7 7-7 7";
 const CHECK: IconInput = "M20 6 9 17l-5-5";
 
@@ -212,18 +209,16 @@ function App() {
 
   if (step === 2) {
     return (
-      <ParserProvider>
-        <AdminDashboard
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          onLogout={handleLogout}
-          adminName={adminName}
-          storeName={storeName}
-          adminPass={password}
-          initialLocation={adminLocation}
-          initialCp={adminCp}
-        />
-      </ParserProvider>
+      <AdminDashboard
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onLogout={handleLogout}
+        adminName={adminName}
+        storeName={storeName}
+        adminPass={password}
+        initialLocation={adminLocation}
+        initialCp={adminCp}
+      />
     );
   }
 
@@ -325,8 +320,8 @@ function App() {
                       <p className={`text-base font-bold ${selectedRole === 'employee' ? 'text-white' : 'text-neutral-900'}`}>EMPLEADO</p>
                     </div>
                     <div className={selectedRole === 'employee' ? 'text-white' : 'text-neutral-300'}>
-                        <MorphIcon icon={selectedRole === 'employee' ? ESPADA : PERSONA_PLUS} size={20} strokeWidth={2.2} />
-                      </div>
+                      <MorphIcon icon={selectedRole === 'employee' ? ESPADA : PERSONA_PLUS} size={20} strokeWidth={2.2} />
+                    </div>
                   </button>
 
                   {selectedRole === 'employee' && (
