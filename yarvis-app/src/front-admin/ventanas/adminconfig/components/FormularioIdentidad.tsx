@@ -1,6 +1,8 @@
 // Formulario para consultar y modificar los datos básicos de la tienda y del administrador
 //  (nombre del negocio, nombre del admin, ubicación, código postal).
 
+import React from "react";
+
 interface IdentityFormProps {
   currentAdminName: string;
   setCurrentAdminName: (v: string) => void;
@@ -13,7 +15,7 @@ interface IdentityFormProps {
   onSave: () => void;
 }
 
-const IdentityForm = ({
+const IdentityForm = React.memo(({
   currentAdminName,
   setCurrentAdminName,
   currentStoreName,
@@ -82,6 +84,8 @@ const IdentityForm = ({
       </div>
     </div>
   );
-};
+});
+
+IdentityForm.displayName = "IdentityForm";
 
 export default IdentityForm;

@@ -1,6 +1,6 @@
 // Hook personalizado que maneja toda la lógica compleja de análisis e importación de tickets 
 // (interacción con la IA local/cloud, parseo de texto y sincronización con la BD).
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useParserContext } from "../../../../hooks/ParserContext";
@@ -27,15 +27,15 @@ export function useAccionesParser() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState("");
 
-  const resetParserUI = () => {
+  const resetParserUI = useCallback(() => {
     setParsedItems([]);
     setSelectedPath("");
     setFileContent("");
     setLlmAnalysis(null);
     setShowColumnMapper(false);
-  };
+  }, [setParsedItems, setSelectedPath, setFileContent, setLlmAnalysis, setShowColumnMapper]);
 
-  const handleFileSelect = async () => {
+  const handleFileSelect = useCallback(async () => {
     try {
       const selected = await open({
         multiple: false,
@@ -93,9 +93,9 @@ export function useAccionesParser() {
       console.error("Error en la selección:", error);
       setIsAnalyzing(false);
     }
-  };
+  }, [parserMode, setSelectedPath, setLlmAnalysis, setParsedItems, setFileContent, setShowColumnMapper, setLastCatalogPath, setLastCatalogItems]);
 
-  const handleGuardarTicket = async (items: any[], _analysis: any) => {
+  const handleGuardarTicket = useCallback(async (items: any[], _analysis: any) => {
     if (!items || items.length === 0) return;
 
     try {
@@ -118,9 +118,9 @@ export function useAccionesParser() {
       console.error("Error al guardar ticket:", error);
       alert("Fallo al guardar el ticket.");
     }
-  };
+  }, [parserMode, setIaTrained, setTicketsParsed, setTicketsCount, setTicketsGuardados, resetParserUI]);
 
-  const handleTrainIA = async () => {
+  const handleTrainIA = useCallback(async () => {
     if (!parsedItems || parsedItems.length === 0) return;
 
     try {
@@ -143,7 +143,7 @@ export function useAccionesParser() {
           nombre: item.nombre || item.producto || "",
           descripcion: null,
           precio_costo: item.precio_costo || 0,
-          precio_venta: item.precio_venta || item.precio_venta || 0,
+          precio_venta: item.precio_venta || 0, // <-- Corrección: redundancia eliminada
           stock: item.stock || 0,
           vendido: 0,
           stock_minimo: 5,
@@ -174,9 +174,9 @@ export function useAccionesParser() {
         alert("Fallo al importar los datos a la base de datos.");
       }
     }
-  };
+  }, [parsedItems, parserMode, llmAnalysis, setIaTrained, setTicketsParsed, setTicketsCount, setTicketsGuardados, selectedPath, fileContent, setCatalogParsed, setLastCatalogPath, setLastCatalogItems, resetParserUI]);
 
-  const handleSyncEmbeddings = async () => {
+  const handleSyncEmbeddings = useCallback(async () => {
     setIsSyncing(true);
     setSyncResult("");
     try {
@@ -198,9 +198,9 @@ export function useAccionesParser() {
     } finally {
       setIsSyncing(false);
     }
-  };
+  }, []);
 
-  const handleChangeMode = (m: "catalogo" | "entrenar IA" | "insertar") => {
+  const handleChangeMode = useCallback((m: "catalogo" | "entrenar IA" | "insertar") => {
     if (parserMode === 'catalogo' && parsedItems.length > 0) {
       setLastCatalogPath(selectedPath);
       setLastCatalogItems(parsedItems);
@@ -211,11 +211,12 @@ export function useAccionesParser() {
     setParsedItems([]);
     setLlmAnalysis(null);
     setShowColumnMapper(false);
+    
     if (m === 'catalogo' && lastCatalogItems.length > 0) {
       setSelectedPath(lastCatalogPath);
       setParsedItems(lastCatalogItems);
     }
-  };
+  }, [parserMode, parsedItems, selectedPath, setLastCatalogPath, setLastCatalogItems, setParserMode, setSelectedPath, setFileContent, setParsedItems, setLlmAnalysis, setShowColumnMapper, lastCatalogItems, lastCatalogPath]);
 
   return {
     isAnalyzing,

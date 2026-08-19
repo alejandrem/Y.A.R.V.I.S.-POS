@@ -1,5 +1,6 @@
 // Renderiza la botonera del módulo de importación: permite seleccionar un archivo 
 // (TXT/CSV), pedirle a la IA que lo analice, limpiar la vista y guardar los datos.
+import React from "react";
 import { useParserContext } from "../../../../../hooks/ParserContext";
 
 interface ImportActionsProps {
@@ -10,7 +11,7 @@ interface ImportActionsProps {
   onTrainIA: () => void;
 }
 
-const ImportActions = ({
+const ImportActions = React.memo(({
   isAnalyzing,
   isSyncing,
   syncResult,
@@ -57,6 +58,8 @@ const ImportActions = ({
       )}
     </>
   );
-};
+});
+
+ImportActions.displayName = "ImportActions";
 
 export default ImportActions;
