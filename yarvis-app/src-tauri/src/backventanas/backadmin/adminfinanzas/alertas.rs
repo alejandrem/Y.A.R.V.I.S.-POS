@@ -3,6 +3,7 @@ use chrono::Duration;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
 use sqlx::Row;
 use chrono::Datelike;
+use crate::backventanas::auth::AuthState;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -11,7 +12,8 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 }
 
 #[tauri::command]
-pub async fn get_alertas(state: tauri::State<'_, SqlitePool>, solo_no_leidas: bool) -> Result<Vec<AlertaFinanciera>, String> {
+pub async fn get_alertas(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, solo_no_leidas: bool) -> Result<Vec<AlertaFinanciera>, String> {
+    auth.require_admin()?;
     let mut query = String::from("SELECT * FROM alertas_financieras WHERE 1=1");
     if solo_no_leidas {
         query.push_str(" AND leida = 0");
@@ -41,7 +43,8 @@ pub async fn get_alertas(state: tauri::State<'_, SqlitePool>, solo_no_leidas: bo
 }
 
 #[tauri::command]
-pub async fn marcar_alerta_leida(state: tauri::State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn marcar_alerta_leida(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, id: i64) -> Result<(), String> {
+    auth.require_admin()?;
     sqlx::query("UPDATE alertas_financieras SET leida = 1 WHERE id = ?")
         .bind(id)
         .execute(&*state)
@@ -51,7 +54,8 @@ pub async fn marcar_alerta_leida(state: tauri::State<'_, SqlitePool>, id: i64) -
 }
 
 #[tauri::command]
-pub async fn generar_alertas_automaticas(state: tauri::State<'_, SqlitePool>) -> Result<Vec<AlertaFinanciera>, String> {
+pub async fn generar_alertas_automaticas(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<AlertaFinanciera>, String> {
+    auth.require_admin()?;
     generar_alertas_automaticas_impl(&*state).await
 }
 

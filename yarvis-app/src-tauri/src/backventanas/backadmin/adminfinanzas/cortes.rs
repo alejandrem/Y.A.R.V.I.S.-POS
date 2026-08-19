@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
 use sqlx::Row;
 use serde::{Serialize, Deserialize};
+use crate::backventanas::auth::AuthState;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -10,7 +11,8 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 }
 
 #[tauri::command]
-pub async fn get_cortes_caja(state: tauri::State<'_, SqlitePool>, filtros: FiltrosCortes) -> Result<Vec<CorteCaja>, String> {
+pub async fn get_cortes_caja(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, filtros: FiltrosCortes) -> Result<Vec<CorteCaja>, String> {
+    auth.require_admin()?;
     let mut query = String::from(
         r#"SELECT c.*, u.nombre as usuario_nombre 
            FROM cortes_caja c
@@ -75,7 +77,8 @@ pub async fn get_cortes_caja(state: tauri::State<'_, SqlitePool>, filtros: Filtr
 }
 
 #[tauri::command]
-pub async fn get_corte_detalle(state: tauri::State<'_, SqlitePool>, corte_id: i64) -> Result<CorteDetalle, String> {
+pub async fn get_corte_detalle(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, corte_id: i64) -> Result<CorteDetalle, String> {
+    auth.require_admin()?;
     let corte_row = sqlx::query(
         r#"SELECT c.*, u.nombre as usuario_nombre 
            FROM cortes_caja c
@@ -110,7 +113,7 @@ pub async fn get_corte_detalle(state: tauri::State<'_, SqlitePool>, corte_id: i6
         None => return Err("Corte no encontrado".into()),
     };
 
-    let movimientos = get_movimientos_corte(state.clone(), corte_id).await?;
+    let movimientos = get_movimientos_corte(state.clone(), auth, corte_id).await?;
 
     let ventas_por_metodo = sqlx::query(
         "SELECT metodo_pago, COALESCE(SUM(total), 0) as total, COUNT(*) as count 
@@ -143,9 +146,10 @@ pub struct CorteDetalle {
 #[tauri::command]
 pub async fn crear_corte_x(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     datos: CrearCorteRequest,
 ) -> Result<i64, String> {
-    let usuario_id = 1; // TODO: obtener del usuario autenticado
+    let usuario_id = auth.require_admin()?.user_id;
     
     let result = sqlx::query(
         r#"INSERT INTO cortes_caja (monto_inicial, tipo_corte, turno, observaciones, usuario_id, estado)
@@ -165,9 +169,10 @@ pub async fn crear_corte_x(
 #[tauri::command]
 pub async fn crear_corte_z(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     datos: CrearCorteRequest,
 ) -> Result<i64, String> {
-    let usuario_id = 1; // TODO: obtener del usuario autenticado
+    let usuario_id = auth.require_admin()?.user_id;
     
     let result = sqlx::query(
         r#"INSERT INTO cortes_caja (monto_inicial, tipo_corte, turno, observaciones, usuario_id, estado)
@@ -187,6 +192,7 @@ pub async fn crear_corte_z(
 #[tauri::command]
 pub async fn cerrar_corte(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     corte_id: i64,
     total_ventas: f64,
     total_efectivo: f64,
@@ -195,6 +201,7 @@ pub async fn cerrar_corte(
     entradas_manuales: f64,
     retiros_manuales: f64,
 ) -> Result<(), String> {
+    auth.require_admin()?;
     let total_calculado = total_efectivo + total_tarjeta + total_transferencia + entradas_manuales - retiros_manuales;
     let diferencia = total_calculado - total_ventas;
 
@@ -229,8 +236,10 @@ pub async fn cerrar_corte(
 #[tauri::command]
 pub async fn agregar_movimiento_caja(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     mov: MovimientoCajaRequest,
 ) -> Result<i64, String> {
+    auth.require_admin()?;
     let result = sqlx::query(
         r#"INSERT INTO movimientos_caja (corte_id, tipo, concepto, monto, metodo_pago, referencia_id)
            VALUES (?, ?, ?, ?, ?, ?)"#
@@ -249,7 +258,8 @@ pub async fn agregar_movimiento_caja(
 }
 
 #[tauri::command]
-pub async fn get_movimientos_corte(state: tauri::State<'_, SqlitePool>, corte_id: i64) -> Result<Vec<MovimientoCaja>, String> {
+pub async fn get_movimientos_corte(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, corte_id: i64) -> Result<Vec<MovimientoCaja>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query_as::<_, (i64, i64, String, String, f64, Option<String>, Option<i64>, String)>(
         "SELECT id, corte_id, tipo, concepto, monto, metodo_pago, referencia_id, creado_en FROM movimientos_caja WHERE corte_id = ? ORDER BY creado_en ASC"
     )
@@ -273,10 +283,12 @@ pub async fn get_movimientos_corte(state: tauri::State<'_, SqlitePool>, corte_id
 #[tauri::command]
 pub async fn get_cortes_por_cajero_fecha(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     cajero_id: i64,
     fecha_inicio: String,
     fecha_fin: String,
 ) -> Result<Vec<CorteCaja>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query(
         r#"SELECT c.*, u.nombre as usuario_nombre 
            FROM cortes_caja c

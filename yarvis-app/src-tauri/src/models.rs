@@ -50,7 +50,6 @@ pub struct InventoryItem {
 pub struct AdminProfile {
     pub nombre: String,
     pub tienda: String,
-    pub password: String,
     pub ubicacion: Option<String>,
     pub cp: Option<String>,
 }

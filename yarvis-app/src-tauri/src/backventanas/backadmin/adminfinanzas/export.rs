@@ -1,4 +1,5 @@
 use sqlx::SqlitePool;
+use crate::backventanas::auth::AuthState;
 
 // ============================================================================
 // EXPORTACIÓN DE REPORTES FINANCIEROS
@@ -17,9 +18,11 @@ use sqlx::SqlitePool;
 #[tauri::command]
 pub async fn exportar_balance_pdf(
     _state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     _fecha_inicio: String,
     _fecha_fin: String,
 ) -> Result<Vec<u8>, String> {
+    auth.require_admin()?;
     // TODO: Implementar con printpdf
     // Ejemplo estructura:
     // let (doc, page1, layer1) = PdfDocument::new("Balance General", Mm(210.0), Mm(297.0), "Layer 1");
@@ -37,9 +40,11 @@ pub async fn exportar_balance_pdf(
 #[tauri::command]
 pub async fn exportar_gastos_csv(
     _state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     _fecha_inicio: String,
     _fecha_fin: String,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     // TODO: Implementar
     // let mut wtr = csv::Writer::from_writer(vec![]);
     // wtr.write_record(&["Fecha", "Nombre", "Tipo", "Categoría", "Monto Proyectado", "Monto Real", "Frecuencia", "Estado", "Folio"])?;

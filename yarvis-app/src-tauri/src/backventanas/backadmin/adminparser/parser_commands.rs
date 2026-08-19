@@ -1,8 +1,10 @@
 use crate::backventanas::db::db::DbPath;
+use crate::backventanas::auth::AuthState;
 
 /// Retorna la ruta absoluta de la base de datos SQLite.
 #[tauri::command]
-pub fn get_db_path(db_path: tauri::State<'_, DbPath>) -> Result<String, String> {
+pub fn get_db_path(db_path: tauri::State<'_, DbPath>, auth: tauri::State<'_, AuthState>) -> Result<String, String> {
+    auth.require_admin()?;
     Ok(db_path.0.clone())
 }
 
@@ -12,10 +14,12 @@ pub fn get_db_path(db_path: tauri::State<'_, DbPath>) -> Result<String, String> 
 
 #[tauri::command]
 pub fn vincular_inventario(
+    auth: tauri::State<'_, AuthState>,
     productos: serde_json::Value,
     db_path: String,
     umbral: f64,
 ) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     let parseados = productos.as_array().cloned().unwrap_or_default();
     if parseados.is_empty() {
         return Err("No hay productos para vincular".to_string());
@@ -30,9 +34,11 @@ pub fn vincular_inventario(
 
 #[tauri::command]
 pub fn guardar_vinculacion(
+    auth: tauri::State<'_, AuthState>,
     vinculaciones: serde_json::Value,
     db_path: String,
 ) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     let vinculaciones = vinculaciones.as_array().cloned().unwrap_or_default();
 
     let actualizados =
@@ -42,7 +48,8 @@ pub fn guardar_vinculacion(
 }
 
 #[tauri::command]
-pub async fn descargar_modelos() -> Result<serde_json::Value, String> {
+pub async fn descargar_modelos(auth: tauri::State<'_, AuthState>) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     tauri::async_runtime::spawn_blocking(|| {
         let descargados = src_ia::rutas::descargar_modelos();
         let msg = format!("{descargados} modelo(s) descargado(s) de VRAM");

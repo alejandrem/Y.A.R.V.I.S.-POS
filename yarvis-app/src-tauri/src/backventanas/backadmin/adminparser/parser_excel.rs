@@ -1,10 +1,12 @@
 // Parser Excel en Rust (nativo).
 // El port vive en `src-ia::formatos::lector_excel` (calamine).
 use std::collections::BTreeSet;
+use crate::backventanas::auth::AuthState;
 
 /// Parsea catálogo Excel (.xlsx/.xls) - recibe bytes del archivo.
 #[tauri::command]
-pub fn parsear_excel(archivo: Vec<u8>) -> Result<serde_json::Value, String> {
+pub fn parsear_excel(auth: tauri::State<'_, AuthState>, archivo: Vec<u8>) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     let productos = src_ia::formatos::lector_excel::parsear_excel(&archivo)?;
     if productos.is_empty() {
         return Err("No se encontraron productos en el archivo Excel".to_string());

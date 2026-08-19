@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
 use sqlx::Row;
 use serde::{Deserialize, Serialize};
+use crate::backventanas::auth::AuthState;
 
 #[derive(Serialize, Deserialize)]
 pub struct EmpleadoProfile {
@@ -55,7 +56,8 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 }
 
 #[tauri::command]
-pub async fn get_empleados(state: tauri::State<'_, SqlitePool>) -> Result<Vec<EmpleadoProfile>, String> {
+pub async fn get_empleados(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<EmpleadoProfile>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query(
         "SELECT id, nombre, estado, turno, horario_inicio, horario_fin, salario_semanal, salario_diario, dias_semana, meta_mensual, bono, registrado_en, ultimo_login
          FROM usuarios WHERE rol = 'empleado' ORDER BY nombre ASC"
@@ -82,7 +84,8 @@ pub async fn get_empleados(state: tauri::State<'_, SqlitePool>) -> Result<Vec<Em
 }
 
 #[tauri::command]
-pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, empleado_id: i32) -> Result<EmpleadoVentas, String> {
+pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, empleado_id: i32) -> Result<EmpleadoVentas, String> {
+    auth.require_admin()?;
     let nombre_row = sqlx::query_as::<_, (String,)>("SELECT nombre FROM usuarios WHERE id = ?")
         .bind(empleado_id)
         .fetch_optional(&*state)
@@ -130,7 +133,8 @@ pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, empleado_i
 }
 
 #[tauri::command]
-pub async fn get_resumen_empleados(state: tauri::State<'_, SqlitePool>) -> Result<EmpleadoResumen, String> {
+pub async fn get_resumen_empleados(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<EmpleadoResumen, String> {
+    auth.require_admin()?;
     let activos = sqlx::query_as::<_, (i32,)>("SELECT COUNT(*) FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'")
         .fetch_one(&*state)
         .await
@@ -155,7 +159,8 @@ pub async fn get_resumen_empleados(state: tauri::State<'_, SqlitePool>) -> Resul
 }
 
 #[tauri::command]
-pub async fn get_cortes_empleado(state: tauri::State<'_, SqlitePool>, empleado_id: i32) -> Result<Vec<CorteEmpleado>, String> {
+pub async fn get_cortes_empleado(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, empleado_id: i32) -> Result<Vec<CorteEmpleado>, String> {
+    auth.require_admin()?;
     let nombre_row = sqlx::query_as::<_, (String,)>("SELECT nombre FROM usuarios WHERE id = ?")
         .bind(empleado_id)
         .fetch_optional(&*state)

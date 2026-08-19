@@ -17,6 +17,7 @@ pub fn run() {
             let (pool, db_path_str) = backventanas::db::db::initialize_db(app.handle());
             app.manage(pool);
             app.manage(backventanas::db::db::DbPath(db_path_str.clone()));
+            app.manage(backventanas::auth::AuthState::default());
             Ok(())
         })
 .invoke_handler(tauri::generate_handler![
@@ -28,6 +29,7 @@ pub fn run() {
             backventanas::backadmin::adminconfig::auth::update_admin_data,
             backventanas::backadmin::adminconfig::auth::guardar_empleado,
             backventanas::backadmin::adminconfig::auth::validar_login_empleado,
+            backventanas::backadmin::adminconfig::auth::cerrar_sesion,
             backventanas::backadmin::adminconfig::google::login_con_google,
             // Inventario
             backventanas::backadmin::admininventory::inventory::get_inventory,

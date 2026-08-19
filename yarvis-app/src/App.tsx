@@ -139,7 +139,8 @@ function App() {
         if (profile) {
           setAdminName(profile.nombre);
           setStoreName(profile.tienda);
-          setPassword(profile.password);
+          // Nunca se devuelve ni se conserva el hash de la contraseña en React.
+          setPassword("");
           setAdminLocation(profile.ubicacion || "");
           setAdminCp(profile.cp || "");
           setCurrentOperator(profile.nombre);
@@ -191,6 +192,20 @@ function App() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await invoke("cerrar_sesion");
+    } catch (error) {
+      console.error("Error al cerrar sesión nativa:", error);
+    } finally {
+      setStep(1);
+      setSelectedRole(null);
+      setCurrentOperator("");
+      setLoginPass("");
+      setEmployeeLoginPass("");
+    }
+  };
+
   if (step === null) return null;
 
   // --- RENDERING LOGIC ---
@@ -201,9 +216,7 @@ function App() {
         <AdminDashboard
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          setStep={setStep}
-          setSelectedRole={setSelectedRole}
-          setLoginPass={setLoginPass}
+          onLogout={handleLogout}
           adminName={adminName}
           storeName={storeName}
           adminPass={password}
@@ -219,8 +232,7 @@ function App() {
       <EmployeeDashboard
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        setStep={setStep}
-        setSelectedRole={setSelectedRole}
+        onLogout={handleLogout}
         operatorName={currentOperator}
       />
     );

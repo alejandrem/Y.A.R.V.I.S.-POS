@@ -1,4 +1,5 @@
 use sqlx::SqlitePool;
+use crate::backventanas::auth::AuthState;
 use sqlx::Row;
 
 #[derive(serde::Serialize)]
@@ -13,7 +14,9 @@ pub struct TurnoInfo {
 #[tauri::command]
 pub async fn get_turnos_empleados(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
 ) -> Result<Vec<TurnoInfo>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query(
         "SELECT id, nombre, turno, horario_inicio, horario_fin FROM usuarios WHERE rol = 'empleado' AND estado = 'activo' ORDER BY nombre ASC"
     )

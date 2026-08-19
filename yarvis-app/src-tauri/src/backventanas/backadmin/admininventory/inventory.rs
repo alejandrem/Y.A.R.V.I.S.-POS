@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 use sha2::{Sha256, Digest};
 use crate::models::InventoryItem;
 use crate::backventanas::db::db::DbPath;
+use crate::backventanas::auth::AuthState;
 
 /// Calcula SHA256 del contenido del catálogo
 fn calcular_hash_catalogo(contenido: &str) -> String {
@@ -65,7 +66,8 @@ pub struct CatalogoImportado {
 // ============================================================
 
 #[tauri::command]
-pub async fn get_inventory(state: tauri::State<'_, SqlitePool>) -> Result<Vec<InventoryItem>, String> {
+pub async fn get_inventory(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<InventoryItem>, String> {
+    auth.require_operator()?;
     let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, f64, f64, f64, f64, f64, Option<String>, Option<String>)>(
         "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos"
     )
@@ -92,8 +94,10 @@ pub async fn get_inventory(state: tauri::State<'_, SqlitePool>) -> Result<Vec<In
 #[tauri::command]
 pub async fn add_inventory_item(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     item: InventoryItem,
 ) -> Result<i32, String> {
+    auth.require_admin()?;
     let result = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .bind(&item.nombre)
         .bind(&item.descripcion)
@@ -115,8 +119,10 @@ pub async fn add_inventory_item(
 #[tauri::command]
 pub async fn update_inventory_item(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     item: InventoryItem,
 ) -> Result<(), String> {
+    auth.require_admin()?;
     if let Some(id) = item.id {
         sqlx::query("UPDATE productos SET nombre = ?, descripcion = ?, precio_costo = ?, precio_venta = ?, stock = ?, stock_minimo = ?, vendido = ?, codigo_barras = ?, categoria = ? WHERE id = ?")
             .bind(&item.nombre)
@@ -140,7 +146,8 @@ pub async fn update_inventory_item(
 }
 
 #[tauri::command]
-pub async fn delete_inventory_item(state: tauri::State<'_, SqlitePool>, id: i32) -> Result<(), String> {
+pub async fn delete_inventory_item(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, id: i32) -> Result<(), String> {
+    auth.require_admin()?;
     sqlx::query("DELETE FROM productos WHERE id = ?")
         .bind(id)
         .execute(&*state)
@@ -152,10 +159,12 @@ pub async fn delete_inventory_item(state: tauri::State<'_, SqlitePool>, id: i32)
 #[tauri::command]
 pub async fn importar_catalogo(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     items: Vec<InventoryItem>,
     ruta_archivo: Option<String>,
     contenido_archivo: Option<String>,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     // 1. Verificar si el catálogo ya fue importado (por hash)
     if let Some(ref contenido) = contenido_archivo {
         let hash = calcular_hash_catalogo(contenido);
@@ -227,10 +236,12 @@ pub async fn importar_catalogo(
 #[tauri::command]
 pub async fn buscar_producto_similar(
     _db_path_state: tauri::State<'_, DbPath>,
+    auth: tauri::State<'_, AuthState>,
     _query: String,
     _top_k: Option<u32>,
     _categoria: Option<String>,
 ) -> Result<Vec<crate::models::SimilarResult>, String> {
+    auth.require_operator()?;
     Err("Motor de IA no disponible: los embeddings aún no están implementados de forma nativa.".to_string())
 }
 
@@ -241,14 +252,18 @@ pub async fn buscar_producto_similar(
 #[tauri::command]
 pub async fn backfill_embeddings(
     _db_path_state: tauri::State<'_, DbPath>,
+    auth: tauri::State<'_, AuthState>,
 ) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     Err("Motor de IA no disponible: los embeddings aún no están implementados de forma nativa.".to_string())
 }
 
 #[tauri::command]
 pub async fn get_catalogos_importados(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
 ) -> Result<Vec<CatalogoImportado>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query_as::<_, (i64, String, String, String, i64)>(
         "SELECT id, hash, ruta_archivo, fecha_importacion, total_productos FROM catalogos_importados ORDER BY fecha_importacion DESC"
     )
@@ -270,8 +285,10 @@ pub async fn get_catalogos_importados(
 #[tauri::command]
 pub async fn get_productos_por_catalogo(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     _catalogo_id: i64,
 ) -> Result<Vec<InventoryItem>, String> {
+    auth.require_admin()?;
     // Por ahora retornamos todos los productos recientes
     let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, f64, f64, f64, f64, f64, Option<String>, Option<String>)>(
         "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos ORDER BY creado_en DESC LIMIT 100"

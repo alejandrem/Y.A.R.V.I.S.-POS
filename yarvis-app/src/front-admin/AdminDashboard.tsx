@@ -10,9 +10,7 @@ import AdminYarvis from "./ventanas/adminyarvis/yarvis";
 interface AdminDashboardProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  setStep: (step: number) => void;
-  setSelectedRole: (role: string | null) => void;
-  setLoginPass: (pass: string) => void;
+  onLogout: () => void;
   adminName: string;
   storeName: string;
   adminPass: string;
@@ -23,9 +21,7 @@ interface AdminDashboardProps {
 const AdminDashboard = ({
   activeTab,
   setActiveTab,
-  setStep,
-  setSelectedRole,
-  setLoginPass,
+  onLogout,
   adminName,
   storeName,
   adminPass,
@@ -97,7 +93,7 @@ const AdminDashboard = ({
         </nav>
 
         <div className="mt-auto pt-6 border-t border-neutral-100">
-          <button onClick={() => { setStep(1); setSelectedRole(null); setLoginPass(""); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-neutral-400 hover:bg-neutral-50 transition-all">
+          <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-neutral-400 hover:bg-neutral-50 transition-all">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1-2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
             CERRAR SESION
           </button>

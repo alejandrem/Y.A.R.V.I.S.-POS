@@ -8,6 +8,7 @@ use super::utils::sanitize_path;
 use tauri::Emitter;
 use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};
 use src_ia::cerebro::parseador_masivo::{procesar_archivos, procesar_carpeta_impl, ArchivoResultado};
+use crate::backventanas::auth::AuthState;
 
 #[derive(serde::Serialize)]
 pub struct ArchivoCarpeta {
@@ -18,7 +19,8 @@ pub struct ArchivoCarpeta {
 }
 
 #[tauri::command]
-pub fn listar_archivos_carpeta(carpeta: String) -> Result<Vec<ArchivoCarpeta>, String> {
+pub fn listar_archivos_carpeta(auth: tauri::State<'_, AuthState>, carpeta: String) -> Result<Vec<ArchivoCarpeta>, String> {
+    auth.require_admin()?;
     let dir = path::Path::new(&carpeta);
     if !dir.is_dir() {
         return Err(format!("La ruta no es una carpeta: {}", carpeta));
@@ -78,13 +80,15 @@ pub fn listar_archivos_carpeta(carpeta: String) -> Result<Vec<ArchivoCarpeta>, S
 }
 
 #[tauri::command]
-pub fn leer_archivo_raw(path: String) -> Result<String, String> {
+pub fn leer_archivo_raw(auth: tauri::State<'_, AuthState>, path: String) -> Result<String, String> {
+    auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
     fs::read_to_string(safe_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn leer_archivo_bytes(path: String) -> Result<Vec<u8>, String> {
+pub fn leer_archivo_bytes(auth: tauri::State<'_, AuthState>, path: String) -> Result<Vec<u8>, String> {
+    auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
     fs::read(safe_path).map_err(|e| e.to_string())
 }
@@ -94,7 +98,8 @@ pub fn leer_archivo_bytes(path: String) -> Result<Vec<u8>, String> {
 // ============================================================
 
 #[tauri::command]
-pub fn parsear_catalogo_visual(path: String) -> Result<serde_json::Value, String> {
+pub fn parsear_catalogo_visual(auth: tauri::State<'_, AuthState>, path: String) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
     let content = fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
 
@@ -141,7 +146,8 @@ fn resultado_a_result(resultado: serde_json::Value) -> Result<serde_json::Value,
 /// CPU congela la ventana (WebKit queda "No responde" y pide forzar cierre).
 /// `spawn_blocking` la corre en otro hilo y la UI sigue viva durante el análisis.
 #[tauri::command]
-pub async fn analizar_ticket_llm(path: String) -> Result<serde_json::Value, String> {
+pub async fn analizar_ticket_llm(auth: tauri::State<'_, AuthState>, path: String) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
     let contenido = fs::read_to_string(&safe_path)
         .map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
@@ -154,7 +160,8 @@ pub async fn analizar_ticket_llm(path: String) -> Result<serde_json::Value, Stri
 }
 
 #[tauri::command]
-pub async fn analizar_ticket_con_ia(texto: String) -> Result<serde_json::Value, String> {
+pub async fn analizar_ticket_con_ia(auth: tauri::State<'_, AuthState>, texto: String) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     tauri::async_runtime::spawn_blocking(move || {
         resultado_a_result(src_ia::rutas::analizar_ticket(&texto))
     })
@@ -167,7 +174,8 @@ pub async fn analizar_ticket_con_ia(texto: String) -> Result<serde_json::Value, 
 // ============================================================
 
 #[tauri::command]
-pub fn parsear_con_mapeo(texto: String, mapeo: serde_json::Value) -> Result<serde_json::Value, String> {
+pub fn parsear_con_mapeo(auth: tauri::State<'_, AuthState>, texto: String, mapeo: serde_json::Value) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     let texto = texto.trim();
     if texto.is_empty() {
         return Ok(serde_json::json!({ "status": "error", "error": "El texto esta vacio" }));
@@ -215,10 +223,12 @@ pub fn parsear_con_mapeo(texto: String, mapeo: serde_json::Value) -> Result<serd
 
 #[tauri::command]
 pub fn parsear_carpeta(
+    auth: tauri::State<'_, AuthState>,
     carpeta: String,
     mapeo: serde_json::Value,
     db_path: String,
 ) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     let archivos = src_ia::cerebro::parseador_masivo::obtener_archivos_txt(&carpeta);
     if archivos.is_empty() {
         return Err("No se encontraron archivos .txt en la carpeta".to_string());
@@ -243,10 +253,12 @@ pub fn parsear_carpeta(
 #[tauri::command]
 pub async fn parsear_carpeta_stream(
     app_handle: tauri::AppHandle,
+    auth: tauri::State<'_, AuthState>,
     carpeta: String,
     mapeo: serde_json::Value,
     db_path: String,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     let archivos = src_ia::cerebro::parseador_masivo::obtener_archivos_txt(&carpeta);
     if archivos.is_empty() {
         return Err("No se encontraron archivos .txt en la carpeta".to_string());
@@ -353,4 +365,3 @@ fn emitir_stream_batch(
 
     Ok("ok".to_string())
 }
-

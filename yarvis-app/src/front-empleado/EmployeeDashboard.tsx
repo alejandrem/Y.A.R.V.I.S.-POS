@@ -13,8 +13,7 @@ import Perfil from "./ventanas/empleaperfil/perfil";
 interface EmployeeDashboardProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  setStep: (step: number) => void;
-  setSelectedRole: (role: string | null) => void;
+  onLogout: () => void;
   shiftStart?: string;
   shiftEnd?: string;
   shiftProgress?: number;
@@ -24,8 +23,7 @@ interface EmployeeDashboardProps {
 const EmployeeDashboard = ({
   activeTab,
   setActiveTab,
-  setStep,
-  setSelectedRole,
+  onLogout,
   shiftStart = "0:00",
   shiftEnd = "0:00",
   shiftProgress = 0,
@@ -83,7 +81,7 @@ const EmployeeDashboard = ({
         </nav>
 
         <div className="mt-auto pt-6 border-t border-neutral-50">
-          <button onClick={() => { setStep(1); setSelectedRole(null); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-neutral-400 hover:bg-neutral-50 hover:text-neutral-500 transition-all uppercase tracking-wider">
+          <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-neutral-400 hover:bg-neutral-50 hover:text-neutral-500 transition-all uppercase tracking-wider">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
             Cerrar Turno
           </button>

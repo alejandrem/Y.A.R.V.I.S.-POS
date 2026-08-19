@@ -1,9 +1,11 @@
 use sqlx::SqlitePool;
 use crate::models::{TicketDb, CorteDb, TicketItem};
 use crate::backventanas::db::db::DbPath;
+use crate::backventanas::auth::AuthState;
 
 #[tauri::command]
-pub async fn get_tickets(state: tauri::State<'_, SqlitePool>) -> Result<Vec<TicketDb>, String> {
+pub async fn get_tickets(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<TicketDb>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query_as::<_, (i32, String, f64, String)>(
         "SELECT id, strftime('%Y-%m-%d %H:%M:%S', fecha) as fecha, total, metodo_pago FROM ventas ORDER BY fecha DESC LIMIT 500"
     )
@@ -22,7 +24,8 @@ pub async fn get_tickets(state: tauri::State<'_, SqlitePool>) -> Result<Vec<Tick
 }
 
 #[tauri::command]
-pub async fn get_cortes(state: tauri::State<'_, SqlitePool>) -> Result<Vec<CorteDb>, String> {
+pub async fn get_cortes(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<CorteDb>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query_as::<_, (i32, String, f64, f64)>(
         "SELECT id, strftime('%Y-%m-%d %H:%M:%S', fecha_cierre) as fecha, total_ventas, total_efectivo FROM cortes_caja ORDER BY fecha_cierre DESC LIMIT 500"
     )
@@ -45,12 +48,14 @@ pub async fn get_cortes(state: tauri::State<'_, SqlitePool>) -> Result<Vec<Corte
 #[tauri::command]
 pub async fn guardar_ticket_parseado(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     items: Vec<TicketItem>,
     total: f64,
     fecha: Option<String>,
     hora: Option<String>,
     metodo_pago: Option<String>,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     let metodo_pago = metodo_pago.unwrap_or_else(|| "efectivo".into());
     let fecha_iso = match (fecha, hora) {
         (Some(f), Some(h)) => {
@@ -131,6 +136,8 @@ pub async fn guardar_ticket_parseado(
 pub async fn get_predictions(
     _days: i32,
     _db_path: tauri::State<'_, DbPath>,
+    auth: tauri::State<'_, AuthState>,
 ) -> Result<serde_json::Value, String> {
+    auth.require_admin()?;
     Err("Predicciones no disponibles: Prophet aún no está portado de forma nativa.".to_string())
 }

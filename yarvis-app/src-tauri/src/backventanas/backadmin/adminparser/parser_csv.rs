@@ -3,9 +3,11 @@
 use std::fs;
 use crate::models::InventoryItem;
 use super::utils::sanitize_path;
+use crate::backventanas::auth::AuthState;
 
 #[tauri::command]
-pub fn parsear_catalogo_csv(path: String) -> Result<Vec<InventoryItem>, String> {
+pub fn parsear_catalogo_csv(auth: tauri::State<'_, AuthState>, path: String) -> Result<Vec<InventoryItem>, String> {
+    auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
     let content = fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
 

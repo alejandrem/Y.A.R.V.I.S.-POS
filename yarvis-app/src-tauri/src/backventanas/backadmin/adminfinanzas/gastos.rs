@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 use chrono::{NaiveDate, Duration, Datelike};
 use crate::backventanas::backadmin::adminfinanzas::models::*;
 use sqlx::Row;
+use crate::backventanas::auth::AuthState;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -117,7 +118,8 @@ fn map_row_to_gasto(row: sqlx::sqlite::SqliteRow) -> GastoRecurrente {
 }
 
 #[tauri::command]
-pub async fn get_gastos_recurrentes(state: tauri::State<'_, SqlitePool>) -> Result<Vec<GastoRecurrente>, String> {
+pub async fn get_gastos_recurrentes(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<GastoRecurrente>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query("SELECT * FROM gastos_recurrentes ORDER BY fecha_inicio ASC")
         .fetch_all(&*state)
         .await
@@ -127,7 +129,8 @@ pub async fn get_gastos_recurrentes(state: tauri::State<'_, SqlitePool>) -> Resu
 }
 
 #[tauri::command]
-pub async fn crear_gasto(state: tauri::State<'_, SqlitePool>, gasto: CrearGastoRequest) -> Result<i64, String> {
+pub async fn crear_gasto(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, gasto: CrearGastoRequest) -> Result<i64, String> {
+    auth.require_admin()?;
     let result = sqlx::query(
         r#"INSERT INTO gastos_recurrentes (nombre, tipo, categoria, monto_proyectado, frecuencia, dia_pago, intervalo_dias, fecha_inicio, fecha_fin, folio_comprobante, notas)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
@@ -151,7 +154,8 @@ pub async fn crear_gasto(state: tauri::State<'_, SqlitePool>, gasto: CrearGastoR
 }
 
 #[tauri::command]
-pub async fn actualizar_gasto(state: tauri::State<'_, SqlitePool>, id: i64, gasto: CrearGastoRequest) -> Result<(), String> {
+pub async fn actualizar_gasto(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, id: i64, gasto: CrearGastoRequest) -> Result<(), String> {
+    auth.require_admin()?;
     sqlx::query(
         r#"UPDATE gastos_recurrentes SET
            nombre = ?, tipo = ?, categoria = ?, monto_proyectado = ?, frecuencia = ?, 
@@ -179,7 +183,8 @@ pub async fn actualizar_gasto(state: tauri::State<'_, SqlitePool>, id: i64, gast
 }
 
 #[tauri::command]
-pub async fn eliminar_gasto(state: tauri::State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn eliminar_gasto(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, id: i64) -> Result<(), String> {
+    auth.require_admin()?;
     sqlx::query("DELETE FROM gastos_recurrentes WHERE id = ?")
         .bind(id)
         .execute(&*state)
@@ -189,7 +194,8 @@ pub async fn eliminar_gasto(state: tauri::State<'_, SqlitePool>, id: i64) -> Res
 }
 
 #[tauri::command]
-pub async fn registrar_pago_gasto(state: tauri::State<'_, SqlitePool>, pago: RegistrarPagoRequest) -> Result<i64, String> {
+pub async fn registrar_pago_gasto(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, pago: RegistrarPagoRequest) -> Result<i64, String> {
+    auth.require_admin()?;
     let result = sqlx::query(
         r#"INSERT INTO pagos_gastos (gasto_id, fecha_pago, monto_pagado, metodo_pago, folio_comprobante, notas)
            VALUES (?, ?, ?, ?, ?, ?)"#
@@ -231,7 +237,8 @@ pub async fn registrar_pago_gasto(state: tauri::State<'_, SqlitePool>, pago: Reg
 }
 
 #[tauri::command]
-pub async fn get_pagos_gasto(state: tauri::State<'_, SqlitePool>, gasto_id: i64) -> Result<Vec<PagoGasto>, String> {
+pub async fn get_pagos_gasto(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, gasto_id: i64) -> Result<Vec<PagoGasto>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query_as::<_, (i64, i64, String, f64, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
         "SELECT id, gasto_id, fecha_pago, monto_pagado, metodo_pago, folio_comprobante, comprobante_url, notas, creado_en FROM pagos_gastos WHERE gasto_id = ? ORDER BY fecha_pago DESC"
     )
@@ -254,7 +261,8 @@ pub async fn get_pagos_gasto(state: tauri::State<'_, SqlitePool>, gasto_id: i64)
 }
 
 #[tauri::command]
-pub async fn get_proximos_vencimientos(state: tauri::State<'_, SqlitePool>, dias: i32) -> Result<Vec<GastoRecurrente>, String> {
+pub async fn get_proximos_vencimientos(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, dias: i32) -> Result<Vec<GastoRecurrente>, String> {
+    auth.require_admin()?;
     let hoy = chrono::Local::now().date_naive();
     let limite = hoy + Duration::days(dias as i64);
     
@@ -277,7 +285,8 @@ pub async fn get_proximos_vencimientos(state: tauri::State<'_, SqlitePool>, dias
 }
 
 #[tauri::command]
-pub async fn actualizar_estados_gastos(state: tauri::State<'_, SqlitePool>) -> Result<(), String> {
+pub async fn actualizar_estados_gastos(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<(), String> {
+    auth.require_admin()?;
     actualizar_estados_gastos_impl(&*state).await
 }
 

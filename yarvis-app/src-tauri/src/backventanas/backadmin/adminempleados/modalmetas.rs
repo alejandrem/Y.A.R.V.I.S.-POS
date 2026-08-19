@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
 use sqlx::Row;
 use crate::models::{EmployeeGoal, SalarioInfo};
+use crate::backventanas::auth::AuthState;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -11,8 +12,10 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 #[tauri::command]
 pub async fn get_salario_info(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     empleado_id: i32,
 ) -> Result<SalarioInfo, String> {
+    auth.require_admin()?;
     let row = sqlx::query(
         "SELECT salario_diario, salario_semanal, horario_inicio, horario_fin, dias_semana FROM usuarios WHERE id = ?"
     )
@@ -49,10 +52,12 @@ pub async fn get_salario_info(
 #[tauri::command]
 pub async fn save_salario(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     empleado_id: i32,
     salario_diario: f64,
     dias_semana: i32,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     let row = sqlx::query_as::<_, (String, String)>(
         "SELECT horario_inicio, horario_fin FROM usuarios WHERE id = ?"
     )
@@ -84,9 +89,11 @@ pub async fn save_salario(
 
 #[tauri::command]
 pub async fn get_employee_goals(
+    auth: tauri::State<'_, AuthState>,
     state: tauri::State<'_, SqlitePool>,
     empleado_id: i32,
 ) -> Result<Vec<EmployeeGoal>, String> {
+    auth.require_admin()?;
     let rows = sqlx::query(
         "SELECT id, employee_id, goal_type, goal_name, ventas_threshold, bonus_percentage, bonus_amount, is_completed, completed_at, created_at
          FROM employee_goals WHERE employee_id = ? ORDER BY id ASC"
@@ -115,6 +122,7 @@ pub async fn get_employee_goals(
 #[tauri::command]
 pub async fn save_employee_goal(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     empleado_id: i32,
     goal_type: String,
     goal_name: Option<String>,
@@ -122,6 +130,7 @@ pub async fn save_employee_goal(
     bonus_percentage: Option<f64>,
     bonus_amount: Option<f64>,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     let existing = sqlx::query_as::<_, (i32,)>(
         "SELECT id FROM employee_goals WHERE employee_id = ? AND goal_type = ?"
     )
@@ -164,10 +173,12 @@ pub async fn save_employee_goal(
 #[tauri::command]
 pub async fn save_custom_goal(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     empleado_id: i32,
     goal_name: String,
     bonus_amount: f64,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     sqlx::query(
         "INSERT INTO employee_goals (employee_id, goal_type, goal_name, bonus_amount) VALUES (?, 'custom', ?, ?)"
     )
@@ -184,8 +195,10 @@ pub async fn save_custom_goal(
 #[tauri::command]
 pub async fn delete_employee_goal(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     goal_id: i32,
 ) -> Result<String, String> {
+    auth.require_admin()?;
     sqlx::query("DELETE FROM employee_goals WHERE id = ?")
         .bind(goal_id)
         .execute(&*state)
@@ -198,8 +211,10 @@ pub async fn delete_employee_goal(
 #[tauri::command]
 pub async fn check_employee_goals(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     empleado_id: i32,
 ) -> Result<Vec<EmployeeGoal>, String> {
+    auth.require_admin()?;
     let nombre_row = sqlx::query_as::<_, (String,)>("SELECT nombre FROM usuarios WHERE id = ?")
         .bind(empleado_id)
         .fetch_optional(&*state)

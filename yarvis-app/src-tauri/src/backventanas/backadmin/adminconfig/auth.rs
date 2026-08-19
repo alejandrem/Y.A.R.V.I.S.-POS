@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use rand::thread_rng;
 use crate::models::{AdminData, AdminProfile};
+use crate::backventanas::auth::{AuthState, Role};
 
 // ============================================================
 // HASHING DE CONTRASEÑAS CON ARGON2ID (OWASP)
@@ -42,7 +43,19 @@ pub async fn check_setup_done(state: tauri::State<'_, SqlitePool>) -> Result<boo
 }
 
 #[tauri::command]
-pub async fn guardar_admin(state: tauri::State<'_, SqlitePool>, data: AdminData) -> Result<String, String> {
+pub async fn guardar_admin(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    data: AdminData,
+) -> Result<String, String> {
+    let admins: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM usuarios WHERE rol = 'admin'")
+        .fetch_one(&*state)
+        .await
+        .map_err(|e| e.to_string())?;
+    if admins.0 > 0 || auth.require_authenticated().is_ok() {
+        return Err("La configuración inicial ya fue completada".to_string());
+    }
+
     let hashed = hash_password(&data.pass);
 
     sqlx::query("INSERT INTO usuarios (nombre, tienda, password, rol) VALUES (?, ?, ?, ?)")
@@ -58,23 +71,36 @@ pub async fn guardar_admin(state: tauri::State<'_, SqlitePool>, data: AdminData)
 }
 
 #[tauri::command]
-pub async fn validar_login_admin(state: tauri::State<'_, SqlitePool>, pass: String) -> Result<bool, String> {
-    let result = sqlx::query_as::<_, (String,)>("SELECT password FROM usuarios WHERE rol = 'admin' LIMIT 1")
+pub async fn validar_login_admin(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    pass: String,
+) -> Result<bool, String> {
+    auth.logout();
+    let result = sqlx::query_as::<_, (i64, String, String)>("SELECT id, nombre, password FROM usuarios WHERE rol = 'admin' LIMIT 1")
         .fetch_optional(&*state)
         .await
         .map_err(|e| e.to_string())?;
 
     if let Some(row) = result {
-        Ok(verify_password(&pass, &row.0))
+        let valid = verify_password(&pass, &row.2);
+        if valid {
+            auth.login(row.0, Role::Admin, row.1);
+        }
+        Ok(valid)
     } else {
         Ok(false)
     }
 }
 
 #[tauri::command]
-pub async fn get_admin_data(state: tauri::State<'_, SqlitePool>) -> Result<Option<AdminProfile>, String> {
-    let result = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>)>(
-        "SELECT nombre, tienda, password, ubicacion, cp FROM usuarios WHERE rol = 'admin' LIMIT 1"
+pub async fn get_admin_data(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<Option<AdminProfile>, String> {
+    auth.require_admin()?;
+    let result = sqlx::query_as::<_, (String, String, Option<String>, Option<String>)>(
+        "SELECT nombre, tienda, ubicacion, cp FROM usuarios WHERE rol = 'admin' LIMIT 1"
     )
     .fetch_optional(&*state)
     .await
@@ -84,9 +110,8 @@ pub async fn get_admin_data(state: tauri::State<'_, SqlitePool>) -> Result<Optio
         Ok(Some(AdminProfile {
             nombre: row.0,
             tienda: row.1,
-            password: row.2,
-            ubicacion: row.3,
-            cp: row.4,
+            ubicacion: row.2,
+            cp: row.3,
         }))
     } else {
         Ok(None)
@@ -96,12 +121,14 @@ pub async fn get_admin_data(state: tauri::State<'_, SqlitePool>) -> Result<Optio
 #[tauri::command]
 pub async fn update_admin_data(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     nombre: String,
     tienda: String,
     pass: String,
     ubicacion: String,
     cp: String
 ) -> Result<String, String> {
+    auth.require_admin()?;
     if pass.is_empty() {
         // Sin contraseña nueva: actualizar todo EXCEPTO password
         sqlx::query("UPDATE usuarios SET nombre = ?, tienda = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'")
@@ -130,7 +157,19 @@ pub async fn update_admin_data(
 }
 
 #[tauri::command]
-pub async fn guardar_empleado(state: tauri::State<'_, SqlitePool>, name: String, pass: String) -> Result<String, String> {
+pub async fn guardar_empleado(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    name: String,
+    pass: String,
+) -> Result<String, String> {
+    let admins: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM usuarios WHERE rol = 'admin'")
+        .fetch_one(&*state)
+        .await
+        .map_err(|e| e.to_string())?;
+    if admins.0 > 0 && auth.require_admin().is_err() {
+        return Err("Se requiere una sesión de administrador".to_string());
+    }
     let hashed = hash_password(&pass);
 
     sqlx::query("INSERT INTO usuarios (nombre, password, rol) VALUES (?, ?, ?)")
@@ -145,8 +184,13 @@ pub async fn guardar_empleado(state: tauri::State<'_, SqlitePool>, name: String,
 }
 
 #[tauri::command]
-pub async fn validar_login_empleado(state: tauri::State<'_, SqlitePool>, pass: String) -> Result<Option<String>, String> {
-    let rows = sqlx::query_as::<_, (String, String, i32)>("SELECT nombre, password, id FROM usuarios WHERE rol = 'empleado'")
+pub async fn validar_login_empleado(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    pass: String,
+) -> Result<Option<String>, String> {
+    auth.logout();
+    let rows = sqlx::query_as::<_, (String, String, i64)>("SELECT nombre, password, id FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'")
         .fetch_all(&*state)
         .await
         .map_err(|e| e.to_string())?;
@@ -157,9 +201,16 @@ pub async fn validar_login_empleado(state: tauri::State<'_, SqlitePool>, pass: S
                 .bind(id)
                 .execute(&*state)
                 .await;
+            auth.login(id, Role::Employee, nombre.clone());
             return Ok(Some(nombre));
         }
     }
 
     Ok(None)
+}
+
+#[tauri::command]
+pub async fn cerrar_sesion(auth: tauri::State<'_, AuthState>) -> Result<(), String> {
+    auth.logout();
+    Ok(())
 }

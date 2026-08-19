@@ -13,6 +13,7 @@ use src_ia::motor_chat::llm::{
     MODELO_CHAT, RAM_GB_MINIMA_1_7, cargar_modelo_1_7, chat_1_7, descargar_modelo_1_7,
     modelo_1_7_cargado, ram_libre_gb, ram_total_gb,
 };
+use crate::backventanas::auth::AuthState;
 
 /// Máximo de palabras que se consideran razonamiento en el stream cloud
 /// (espejo del `max_w` que usaba el motor original para `_separar_think`).
@@ -26,7 +27,8 @@ pub struct ChatResponse {
 
 /// Estado de los modelos locales y la RAM del sistema (nativo).
 #[tauri::command]
-pub async fn get_model_status() -> Result<serde_json::Value, String> {
+pub async fn get_model_status(auth: tauri::State<'_, AuthState>) -> Result<serde_json::Value, String> {
+    auth.require_operator()?;
     let ram_libre = ram_libre_gb().unwrap_or(0.0);
     let ram_total = ram_total_gb().unwrap_or(0.0);
     Ok(serde_json::json!({
@@ -40,7 +42,8 @@ pub async fn get_model_status() -> Result<serde_json::Value, String> {
 
 /// Carga el modelo local de conversación (1.7B) SOLO si hay ≥1GB de RAM libre.
 #[tauri::command]
-pub async fn load_chat_model(model: String) -> Result<serde_json::Value, String> {
+pub async fn load_chat_model(auth: tauri::State<'_, AuthState>, model: String) -> Result<serde_json::Value, String> {
+    auth.require_operator()?;
     if model != MODELO_CHAT {
         return Err(format!(
             "El único modelo local es {MODELO_CHAT} (parseo de tickets y conversación)."
@@ -73,9 +76,11 @@ pub async fn load_chat_model(model: String) -> Result<serde_json::Value, String>
 /// el endpoint `/cloud_models` al que reemplaza.
 #[tauri::command]
 pub async fn get_cloud_models(
+    auth: tauri::State<'_, AuthState>,
     provider: String,
     api_key: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    auth.require_operator()?;
     let modelos = src_ia::motor_chat::cloud::apis_cloud::listar_modelos(
         &provider,
         api_key.as_deref().unwrap_or(""),
@@ -88,13 +93,15 @@ pub async fn get_cloud_models(
 /// (llama.cpp), así que no hay nada que interrumpir: se responde ok para no
 /// romper el contrato con la UI (idéntico al endpoint `/stop` del motor original).
 #[tauri::command]
-pub async fn stop_chat_stream() -> Result<String, String> {
+pub async fn stop_chat_stream(auth: tauri::State<'_, AuthState>) -> Result<String, String> {
+    auth.require_operator()?;
     Ok("ok".to_string())
 }
 
 /// Descarga el modelo local de conversación (1.7B) para liberar RAM.
 #[tauri::command]
-pub async fn unload_chat_model(model: String) -> Result<serde_json::Value, String> {
+pub async fn unload_chat_model(auth: tauri::State<'_, AuthState>, model: String) -> Result<serde_json::Value, String> {
+    auth.require_operator()?;
     let descargado = tokio::task::spawn_blocking(descargar_modelo_1_7)
         .await
         .map_err(|e| format!("El hilo de descarga falló: {e}"))?;
@@ -111,12 +118,14 @@ pub async fn unload_chat_model(model: String) -> Result<serde_json::Value, Strin
 /// Chat sin streaming (respuesta completa).
 #[tauri::command]
 pub async fn send_chat_message(
+    auth: tauri::State<'_, AuthState>,
     messages: Vec<serde_json::Value>,
     role: String,
     model: String,
     provider: Option<String>,
     api_key: Option<String>,
 ) -> Result<ChatResponse, String> {
+    auth.require_operator()?;
     let provider = provider.unwrap_or_default();
     // Modo cloud: lo responde Rust directamente (port de generar_completo).
     // Si falla, cae al modelo local.
@@ -154,12 +163,14 @@ pub async fn send_chat_message(
 #[tauri::command]
 pub async fn send_chat_stream(
     app: tauri::AppHandle,
+    auth: tauri::State<'_, AuthState>,
     messages: Vec<serde_json::Value>,
     role: String,
     model: String,
     provider: Option<String>,
     api_key: Option<String>,
 ) -> Result<String, String> {
+    auth.require_operator()?;
     let provider = provider.unwrap_or_default();
 
     // ---- Modo cloud: streaming en Rust. ----

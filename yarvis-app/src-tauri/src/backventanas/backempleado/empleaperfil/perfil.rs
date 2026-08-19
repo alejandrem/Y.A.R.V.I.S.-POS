@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
 use sqlx::Row;
 use serde::Serialize;
+use crate::backventanas::auth::{AuthState, Role};
 
 #[derive(Serialize)]
 pub struct EmployeeProfile {
@@ -46,14 +47,28 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 #[tauri::command]
 pub async fn get_employee_profile(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
     nombre: String,
 ) -> Result<EmployeeProfileFull, String> {
-    let row = sqlx::query(
-        "SELECT id, nombre, turno, horario_inicio, horario_fin, salario_diario, salario_semanal,
-                dias_semana, meta_mensual, bono, ultimo_login, estado
-         FROM usuarios WHERE nombre = ? AND rol = 'empleado'"
-    )
-    .bind(&nombre)
+    let session = auth.require_operator()?;
+    let (query, lookup): (&str, String) = if session.role == Role::Employee {
+        (
+            "SELECT id, nombre, turno, horario_inicio, horario_fin, salario_diario, salario_semanal,
+                    dias_semana, meta_mensual, bono, ultimo_login, estado
+             FROM usuarios WHERE id = ? AND rol = 'empleado' AND estado = 'activo'",
+            session.user_id.to_string(),
+        )
+    } else {
+        (
+            "SELECT id, nombre, turno, horario_inicio, horario_fin, salario_diario, salario_semanal,
+                    dias_semana, meta_mensual, bono, ultimo_login, estado
+             FROM usuarios WHERE nombre = ? AND rol = 'empleado'",
+            nombre,
+        )
+    };
+
+    let row = sqlx::query(query)
+    .bind(lookup)
     .fetch_optional(&*state)
     .await
     .map_err(|e| e.to_string())?;
