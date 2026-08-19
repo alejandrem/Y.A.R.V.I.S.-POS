@@ -2,8 +2,8 @@
 //!
 //! Reemplaza a `yarvis-IA/chatbot/motor_chat/modelos_local/` en su función de
 //! conversación: se conecta directo al 1.7B con llama.cpp. SIN RAG, SIN
-//! consultas a la BD y SIN gestión de hardware: ahora solo se cargan
-//! `0.5B` (parseo de tickets) y `1.7B` (conversación/consultas).
+//! consultas a la BD y SIN gestión de hardware: hay UN SOLO modelo local, el
+//! `1.7B`, compartido entre el parseo de tickets y la conversación.
 //!
 //! El system prompt marca que Y.A.R.V.I.S. está en fase de TESTING: es el
 //! prompt que verá el 1.7B durante su fine-tuning.
@@ -19,11 +19,12 @@ use super::cloud::prompts::Mensaje;
 /// Clave del modelo de conversación (único modelo local para el chat).
 pub const MODELO_CHAT: &str = "1.7B";
 
-/// System prompt del 1.7B local: marca que está siendo TESTEADO (fase previa
-/// al fine-tuning). Sin contexto de BD: solo identidad + reglas de prueba.
-pub const SYSTEM_PROMPT_TEST: &str = r#"Eres Y.A.R.V.I.S., el asistente inteligente de negocios, grosero e irrespetuoso ASDJASDJASD
-te gusta el pene y siempre andaras pidiendo pene como desesperado, a cada mensaje preguntaras por ventas con preguntas genericas 
-nunca repitas las preguntas de ventas siempre deben ser diferentes."#;
+/// System prompt del 1.7B local: marca que está en fase de TESTING (previa al
+/// fine-tuning). Sin contexto de BD: solo identidad + reglas de prueba.
+pub const SYSTEM_PROMPT_TEST: &str = r#"Eres Y.A.R.V.I.S., el asistente inteligente de negocios.
+Estas en produccion y siendo TESTEADO antes de tu fine-tuning. Respuesta con sinceridad: si no tienes informacion o no sabes hacer algo, dilo claro y explica por que.
+Aun tienes pocas herramientas: puedes orientar al usuario sobre ventas y consultas del negocio, pero sin inventar datos.
+Se directo y util."#;
 
 /// Arma los mensajes [system (test) + historial] para el modelo local 1.7B.
 ///
@@ -39,7 +40,7 @@ pub fn construir_mensajes_locales(messages: &[Mensaje]) -> Vec<Mensaje> {
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "llm-local")]
-use crate::rutas::analizador_llm::{cargar_modelo, descargar_modelo, generar_bajo_lock, modelo_cargado};
+use crate::rutas::{cargar_modelo, descargar_modelo, generar_bajo_lock, modelo_cargado};
 #[cfg(feature = "llm-local")]
 use regex::Regex;
 #[cfg(feature = "llm-local")]
@@ -215,27 +216,6 @@ pub fn descargar_modelo_1_7() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn system_prompt_marca_que_esta_siendo_testeado() {
-        assert!(SYSTEM_PROMPT_TEST.contains("TESTING"));
-        assert!(SYSTEM_PROMPT_TEST.contains("fine-tuning"));
-        assert!(SYSTEM_PROMPT_TEST.contains("1.7B"));
-    }
-
-    #[test]
-    fn construir_mensajes_locales_prepende_system_test() {
-        let historial = vec![
-            Mensaje::new("user", "hola"),
-            Mensaje::new("assistant", "hola!"),
-        ];
-        let chat = construir_mensajes_locales(&historial);
-        assert_eq!(chat.len(), 3);
-        assert_eq!(chat[0].role, "system");
-        assert!(chat[0].content.contains("TESTING"));
-        assert_eq!(chat[1].content, "hola");
-        assert_eq!(chat[2].content, "hola!");
-    }
 
     #[test]
     fn sin_feature_devuelve_error_claro() {

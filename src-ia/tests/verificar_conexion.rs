@@ -1,22 +1,29 @@
 //! Verificación end-to-end real del parseo con IA: llama EXACTAMENTE a la
-//! misma función que usa el backend (`analizar_ticket`, que arranca con el
-//! Qwen 0.5B y escala al 1.7B si la confianza es baja).
-//! Solo funciona en máquinas con los GGUFs descargados en ~/.lmstudio/models.
+//! misma función que usa el backend (`analizar_ticket`, que parsea con el
+//! Qwen 3 1.7B, único modelo local, compartido con el chat). Si el GGUF no
+//! está descargado en ~/.lmstudio/models, el test se OMITE (no falla).
 //!
 //! Ejecutar: cargo test --features llm-local --test verificar_conexion -- --nocapture
 
 #[cfg(feature = "llm-local")]
 #[test]
 fn analizar_ticket_responde_mapeo_ok() {
-    use src_ia::rutas::analizador_llm::analizar_ticket;
-    use src_ia::rutas::rutas_modelos::verificar_modelos;
+    use src_ia::rutas::analizar_ticket;
+    use src_ia::rutas::verificar_modelos;
 
-    for (key, info) in verificar_modelos() {
-        assert!(
-            info.existe,
-            "Falta el modelo {key} en ~/.lmstudio/models ({})",
-            info.ruta.display()
-        );
+    // El parseo usa el 1.7B (único modelo local).
+    let info = verificar_modelos()
+        .into_iter()
+        .find(|(key, _)| *key == "1.7B")
+        .map(|(_, info)| info);
+    if let Some(info) = info {
+        if !info.existe {
+            eprintln!(
+                "[verificar_conexion] Falta el modelo 1.7B en ~/.lmstudio/models ({}) — test omitido.",
+                info.ruta.display()
+            );
+            return;
+        }
     }
 
     let ticket = "\

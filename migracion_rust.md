@@ -14,7 +14,7 @@
 | Módulo | Endpoints | Dificultad | Dependencia IA pesada |
 |---|---|---|---|
 | Chat | `/chat`, `/chat_stream`, `/load_model`, `/stop`, `/unload_model`, `/model_status` | **Alta** | llama-cpp (local), APIs HTTP (cloud → Rust) |
-| Parseador | `/analizar_ticket`, `/parsear_con_mapeo`, `/parsear_catalogo_visual`, `/parsear_excel`, `/parsear_carpeta`, `/parsear_carpeta_stream`, `/vincular_inventario`, `/guardar_vinculacion` | **Alta** | llama-cpp (Qwen 0.5/0.8/1.7B) |
+| Parseador | `/analizar_ticket`, `/parsear_con_mapeo`, `/parsear_catalogo_visual`, `/parsear_excel`, `/parsear_carpeta`, `/parsear_carpeta_stream`, `/vincular_inventario`, `/guardar_vinculacion` | **Alta** | llama-cpp (Qwen 3 1.7B) |
 | Profeta | `/recalcular_predicciones` | **Media** | Prophet → Holt-Winters (propia) |
 | Embeddings/RAG | `/generar_embedding`, `/buscar_similar`, `/backfill`, `/insertar_knowledge` | **Baja** | sentence-transformers → ONNX/fastembed |
 
@@ -64,13 +64,13 @@ Base común que se reimplementa 1 sola vez (crate `yarvis-engine`):
 ## FASE 5 — Parseador de tickets (reglas primero, LLM después)
 1. Port de **toda la lógica de reglas** (regex, sin modelos): `_extraer_fecha_hora_regex`, `_PATRONES_PAGO`, `_es_linea_util` (niveles 1/2/3), `_parsear_linea`, `parsear_catalogo_visual`, lectores TXT/CSV/Excel (`calamine`), `filtrador`, `vinculador`, `lote`.
    - **DoD:** mismos items/errores que Python con los tickets de prueba reales.
-2. LLM local del parseo: `llama-cpp-rs` cargando Qwen 0.5B → 0.8B → 1.7B (misma escalada de confianza de `analizador_llm.py`).
+2. LLM local del parseo: `llama-cpp-rs` cargando Qwen 3 1.7B (único modelo local, compartido con el chat).
    - Usar el mismo `LlamaVocabulary`/pipeline C de llama.cpp; `create_chat_completion` -> `ChatCompletionRequest`.
 3. Endpoints `/analizar_ticket`, `/parsear_carpeta`, `/parsear_carpeta_stream`. **DoD:** confianza ≥ 0.8 en los mismos tickets de prueba.
 
 ## FASE 6 — Chat híbrido/local + cierre
 1. Port del chat híbrido con modelos locales (`motor_rag.py`, `prompts.py`, `cache.py`, `motor_chat` endpoints local).
-2. `/model_status`, `/load_model`, `/unload_model`, `/stop` en Rust (manager de VRAM con `llama-cpp-rs`, swap 0.5/0.8/1.7 + modelo de chat).
+2. `/model_status`, `/load_model`, `/unload_model`, `/stop` en Rust (manager de VRAM con `llama-cpp-rs`, único Qwen 1.7B para parseo y chat).
 3. **Retirar Python**: cuando los 20 endpoints pasen la suite de equivalencia:
    - Apagar sidecar (`sidecar.rs`), quitar `yarvis-IA/` del repo, borrar binario Python del build.
    - Frontend: todos los fetch a `http://127.0.0.1:{port}/...` → `tauri::invoke`/comandos nativos.
@@ -80,7 +80,7 @@ Base común que se reimplementa 1 sola vez (crate `yarvis-engine`):
 > - El chat local usa Qwen 3 1.7B nativo (`src-ia/motor-chat/llm` con llama.cpp) y el cloud
 >   corre en Rust (`src-ia/motor-chat/cloud`), con fallback local. `get_model_status`,
 >   `load_chat_model`, `unload_chat_model`, `stop_chat_stream` son comandos nativos.
-> - El parseo de tickets es 100% Rust/llama.cpp (Qwen 0.5B → 1.7B) en `src-ia`.
+> - El parseo de tickets es 100% Rust/llama.cpp (Qwen 3 1.7B) en `src-ia`.
 > - `sidecar.rs`, `ai.rs` y `get_ai_status` se ELIMINARON. El arranque de Tauri ya no lanza
 >   Python (`YARVIS_PYTHON` desapareció) ni hace backfill al iniciar: binario único.
 > - `yarvis-IA/` no existe en el repo. `run.sh`/`run.bat`/`reset.sh` no mencionan Python.

@@ -12,7 +12,7 @@ use calamine::{Data, Reader, Xlsx};
 use std::io::Cursor;
 
 use super::ProductoCatalogo;
-use crate::cerebro::analizador::PRECIO_MAXIMO;
+use crate::cerebro::analizador_tickets::PRECIO_MAXIMO;
 use crate::cerebro::filtrador::{es_categoria, limpiar_producto};
 
 const SIN_CATEGORIA: &str = "SIN CATEGORÍA";

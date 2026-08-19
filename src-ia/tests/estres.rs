@@ -15,13 +15,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-use src_ia::cerebro::analizador::{
+use src_ia::cerebro::analizador_tickets::{
     es_linea_util, extraer_fecha_hora_regex, extraer_metodo_pago, limpiar_precio, parsear_linea,
     MapeoColumnas, PRECIO_MAXIMO,
 };
 use src_ia::cerebro::filtrador::{es_categoria, limpiar_producto};
-use src_ia::cerebro::lote::procesar_carpeta_impl;
-use src_ia::cerebro::vinculador::normalizar;
+use src_ia::cerebro::parseador_masivo::procesar_carpeta_impl;
+use src_ia::cerebro::vinculador_inventario::normalizar;
 use src_ia::formatos::lector_csv::parsear_csv;
 use src_ia::formatos::lector_txt::parsear_catalogo_visual;
 
@@ -410,8 +410,10 @@ fn ticket_gigante_20mil_items_entra_completo() {
     assert_eq!(stats.items_insertados, 20_000);
     assert_eq!(stats.duplicados_detectados, 0);
     assert_eq!(contar(&db, "detalle_ventas"), 20_000);
-    // Dinero: 20,000 × (2 × $60) = $2,400,000 ; × 1.16 = $2,784,000.00
-    assert_eq!(stats.resumen_ventas[0].total, 2_784_000.0);
+    // Dinero (regla D): el ticket declara TOTAL = $2,400,000 y SE USA ese real,
+    // aunque difiera del calculado × 1.16 ($2,784,000). SUBTOTAL e IVA no vienen
+    // en el ticket → fallback al cálculo (2,400,000 + 384,000).
+    assert_eq!(stats.resumen_ventas[0].total, 2_400_000.0);
 
     let (total, subtotal, iva): (f64, f64, f64) = Connection::open(&db)
         .unwrap()
@@ -421,7 +423,7 @@ fn ticket_gigante_20mil_items_entra_completo() {
         .unwrap();
     assert_eq!(subtotal, 2_400_000.0);
     assert_eq!(iva, 384_000.0);
-    assert_eq!(total, 2_784_000.0);
+    assert_eq!(total, 2_400_000.0);
 
     let _ = std::fs::remove_dir_all(&dir);
 }

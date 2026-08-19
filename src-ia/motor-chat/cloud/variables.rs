@@ -34,6 +34,10 @@ pub const TIMEOUT_READ_SECS: u64 = 120;
 /// Timeout de conexión HTTP hacia los proveedores (segundos).
 pub const TIMEOUT_CONNECT_SECS: u64 = 30;
 
+/// Límite de tokens de SALIDA que se pide a ambos proveedores de nube
+/// (OpenAI usa `max_tokens`, Gemini `generationConfig.maxOutputTokens`).
+pub const MAX_TOKENS: u32 = 39800;
+
 /// Modelos gratuitos de OpenCode que NO terminan en "-free" pero sí lo son.
 pub const MODELOS_FREE_EXTRA: &[&str] = &["big-pickle"];
 

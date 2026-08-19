@@ -22,6 +22,5 @@ export interface LLMAnalysis {
   ejemplo_parseado: any[];
   confianza: number;
   notas: string;
-  reintentado_con: string | null;
 }
 

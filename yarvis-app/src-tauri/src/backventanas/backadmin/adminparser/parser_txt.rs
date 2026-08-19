@@ -6,8 +6,8 @@ use std::fs;
 use std::path;
 use super::utils::sanitize_path;
 use tauri::Emitter;
-use src_ia::cerebro::analizador::{parsear_linea, MapeoColumnas};
-use src_ia::cerebro::lote::{procesar_archivos, procesar_carpeta_impl, ArchivoResultado};
+use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};
+use src_ia::cerebro::parseador_masivo::{procesar_archivos, procesar_carpeta_impl, ArchivoResultado};
 
 #[derive(serde::Serialize)]
 pub struct ArchivoCarpeta {
@@ -147,7 +147,7 @@ pub async fn analizar_ticket_llm(path: String) -> Result<serde_json::Value, Stri
         .map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        resultado_a_result(src_ia::rutas::analizador_llm::analizar_ticket(&contenido))
+        resultado_a_result(src_ia::rutas::analizar_ticket(&contenido))
     })
     .await
     .map_err(|e| format!("Tarea de análisis abortada: {}", e))?
@@ -156,7 +156,7 @@ pub async fn analizar_ticket_llm(path: String) -> Result<serde_json::Value, Stri
 #[tauri::command]
 pub async fn analizar_ticket_con_ia(texto: String) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        resultado_a_result(src_ia::rutas::analizador_llm::analizar_ticket(&texto))
+        resultado_a_result(src_ia::rutas::analizar_ticket(&texto))
     })
     .await
     .map_err(|e| format!("Tarea de análisis abortada: {}", e))?
@@ -219,7 +219,7 @@ pub fn parsear_carpeta(
     mapeo: serde_json::Value,
     db_path: String,
 ) -> Result<serde_json::Value, String> {
-    let archivos = src_ia::cerebro::lote::obtener_archivos_txt(&carpeta);
+    let archivos = src_ia::cerebro::parseador_masivo::obtener_archivos_txt(&carpeta);
     if archivos.is_empty() {
         return Err("No se encontraron archivos .txt en la carpeta".to_string());
     }
@@ -247,7 +247,7 @@ pub async fn parsear_carpeta_stream(
     mapeo: serde_json::Value,
     db_path: String,
 ) -> Result<String, String> {
-    let archivos = src_ia::cerebro::lote::obtener_archivos_txt(&carpeta);
+    let archivos = src_ia::cerebro::parseador_masivo::obtener_archivos_txt(&carpeta);
     if archivos.is_empty() {
         return Err("No se encontraron archivos .txt en la carpeta".to_string());
     }
@@ -291,7 +291,8 @@ fn emitir_stream_batch(
         procesados += 1;
         if res.ok {
             exitosos += 1;
-            ventas_creadas += 1;
+            // Un archivo puede traer N tickets → N ventas (regla B).
+            ventas_creadas += res.ventas;
             items_insertados += res.items;
             duplicados_detectados += res.duplicados;
             productos_existentes += res.existentes;

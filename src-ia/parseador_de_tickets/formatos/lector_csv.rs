@@ -5,7 +5,7 @@
 //! nombre de columna y precio mayor → venta, menor → costo.
 
 use super::ProductoCatalogo;
-use crate::cerebro::analizador::PRECIO_MAXIMO;
+use crate::cerebro::analizador_tickets::PRECIO_MAXIMO;
 use crate::cerebro::filtrador::limpiar_producto;
 
 const PALABRAS_HEADER: &[&str] = &[

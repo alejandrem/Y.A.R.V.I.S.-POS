@@ -23,7 +23,7 @@ pub fn vincular_inventario(
 
     // Sin embedder nativo (RAG/embeddings sin implementar) → solo match exacto, por_embedding = 0.
     let resultado =
-        src_ia::cerebro::vinculador::vincular_con_inventario(&parseados, &db_path, umbral, None);
+        src_ia::cerebro::vinculador_inventario::vincular_con_inventario(&parseados, &db_path, umbral, None);
 
     serde_json::to_value(resultado).map_err(|e| format!("Error serializando resultado: {}", e))
 }
@@ -36,7 +36,7 @@ pub fn guardar_vinculacion(
     let vinculaciones = vinculaciones.as_array().cloned().unwrap_or_default();
 
     let actualizados =
-        src_ia::cerebro::vinculador::guardar_vinculacion(&vinculaciones, &db_path)?;
+        src_ia::cerebro::vinculador_inventario::guardar_vinculacion(&vinculaciones, &db_path)?;
 
     Ok(serde_json::json!({ "status": "ok", "actualizados": actualizados }))
 }
@@ -44,7 +44,7 @@ pub fn guardar_vinculacion(
 #[tauri::command]
 pub async fn descargar_modelos() -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let descargados = src_ia::rutas::analizador_llm::descargar_modelos();
+        let descargados = src_ia::rutas::descargar_modelos();
         let msg = format!("{descargados} modelo(s) descargado(s) de VRAM");
         println!("[YARVIS-IA] {msg}");
         serde_json::json!({ "status": "ok", "descargados": descargados, "mensaje": msg })

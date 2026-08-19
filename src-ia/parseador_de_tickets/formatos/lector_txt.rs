@@ -20,7 +20,7 @@ use std::sync::LazyLock;
 
 use super::lector_csv::{detectar_separador_csv, parsear_csv};
 use super::ProductoCatalogo;
-use crate::cerebro::analizador::PRECIO_MAXIMO;
+use crate::cerebro::analizador_tickets::PRECIO_MAXIMO;
 use crate::cerebro::filtrador::{es_categoria, limpiar_producto};
 
 // ---------------------------------------------------------------------------

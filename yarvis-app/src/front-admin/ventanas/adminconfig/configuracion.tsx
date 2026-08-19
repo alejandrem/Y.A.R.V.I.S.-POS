@@ -627,9 +627,6 @@ const Configuracion = ({
                         {llmAnalysis.mapeo.tiene_iva && (
                           <span className="text-[9px] font-bold px-2 py-1 rounded-lg bg-blue-500/20 text-blue-300">TIENE IVA</span>
                         )}
-                        {llmAnalysis.reintentado_con && (
-                          <span className="text-[9px] font-bold px-2 py-1 rounded-lg bg-purple-500/20 text-purple-300">REINTENTADO CON 1.7B</span>
-                        )}
                       </div>
                       <div className="bg-white/5 rounded-xl p-4">
                         <p className="text-[8px] font-black text-neutral-500 uppercase tracking-widest mb-2">Notas del Análisis</p>

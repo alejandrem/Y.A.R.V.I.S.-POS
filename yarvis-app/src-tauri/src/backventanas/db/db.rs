@@ -174,8 +174,24 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             cliente_id INTEGER,
             clima TEXT,
             estado TEXT DEFAULT 'completada',
+            folio_ticket TEXT,
             FOREIGN KEY (cliente_id) REFERENCES clientes(id)
         )").execute(&pool).await.expect("Fallo al crear tabla de ventas");
+
+        // FIX (migración): bases creadas antes de `folio_ticket` no la tienen;
+        // el parseador masivo escribe esa columna así que se asegura aquí.
+        let tiene_folio: i64 = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pragma_table_info('ventas') WHERE name = 'folio_ticket'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+        if tiene_folio == 0 {
+            sqlx::query("ALTER TABLE ventas ADD COLUMN folio_ticket TEXT")
+                .execute(&pool)
+                .await
+                .expect("Fallo al migrar columna folio_ticket");
+        }
 
         // FIX (auditoría): índices en las columnas más consultadas de ventas.
         // fecha → obtener_ventas_hoy/7dias/por_periodo (rango de fechas cada query)

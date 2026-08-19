@@ -144,11 +144,6 @@ const ColumnMapper = ({ onGuardarTicket, onPreviewUpdate, fileContent: initialFi
               <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
               Mapeo Detectado por IA
             </span>
-            {analysis.reintentado_con && (
-              <span className="text-[8px] font-bold px-2 py-1 rounded-lg bg-purple-100 text-purple-700 uppercase">
-                Reintentado con 1.7B
-              </span>
-            )}
           </div>
 
           {/* BARRA DE CONFIANZA */}

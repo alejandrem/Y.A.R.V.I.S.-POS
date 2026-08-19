@@ -31,7 +31,7 @@ pub async fn get_model_status() -> Result<serde_json::Value, String> {
     let ram_total = ram_total_gb().unwrap_or(0.0);
     Ok(serde_json::json!({
         "status": "ok",
-        // Único modelo local para conversar: el 1.7B (0.5B quedó para parseo).
+        // Único modelo local: el 1.7B (parseo de tickets y conversación).
         "models": { MODELO_CHAT: modelo_1_7_cargado() },
         "ram_gb": ram_total,
         "ram_libre_gb": ram_libre,
@@ -43,7 +43,7 @@ pub async fn get_model_status() -> Result<serde_json::Value, String> {
 pub async fn load_chat_model(model: String) -> Result<serde_json::Value, String> {
     if model != MODELO_CHAT {
         return Err(format!(
-            "El único modelo local para conversar es {MODELO_CHAT}. El 0.5B quedó reservado para el parseo de tickets."
+            "El único modelo local es {MODELO_CHAT} (parseo de tickets y conversación)."
         ));
     }
 
@@ -124,10 +124,15 @@ pub async fn send_chat_message(
         let api_key = api_key.unwrap_or_default();
         let chat = construir_mensajes_api(&mensajes_serde_a_rust(&messages));
         match generar_completo(&provider, &api_key, &model, chat).await {
-            Ok(respuesta) => {
+            Ok((respuesta, modelo_real)) => {
+                let usado = if modelo_real.is_empty() {
+                    nombre_proveedor(&provider)
+                } else {
+                    modelo_real
+                };
                 return Ok(ChatResponse {
                     response: respuesta,
-                    model_used: nombre_proveedor(&provider),
+                    model_used: usado,
                 });
             }
             Err(e) => {

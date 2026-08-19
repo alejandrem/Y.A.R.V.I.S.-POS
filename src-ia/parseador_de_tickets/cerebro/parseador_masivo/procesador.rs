@@ -1,0 +1,266 @@
+use rusqlite::Connection;
+use std::collections::HashSet;
+use std::sync::mpsc::Sender;
+
+use super::almacen::{cargar_estado, garantizar_columna_folio, insertar_venta};
+use super::archivos::{leer_archivo_tolerante, nombre_de_archivo};
+use super::items::resolver_totales_venta;
+use super::resumen::{
+    ArchivoResultado, EstadisticasCarpeta, ProductoNuevo, ResumenVenta, TicketFallido,
+};
+use crate::cerebro::analizador_tickets::{
+    extraer_totales, parsear_linea, segmentar, Item, MapeoColumnas,
+};
+
+pub fn procesar_archivos(
+    archivos: &[String],
+    mapeo: &MapeoColumnas,
+    db_path: &str,
+    tx: &Sender<ArchivoResultado>,
+) {
+    let mut productos_vistos = cargar_estado(db_path);
+
+    let conn = match Connection::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            for archivo in archivos {
+                let mut res = ArchivoResultado::info(
+                    false,
+                    Some(format!("no se pudo abrir la base de datos: {e}")),
+                );
+                res.archivo = nombre_de_archivo(archivo);
+                let _ = tx.send(res);
+            }
+            return;
+        }
+    };
+    // Columna folio_ticket: las DBs creadas antes de la migración no la tienen.
+    garantizar_columna_folio(&conn);
+
+    for archivo in archivos {
+        let nombre_archivo = nombre_de_archivo(archivo);
+
+        let texto = match leer_archivo_tolerante(archivo) {
+            Ok(t) => t,
+            Err(e) => {
+                let mut res = ArchivoResultado::info(false, Some(format!("error inesperado: {e}")));
+                res.archivo = nombre_archivo;
+                let _ = tx.send(res);
+                continue;
+            }
+        };
+
+        if texto.trim().is_empty() {
+            let mut res = ArchivoResultado::info(false, Some("archivo vacío".to_string()));
+            res.archivo = nombre_archivo;
+            let _ = tx.send(res);
+            continue;
+        }
+
+        let lineas: Vec<&str> = texto
+            .trim()
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        if lineas.is_empty() {
+            let mut res = ArchivoResultado::info(false, Some("sin líneas útiles".to_string()));
+            res.archivo = nombre_archivo;
+            let _ = tx.send(res);
+            continue;
+        }
+
+        let total_cols = lineas
+            .iter()
+            .map(|l| l.split_whitespace().count())
+            .max()
+            .unwrap_or(0);
+
+        // Un archivo puede traer N tickets concatenados → N ventas.
+        let segmentos = segmentar(&texto);
+
+        let mut items_totales = 0usize;
+        let mut duplicados_totales = 0usize;
+        let mut existentes_totales = 0usize;
+        let mut nuevos_archivo: Vec<ProductoNuevo> = Vec::new();
+        let mut ventas_info: Vec<ResumenVenta> = Vec::new();
+        let mut total_archivo = 0.0;
+
+        if let Err(e) = conn.execute_batch("BEGIN") {
+            let mut res = ArchivoResultado::info(
+                false,
+                Some(format!(
+                    "error al insertar en DB: no se pudo iniciar la transacción ({e})"
+                )),
+            );
+            res.archivo = nombre_archivo;
+            res.items = items_totales;
+            res.duplicados = duplicados_totales;
+            res.nuevos = nuevos_archivo;
+            res.existentes = existentes_totales;
+            let _ = tx.send(res);
+            continue;
+        }
+
+        let mut error_db: Option<String> = None;
+
+        for segmento in &segmentos {
+            let mut items: Vec<Item> = Vec::new();
+            // Dedupe POR TICKET: productos repetidos entre tickets distintos
+            // de un mismo archivo ya no se pierden.
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut duplicados = 0usize;
+            let mut existentes = 0usize;
+            let mut nuevos_seg: Vec<ProductoNuevo> = Vec::new();
+
+            for linea in &segmento.lineas {
+                let Some(item) = parsear_linea(linea, mapeo, total_cols) else {
+                    continue;
+                };
+
+                let dup_key = format!("{}|{:.2}", item.producto, item.precio_unitario);
+                if seen.contains(&dup_key) {
+                    duplicados += 1;
+                    continue;
+                }
+                seen.insert(dup_key.clone());
+
+                if productos_vistos.contains(&dup_key) {
+                    existentes += 1;
+                } else {
+                    productos_vistos.insert(dup_key);
+                    nuevos_seg.push(ProductoNuevo {
+                        nombre: item.producto.clone(),
+                        precio: item.precio_unitario,
+                    });
+                }
+                items.push(item);
+            }
+
+            // Segmento sin productos reconocidos (solo encabezado) → no venta.
+            if items.is_empty() {
+                continue;
+            }
+
+            // Totales REALES del ticket con fallback al cálculo (× 1.16).
+            let reales = extraer_totales(&segmento.texto());
+            let (subtotal, iva, total) = resolver_totales_venta(&items, &reales);
+
+            match insertar_venta(
+                &conn,
+                &items,
+                &segmento.cajero,
+                segmento.fecha_hora.as_deref(),
+                &segmento.metodo_pago,
+                segmento.folio.as_deref(),
+                subtotal,
+                iva,
+                total,
+            ) {
+                Ok(venta_id) => {
+                    items_totales += items.len();
+                    duplicados_totales += duplicados;
+                    existentes_totales += existentes;
+                    total_archivo += total;
+                    ventas_info.push(ResumenVenta {
+                        archivo: nombre_archivo.clone(),
+                        venta_id: Some(venta_id),
+                        items: items.len(),
+                        total,
+                        folio: segmento.folio.clone(),
+                        fecha_hora: segmento.fecha_hora.clone(),
+                    });
+                    nuevos_archivo.append(&mut nuevos_seg);
+                }
+                Err(e) => {
+                    error_db = Some(format!("error al insertar en DB: {e}"));
+                    break;
+                }
+            }
+        }
+
+        if let Some(motivo) = error_db {
+            let _ = conn.execute_batch("ROLLBACK");
+            let mut res = ArchivoResultado::info(false, Some(motivo));
+            res.archivo = nombre_archivo;
+            res.items = items_totales;
+            res.duplicados = duplicados_totales;
+            res.nuevos = nuevos_archivo;
+            res.existentes = existentes_totales;
+            let _ = tx.send(res);
+            continue;
+        }
+
+        if ventas_info.is_empty() {
+            let _ = conn.execute_batch("ROLLBACK");
+            let mut res = ArchivoResultado::info(
+                false,
+                Some("ningún producto reconocido con el mapeo actual".to_string()),
+            );
+            res.archivo = nombre_archivo;
+            let _ = tx.send(res);
+            continue;
+        }
+
+        let _ = conn.execute_batch("COMMIT");
+        let mut res = ArchivoResultado::info(true, None);
+        res.archivo = nombre_archivo;
+        res.items = items_totales;
+        res.duplicados = duplicados_totales;
+        res.nuevos = nuevos_archivo;
+        res.existentes = existentes_totales;
+        res.ventas = ventas_info.len();
+        res.venta_id = ventas_info.first().and_then(|v| v.venta_id);
+        res.total = total_archivo;
+        res.ventas_info = ventas_info;
+        let _ = tx.send(res);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Modo síncrono: agrega los resultados por archivo en estadísticas totales
+// ---------------------------------------------------------------------------
+
+pub fn procesar_carpeta_impl(
+    archivos: Vec<String>,
+    mapeo: MapeoColumnas,
+    db_path: String,
+) -> EstadisticasCarpeta {
+    let mut stats = EstadisticasCarpeta {
+        total_archivos: archivos.len(),
+        ..Default::default()
+    };
+
+    let mut nombres_nuevos_vistos: HashSet<String> = HashSet::new();
+    let (tx, rx) = std::sync::mpsc::channel::<ArchivoResultado>();
+
+    procesar_archivos(&archivos, &mapeo, &db_path, &tx);
+    drop(tx);
+
+    for res in rx {
+        stats.procesados += 1;
+        if res.ok {
+            stats.exitosos += 1;
+            stats.ventas_creadas += res.ventas;
+            stats.items_insertados += res.items;
+            stats.duplicados_detectados += res.duplicados;
+            stats.productos_existentes += res.existentes;
+            stats.productos_nuevos += res.nuevos.len();
+            for nuevo in res.nuevos {
+                if nombres_nuevos_vistos.insert(nuevo.nombre.clone()) {
+                    stats.productos_nuevos_lista.push(nuevo);
+                }
+            }
+            stats.resumen_ventas.extend(res.ventas_info);
+        } else {
+            stats.errores += 1;
+            stats.tickets_fallidos.push(TicketFallido {
+                archivo: res.archivo,
+                motivo: res.motivo,
+            });
+        }
+    }
+
+    stats.productos_nuevos_lista.truncate(100);
+    stats.tickets_fallidos.truncate(500);
+    stats
+}

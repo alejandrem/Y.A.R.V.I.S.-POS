@@ -22,8 +22,9 @@ use serde::{Deserialize, Serialize};
 use super::prompts::Mensaje;
 use super::think::{limpiar_think, SeparadorThink, TipoFragmento};
 use super::variables::{
-    ESPERA_429_MAX_SECS, ESPERA_429_MIN_SECS, MAX_MODELOS_A_PROBAR, MODELOS_CACHE_TTL_SECS,
-    MODELOS_FREE_EXTRA, ORDEN_FALLBACK_FREE, PROVIDERS, TIMEOUT_CONNECT_SECS, TIMEOUT_READ_SECS,
+    ESPERA_429_MAX_SECS, ESPERA_429_MIN_SECS, MAX_MODELOS_A_PROBAR, MAX_TOKENS,
+    MODELOS_CACHE_TTL_SECS, MODELOS_FREE_EXTRA, ORDEN_FALLBACK_FREE, PROVIDERS, TIMEOUT_CONNECT_SECS,
+    TIMEOUT_READ_SECS,
 };
 
 /// Uso de tokens reportado por el proveedor (se rellena durante el streaming).
@@ -236,7 +237,7 @@ async fn stream_openai_compatible<'a>(
                     "content": m.content,
                 })).collect::<Vec<_>>(),
                 "temperature": 0.6,
-                "max_tokens": 39800,
+                "max_tokens": MAX_TOKENS,
                 "stream": true,
             });
             if con_uso {
@@ -357,7 +358,13 @@ async fn stream_google<'a>(
             }));
         }
 
-        let mut body = serde_json::json!({ "contents": contents });
+        let mut body = serde_json::json!({
+            "contents": contents,
+            "generationConfig": {
+                "maxOutputTokens": MAX_TOKENS,
+                "temperature": 0.6,
+            },
+        });
         if !system.is_empty() {
             body["system_instruction"] = serde_json::json!({ "parts": [{ "text": system }] });
         }
@@ -573,12 +580,14 @@ pub fn generar_stream<'a>(
 /// Respuesta completa (sin streaming) limpiando los bloques thinking.
 ///
 /// Espejo de `generar_completo` de Python: reconstruye solo la parte 'token'.
+/// Devuelve `(texto, modelo_real)`: el modelo que realmente respondió (puede
+/// diferir del pedido por el relevo 429) o vacío si no se reportó.
 pub async fn generar_completo(
     provider: &str,
     api_key: &str,
     model: &str,
     messages: Vec<Mensaje>,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     let stream = generar_stream(provider, api_key, model, messages);
     futures_util::pin_mut!(stream);
 
@@ -607,8 +616,7 @@ pub async fn generar_completo(
             salida.push_str(&frag);
         }
     }
-    let _ = modelo_final;
-    Ok(limpiar_think(&salida))
+    Ok((limpiar_think(&salida), modelo_final))
 }
 
 // ---------------------------------------------------------------------------
