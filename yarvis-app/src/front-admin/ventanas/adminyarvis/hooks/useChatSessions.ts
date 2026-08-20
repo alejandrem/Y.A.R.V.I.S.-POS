@@ -2,7 +2,7 @@
 // Gestiona el estado de sesiones en localStorage, el chat activo, el renombrado
 // (inline), el menú de 3 puntitos (abrir/cerrar) y la persistencia de mensajes.
 import { useEffect, useMemo, useState } from "react";
-import { ICONO_CHECK, ICONO_MAS, ICONO_PAUSA } from "../../../../App";
+import { ICONO_CHECK, ICONO_MAS, ICONO_PAUSA } from "../../../../icons";
 import type { ChatSession, Message } from "../ChatWidget";
 import { useIconSequence } from "./useIconSequence";
 

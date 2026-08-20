@@ -24,7 +24,7 @@ import {
   ICONO_ALERTA,
   BotonAnimado,
   IconoMorph,
-} from "./ui";
+} from "../../../components/ui";
 
 interface EmpleadoProfile {
   id: number;

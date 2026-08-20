@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import type { IconInput } from "morphicons/react";
+import { ICONO_USUARIO, ICONO_TIENDA, ICONO_CANDADO } from "../icons";
 
 const OJO: IconInput =
   "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0 m15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0";
@@ -16,13 +17,6 @@ const OJO_INVERTIDO: IconInput = [
 const OJO_OCULTO_INVERTIDO: IconInput = [
   ["path", { d: "M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20", transform: INVERTIR }],
 ];
-
-const ICONO_USUARIO: IconInput =
-  "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2m6-9a4 4 0 1 0 0-8 4 4 0 0 0 0 8z";
-const ICONO_TIENDA: IconInput =
-  "M2 7l4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M2 7h20v3a2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1-2 2v0";
-const ICONO_CANDADO: IconInput =
-  "M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-6 4v4";
 
 const SMILE: IconInput =
   "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z M9 10h.01M15 10h.01 M9.5 15a3.5 3.5 0 0 0 5 0";

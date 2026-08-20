@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ICONO_CHECK, ICONO_ENVIAR, ICONO_PAUSA } from "../../../../App";
+import { ICONO_CHECK, ICONO_ENVIAR, ICONO_PAUSA } from "../../../../icons";
 import { useIconSequence } from "./useIconSequence";
 import type { ChatModelSelection, ChatSession, Message } from "../ChatWidget";
 

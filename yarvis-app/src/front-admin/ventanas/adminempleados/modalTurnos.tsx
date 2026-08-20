@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
-import { ModalShell, Campo, inputCls, ICONO_RELOJ, ICONO_CHECK, ICONO_USUARIO } from "./ui";
+import { ModalShell, Campo, inputCls, ICONO_RELOJ, ICONO_CHECK, ICONO_USUARIO } from "../../../components/ui";
 
 interface EmpleadoProfile {
   id: number;

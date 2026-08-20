@@ -1,26 +1,94 @@
-// Iconos (morphicons) y componentes compartidos del módulo Empleados.
-// Piel reconstruida: blanco/negro, botones gorditos y micro-animaciones con MorphIcon.
+// ─────────────────────────────────────────────────────────────────────────────
+// UI COMPARTIDA (componentes primitivos de toda la app)
+// ─────────────────────────────────────────────────────────────────────────────
+// Aquí viven los componentes genéricos reutilizables (botones, modales, inputs,
+// morph helpers) que cualquier módulo importa. NO duplicar en carpetas de
+// features: si una primitiva se va a usar en dos lados, va aquí.
+// Los iconos morpheables se re-exportan desde src/icons.ts (única fuente).
+// ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, type ReactNode } from "react";
 import { MorphIcon, type IconInput } from "morphicons/react";
 
-// ── ICONOS (paths tipo Lucide sobre rejilla 24×24) ──────────────────────────
-export const ICONO_USUARIOS: IconInput = "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75";
-export const ICONO_USUARIO: IconInput = "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z";
-export const ICONO_RELOJ: IconInput = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 6v6l4 2";
-export const ICONO_TARGET: IconInput = "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z";
-export const ICONO_DOLAR: IconInput = "M12 1v22 M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6";
-export const ICONO_TRENDING: IconInput = "M23 6l-9.5 9.5-5-5L1 18 M17 6h6v6";
-export const ICONO_PREMIO: IconInput = "M8 21h8 M12 17v4 M7 4h10v4a5 5 0 0 1-10 0V4z M7 5H4a2 2 0 0 0 2 4h3 M17 5h3a2 2 0 0 1-2 4h-3";
-export const ICONO_CHECK: IconInput = "M20 6 9 17l-5-5";
-export const ICONO_MAS: IconInput = "M12 5v14M5 12h14";
-export const ICONO_CERRAR: IconInput = "M18 6 6 18M6 6l12 12";
-export const ICONO_FLECHA: IconInput = "M5 12h14M12 5l7 7-7 7";
-export const ICONO_EDITAR: IconInput = "M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z";
-export const ICONO_BORRAR: IconInput = "M3 6h18 M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6 M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2";
-export const ICONO_CALENDARIO: IconInput = "M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z";
-export const ICONO_OJO: IconInput = "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z";
-export const ICONO_OJO_OCULTO: IconInput = "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24M1 1l22 22";
-export const ICONO_ALERTA: IconInput = "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01";
+// Re-export de la única fuente de iconos para importar cómodo desde aquí.
+export {
+  ICONO_CHECK,
+  ICONO_CHECK_CIRCULO,
+  ICONO_MAS,
+  ICONO_MAS_CIRCULO,
+  ICONO_RESTA,
+  ICONO_RESTA_CIRCULO,
+  ICONO_EQUIS,
+  ICONO_CERRAR,
+  ICONO_FLECHA,
+  ICONO_HISTORIAL,
+  ICONO_RELOJ,
+  ICONO_CALENDARIO,
+  ICONO_CAMPANA,
+  ICONO_ALERTA,
+  ICONO_ALERTA_CIRCULO,
+  ICONO_INFO,
+  ICONO_AYUDA,
+  ICONO_MENU,
+  ICONO_BUSCAR,
+  ICONO_FILTRO,
+  ICONO_ETIQUETA,
+  ICONO_CODIGO,
+  ICONO_ENLACE,
+  ICONO_INICIO,
+  ICONO_UBICACION,
+  ICONO_MUNDO,
+  ICONO_NUBE,
+  ICONO_CORREO,
+  ICONO_TELEFONO,
+  ICONO_DOCUMENTO,
+  ICONO_DOCUMENTO_NUEVO,
+  ICONO_CARPETA,
+  ICONO_LIBRO,
+  ICONO_FOTO,
+  ICONO_CAMARA,
+  ICONO_IMPRESORA,
+  ICONO_DESCARGAR,
+  ICONO_SUBIR,
+  ICONO_DOLAR,
+  ICONO_TRENDING,
+  ICONO_GRAFICA,
+  ICONO_PREMIO,
+  ICONO_TROFEO,
+  ICONO_ESTRELLA,
+  ICONO_CORAZON,
+  ICONO_BILLETE,
+  ICONO_TARJETA,
+  ICONO_PORCENTAJE,
+  ICONO_BOLSA,
+  ICONO_CARRITO,
+  ICONO_CALCULADORA,
+  ICONO_CAJA,
+  ICONO_CAMION,
+  ICONO_BASE_DATOS,
+  ICONO_ESCANER,
+  ICONO_CODIGO_BARRAS,
+  ICONO_CELULAR,
+  ICONO_PANTALLA,
+  ICONO_SOL,
+  ICONO_LUNA,
+  ICONO_FUEGO,
+  ICONO_USUARIOS,
+  ICONO_USUARIO,
+  ICONO_OJO,
+  ICONO_OJO_OCULTO,
+  ICONO_APROBADO,
+  ICONO_TARGET,
+  ICONO_CANDADO,
+  ICONO_EDITAR,
+  ICONO_BORRAR,
+  ICONO_REINICIAR,
+  ICONO_TIENDA,
+  ICONO_REGALO,
+  ICONO_ENVIAR,
+  ICONO_PAUSA,
+  ICONO_ROBOT,
+  ICONO_ENGRANAJE,
+} from "../icons";
 
 // ── BOTÓN GORDITO CON MORPH EN HOVER ────────────────────────────────────────
 interface BotonAnimadoProps {

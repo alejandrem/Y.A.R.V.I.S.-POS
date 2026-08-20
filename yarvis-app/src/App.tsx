@@ -1,10 +1,10 @@
 // Punto de entrada de la app: asistente de primer inicio y login por rol.
-// Aquí viven también los iconos morphicons compartidos (ICONO_*) que usan
-// el panel admin de Y.A.R.V.I.S. (chat) y las pantallas de login.
+// Los iconos morpheables compartidos viven en src/icons.ts.
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import type { IconInput } from "morphicons/react";
+import { ICONO_CHECK, ICONO_FLECHA } from "./icons";
 import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
@@ -26,30 +26,6 @@ const CORONA: IconInput = "M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zM5 20h14";
 
 const PERSONA_PLUS: IconInput = "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M19 8v6 M22 11h-6";
 const ESPADA: IconInput = "M14.5 17.5 3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2";
-const FLECHA: IconInput = "M5 12h14 M12 5l7 7-7 7";
-export const ICONO_CHECK: IconInput = "M20 6 9 17l-5-5";
-
-export const ICONO_ENVIAR: IconInput = "M22 2 11 13M22 2 15 22 11 13 2 9 22 2Z";
-
-export const ICONO_PAUSA: IconInput = "M9 9v6M15 9v6";
-
-export const ICONO_MAS: IconInput = "M12 5v14M5 12h14";
-
-export const ICONO_REINICIAR: IconInput = "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5";
-
-export const ICONO_ENGRANAJE: IconInput = [
-  ["path", { d: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" }],
-  ["circle", { cx: "12", cy: "12", r: "3" }],
-];
-
-export const ICONO_ROBOT: IconInput = [
-  ["rect", { width: "16", height: "12", x: "4", y: "8", rx: "2" }],
-  ["path", { d: "M12 8V4H8" }],
-  ["path", { d: "M2 14h2" }],
-  ["path", { d: "M20 14h2" }],
-  ["path", { d: "M15 13v2" }],
-  ["path", { d: "M9 13v2" }],
-];
 
 const INVERTIR = "translate(24,0) scale(-1,1)";
 const OJO_INVERTIDO: IconInput = [
@@ -331,7 +307,7 @@ function App() {
                         </div>
                       </div>
                       <button onClick={handleLoginAdmin} onMouseEnter={() => setHoverLoginCheck(true)} onMouseLeave={() => setHoverLoginCheck(false)} className="w-full py-3 rounded-xl bg-neutral-900 text-white text-[10px] font-black tracking-[0.2em] hover:bg-neutral-800 transition-all uppercase shadow-lg shadow-neutral-200 inline-flex items-center justify-center gap-2">ENTRAR AL POS
-                        <MorphIcon icon={hoverLoginCheck ? ICONO_CHECK : FLECHA} size={18} strokeWidth={2.5} />
+                        <MorphIcon icon={hoverLoginCheck ? ICONO_CHECK : ICONO_FLECHA} size={18} strokeWidth={2.5} />
                       </button>
                     </div>
                   )}
@@ -368,7 +344,7 @@ function App() {
                         </div>
                       </div>
                       <button onClick={handleLoginEmployee} onMouseEnter={() => setHoverEmployeeCheck(true)} onMouseLeave={() => setHoverEmployeeCheck(false)} className="w-full py-3 rounded-xl bg-neutral-900 text-white text-[10px] font-black tracking-[0.2em] hover:bg-neutral-800 transition-all uppercase shadow-lg shadow-neutral-200 inline-flex items-center justify-center gap-2">ENTRAR AL POS
-                        <MorphIcon icon={hoverEmployeeCheck ? ICONO_CHECK : FLECHA} size={18} strokeWidth={2.5} />
+                        <MorphIcon icon={hoverEmployeeCheck ? ICONO_CHECK : ICONO_FLECHA} size={18} strokeWidth={2.5} />
                       </button>
                     </div>
                   )}

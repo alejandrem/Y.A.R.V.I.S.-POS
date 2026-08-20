@@ -16,7 +16,7 @@ import {
   ICONO_PAUSA,
   ICONO_REINICIAR,
   ICONO_ROBOT,
-} from "../../../App";
+} from "../../../icons";
 
 type ProviderId = "google" | "opencode";
 

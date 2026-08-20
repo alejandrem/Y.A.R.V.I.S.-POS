@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
-import { ModalShell, Campo, inputCls, ICONO_USUARIO, ICONO_OJO, ICONO_OJO_OCULTO, ICONO_CHECK } from "./ui";
+import { ModalShell, Campo, inputCls, ICONO_USUARIO, ICONO_OJO, ICONO_OJO_OCULTO, ICONO_CHECK } from "../../../components/ui";
 
 interface ModalEmpleadosProps {
   onClose: () => void;
