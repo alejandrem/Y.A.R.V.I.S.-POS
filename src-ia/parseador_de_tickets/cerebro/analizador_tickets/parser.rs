@@ -1,8 +1,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+use super::esquema::{resolver_indice, Item, MapeoColumnas};
 use crate::cerebro::filtrador::limpiar_producto;
-use super::esquema::{Item, MapeoColumnas, resolver_indice};
 
 pub const PRECIO_MAXIMO: f64 = 1e12;
 

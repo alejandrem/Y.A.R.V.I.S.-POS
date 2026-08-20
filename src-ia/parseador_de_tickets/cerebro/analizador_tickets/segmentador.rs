@@ -65,26 +65,21 @@ impl TicketSegmento {
 // ---------------------------------------------------------------------------
 
 /// Apertura: "FOLIO", "SERIE", "TICKET #"... o cualquier línea con fecha.
-static RE_APERTURA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:folio|serie|ticket)\b").expect("regex apertura")
-});
+static RE_APERTURA: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(?:folio|serie|ticket)\b").expect("regex apertura"));
 
 /// Cierre: la palabra TOTAL como encabezado. "SUBTOTAL" NO cierra: `\b`
 /// exige un límite de palabra, y dentro de "subtotal" no hay ningún límite
 /// entre "total" y la letra previa.
-static RE_TOTAL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\btotal\b").expect("regex total")
-});
-static RE_GRACIAS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\bgracias\b").expect("regex gracias")
-});
-static RE_EFECTIVO_RECIBIDO: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\befectivo\s+recibido\b").expect("regex efectivo recibido")
-});
+static RE_TOTAL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\btotal\b").expect("regex total"));
+static RE_GRACIAS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bgracias\b").expect("regex gracias"));
+static RE_EFECTIVO_RECIBIDO: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\befectivo\s+recibido\b").expect("regex efectivo recibido"));
 /// "CAMBIO $X" / "CAMBIO: $X" (evita "CAMBIO DE ACEITE" como cierre).
-static RE_CAMBIO: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:^|\b)cambio(?:$|[\s.:]+[$0-9])").expect("regex cambio")
-});
+static RE_CAMBIO: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:^|\b)cambio(?:$|[\s.:]+[$0-9])").expect("regex cambio"));
 /// Línea de pago del pie ("EFECTIVO $500", "TARJETA DEBITO 123.45"...).
 static RE_PAGO_FOOTER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -114,9 +109,7 @@ fn extraer_folio(linea: &str) -> Option<String> {
         Regex::new(r"(?i)\b(?:FOLIO|NO\.?\s*TICKET|TICKET\s*#?|SERIE)\s*[:.#]?\s*([A-Za-z0-9\-]+)")
             .expect("regex folio")
     });
-    RE_FOLIO
-        .captures(linea)
-        .map(|c| c[1].to_string())
+    RE_FOLIO.captures(linea).map(|c| c[1].to_string())
 }
 
 // ---------------------------------------------------------------------------

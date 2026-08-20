@@ -12,3 +12,7 @@ pub mod rutas;
 // Motor de chat (vive en `src-ia/motor-chat/`, hermano de `parseador_de_tickets/`).
 #[path = "../motor-chat/mod.rs"]
 pub mod motor_chat;
+
+// Matemáticas pesadas de predicción (viven en `src-ia/predicciones/`).
+#[path = "../predicciones/mod.rs"]
+pub mod predicciones;

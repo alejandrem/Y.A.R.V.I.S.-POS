@@ -11,11 +11,11 @@
 // Sin HTTP: expone funciones puras consumibles desde Tauri.
 // ============================================================
 
+mod almacen;
 mod archivos;
 mod items;
-mod almacen;
-mod resumen;
 mod procesador;
+mod resumen;
 
 pub use archivos::obtener_archivos_txt;
 pub use procesador::{procesar_archivos, procesar_carpeta_impl};
@@ -39,7 +39,8 @@ mod tests {
 
     const MAPEO: &str = r#"{"cantidad": 0, "producto": [1], "precio_unitario": 2, "total": 3}"#;
 
-    const TICKET: &str = "TICKET 1\n12/05/2026\n2 TAZAS $60.00 $120.00\n1 PLATO $80.00 $80.00\nTOTAL $200.00\n";
+    const TICKET: &str =
+        "TICKET 1\n12/05/2026\n2 TAZAS $60.00 $120.00\n1 PLATO $80.00 $80.00\nTOTAL $200.00\n";
 
     fn mapeo() -> MapeoColumnas {
         serde_json::from_str(MAPEO).unwrap()
@@ -212,10 +213,13 @@ mod tests {
         sembrar_producto(&db, "TAZAS", 60.0, 0.0);
         sembrar_producto(&db, "PLATO", 80.0, 0.0);
         let bueno = escribir(&dir, "bueno.txt", TICKET);
-        let solo_cabeceras = escribir(&dir, "cabeceras.txt", "GRACIAS POR SU COMPRA\nCFDI: 4D8F2A1\n");
+        let solo_cabeceras = escribir(
+            &dir,
+            "cabeceras.txt",
+            "GRACIAS POR SU COMPRA\nCFDI: 4D8F2A1\n",
+        );
 
-        let stats =
-            procesar_carpeta_impl(vec![bueno, solo_cabeceras], mapeo(), db.clone());
+        let stats = procesar_carpeta_impl(vec![bueno, solo_cabeceras], mapeo(), db.clone());
 
         assert_eq!(stats.exitosos, 1);
         assert_eq!(stats.errores, 1);

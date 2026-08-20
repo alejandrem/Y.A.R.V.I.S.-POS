@@ -48,7 +48,16 @@ Gracias por su compra";
         serde_json::to_string_pretty(&resultado).unwrap_or_else(|_| resultado.to_string())
     );
 
-    let status = resultado.get("status").and_then(|s| s.as_str()).unwrap_or("?");
-    assert_eq!(status, "ok", "El análisis debe devolver status ok, se obtuvo {status}");
-    assert!(resultado.get("mapeo").is_some(), "Falta el mapeo de columnas");
+    let status = resultado
+        .get("status")
+        .and_then(|s| s.as_str())
+        .unwrap_or("?");
+    assert_eq!(
+        status, "ok",
+        "El análisis debe devolver status ok, se obtuvo {status}"
+    );
+    assert!(
+        resultado.get("mapeo").is_some(),
+        "Falta el mapeo de columnas"
+    );
 }

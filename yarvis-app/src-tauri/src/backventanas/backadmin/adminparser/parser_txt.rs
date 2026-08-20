@@ -2,15 +2,17 @@
 // Los comandos de catálogo, mapeo, carpetas y el análisis con LLM usan el
 // crate `src-ia`. El LLM local corre
 // vía llama.cpp dentro del feature `llm-local` de `src-ia`.
+use super::utils::sanitize_path;
+use crate::backventanas::auth::AuthState;
+use rand::seq::SliceRandom;
+use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};
+use src_ia::cerebro::parseador_masivo::{
+    procesar_archivos, procesar_carpeta_impl, ArchivoResultado,
+};
+use std::collections::HashMap;
 use std::fs;
 use std::path;
-use std::collections::HashMap;
-use rand::seq::SliceRandom;
-use super::utils::sanitize_path;
 use tauri::Emitter;
-use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};
-use src_ia::cerebro::parseador_masivo::{procesar_archivos, procesar_carpeta_impl, ArchivoResultado};
-use crate::backventanas::auth::AuthState;
 
 #[derive(serde::Serialize)]
 pub struct ArchivoCarpeta {
@@ -21,7 +23,10 @@ pub struct ArchivoCarpeta {
 }
 
 #[tauri::command]
-pub fn listar_archivos_carpeta(auth: tauri::State<'_, AuthState>, carpeta: String) -> Result<Vec<ArchivoCarpeta>, String> {
+pub fn listar_archivos_carpeta(
+    auth: tauri::State<'_, AuthState>,
+    carpeta: String,
+) -> Result<Vec<ArchivoCarpeta>, String> {
     auth.require_admin()?;
     let dir = path::Path::new(&carpeta);
     if !dir.is_dir() {
@@ -39,7 +44,8 @@ pub fn listar_archivos_carpeta(auth: tauri::State<'_, AuthState>, carpeta: Strin
             continue;
         }
 
-        let ext = file_path.extension()
+        let ext = file_path
+            .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
@@ -48,25 +54,19 @@ pub fn listar_archivos_carpeta(auth: tauri::State<'_, AuthState>, carpeta: Strin
             continue;
         }
 
-        let nombre = file_path.file_name()
+        let nombre = file_path
+            .file_name()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_string();
 
         let ruta = file_path.to_string_lossy().to_string();
 
-        let tamano = fs::metadata(&file_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let tamano = fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
 
         // Leer primeras 5 lineas para preview
         let preview = fs::read_to_string(&file_path)
-            .map(|content| {
-                content.lines()
-                    .take(5)
-                    .collect::<Vec<&str>>()
-                    .join("\n")
-            })
+            .map(|content| content.lines().take(5).collect::<Vec<&str>>().join("\n"))
             .unwrap_or_else(|_| "Error al leer archivo".to_string());
 
         archivos.push(ArchivoCarpeta {
@@ -89,7 +89,10 @@ pub fn leer_archivo_raw(auth: tauri::State<'_, AuthState>, path: String) -> Resu
 }
 
 #[tauri::command]
-pub fn leer_archivo_bytes(auth: tauri::State<'_, AuthState>, path: String) -> Result<Vec<u8>, String> {
+pub fn leer_archivo_bytes(
+    auth: tauri::State<'_, AuthState>,
+    path: String,
+) -> Result<Vec<u8>, String> {
     auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
     fs::read(safe_path).map_err(|e| e.to_string())
@@ -100,7 +103,10 @@ pub fn leer_archivo_bytes(auth: tauri::State<'_, AuthState>, path: String) -> Re
 // ============================================================
 
 #[tauri::command]
-pub fn parsear_catalogo_visual(auth: tauri::State<'_, AuthState>, path: String) -> Result<serde_json::Value, String> {
+pub fn parsear_catalogo_visual(
+    auth: tauri::State<'_, AuthState>,
+    path: String,
+) -> Result<serde_json::Value, String> {
     auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
     let content = fs::read_to_string(safe_path).map_err(|e| e.to_string())?;
@@ -148,11 +154,14 @@ fn resultado_a_result(resultado: serde_json::Value) -> Result<serde_json::Value,
 /// CPU congela la ventana (WebKit queda "No responde" y pide forzar cierre).
 /// `spawn_blocking` la corre en otro hilo y la UI sigue viva durante el análisis.
 #[tauri::command]
-pub async fn analizar_ticket_llm(auth: tauri::State<'_, AuthState>, path: String) -> Result<serde_json::Value, String> {
+pub async fn analizar_ticket_llm(
+    auth: tauri::State<'_, AuthState>,
+    path: String,
+) -> Result<serde_json::Value, String> {
     auth.require_admin()?;
     let safe_path = sanitize_path(&path)?;
-    let contenido = fs::read_to_string(&safe_path)
-        .map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
+    let contenido =
+        fs::read_to_string(&safe_path).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
 
     tauri::async_runtime::spawn_blocking(move || {
         resultado_a_result(src_ia::rutas::analizar_ticket(&contenido))
@@ -162,7 +171,10 @@ pub async fn analizar_ticket_llm(auth: tauri::State<'_, AuthState>, path: String
 }
 
 #[tauri::command]
-pub async fn analizar_ticket_con_ia(auth: tauri::State<'_, AuthState>, texto: String) -> Result<serde_json::Value, String> {
+pub async fn analizar_ticket_con_ia(
+    auth: tauri::State<'_, AuthState>,
+    texto: String,
+) -> Result<serde_json::Value, String> {
     auth.require_admin()?;
     tauri::async_runtime::spawn_blocking(move || {
         resultado_a_result(src_ia::rutas::analizar_ticket(&texto))
@@ -303,7 +315,11 @@ fn normalizar_mapeo_analisis(resultado: &serde_json::Value) -> Option<serde_json
 // ============================================================
 
 #[tauri::command]
-pub fn parsear_con_mapeo(auth: tauri::State<'_, AuthState>, texto: String, mapeo: serde_json::Value) -> Result<serde_json::Value, String> {
+pub fn parsear_con_mapeo(
+    auth: tauri::State<'_, AuthState>,
+    texto: String,
+    mapeo: serde_json::Value,
+) -> Result<serde_json::Value, String> {
     auth.require_admin()?;
     let texto = texto.trim();
     if texto.is_empty() {
@@ -367,8 +383,8 @@ pub fn parsear_carpeta(
         serde_json::from_value(mapeo).map_err(|e| format!("Mapeo inválido: {}", e))?;
 
     let stats = procesar_carpeta_impl(archivos, mapeo, db_path);
-    let mut valor = serde_json::to_value(&stats)
-        .map_err(|e| format!("Error serializando resultado: {}", e))?;
+    let mut valor =
+        serde_json::to_value(&stats).map_err(|e| format!("Error serializando resultado: {}", e))?;
     if let Some(obj) = valor.as_object_mut() {
         obj.insert("status".to_string(), serde_json::json!("ok"));
     }
@@ -437,7 +453,8 @@ fn emitir_stream_batch(
     let mut productos_nuevos = 0usize;
     let mut productos_existentes = 0usize;
     let mut duplicados_detectados = 0usize;
-    let mut productos_nuevos_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut productos_nuevos_set: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     let mut tickets_fallidos: Vec<serde_json::Value> = Vec::new();
 
     for res in rx {
@@ -462,18 +479,21 @@ fn emitir_stream_batch(
         }
 
         if procesados % 50 == 0 || procesados == total {
-            let _ = app.emit("batch-progress", serde_json::json!({
-                "type": "progress",
-                "procesados": procesados,
-                "total": total,
-                "exitosos": exitosos,
-                "errores": errores,
-                "ventas_creadas": ventas_creadas,
-                "items_insertados": items_insertados,
-                "productos_nuevos": productos_nuevos,
-                "productos_existentes": productos_existentes,
-                "duplicados_detectados": duplicados_detectados,
-            }));
+            let _ = app.emit(
+                "batch-progress",
+                serde_json::json!({
+                    "type": "progress",
+                    "procesados": procesados,
+                    "total": total,
+                    "exitosos": exitosos,
+                    "errores": errores,
+                    "ventas_creadas": ventas_creadas,
+                    "items_insertados": items_insertados,
+                    "productos_nuevos": productos_nuevos,
+                    "productos_existentes": productos_existentes,
+                    "duplicados_detectados": duplicados_detectados,
+                }),
+            );
         }
     }
 

@@ -1,8 +1,8 @@
-use sqlx::SqlitePool;
-use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::SaltString};
-use rand::thread_rng;
-use crate::models::{AdminData, AdminProfile};
 use crate::backventanas::auth::{AuthState, Role};
+use crate::models::{AdminData, AdminProfile};
+use argon2::{password_hash::SaltString, Argon2, PasswordHasher, PasswordVerifier};
+use rand::thread_rng;
+use sqlx::SqlitePool;
 
 // ============================================================
 // HASHING DE CONTRASEÑAS CON ARGON2ID (OWASP)
@@ -77,10 +77,12 @@ pub async fn validar_login_admin(
     pass: String,
 ) -> Result<bool, String> {
     auth.logout();
-    let result = sqlx::query_as::<_, (i64, String, String)>("SELECT id, nombre, password FROM usuarios WHERE rol = 'admin' LIMIT 1")
-        .fetch_optional(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = sqlx::query_as::<_, (i64, String, String)>(
+        "SELECT id, nombre, password FROM usuarios WHERE rol = 'admin' LIMIT 1",
+    )
+    .fetch_optional(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
 
     if let Some(row) = result {
         let valid = verify_password(&pass, &row.2);
@@ -100,7 +102,7 @@ pub async fn get_admin_data(
 ) -> Result<Option<AdminProfile>, String> {
     auth.require_admin()?;
     let result = sqlx::query_as::<_, (String, String, Option<String>, Option<String>)>(
-        "SELECT nombre, tienda, ubicacion, cp FROM usuarios WHERE rol = 'admin' LIMIT 1"
+        "SELECT nombre, tienda, ubicacion, cp FROM usuarios WHERE rol = 'admin' LIMIT 1",
     )
     .fetch_optional(&*state)
     .await
@@ -126,19 +128,21 @@ pub async fn update_admin_data(
     tienda: String,
     pass: String,
     ubicacion: String,
-    cp: String
+    cp: String,
 ) -> Result<String, String> {
     auth.require_admin()?;
     if pass.is_empty() {
         // Sin contraseña nueva: actualizar todo EXCEPTO password
-        sqlx::query("UPDATE usuarios SET nombre = ?, tienda = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'")
-            .bind(&nombre)
-            .bind(&tienda)
-            .bind(&ubicacion)
-            .bind(&cp)
-            .execute(&*state)
-            .await
-            .map_err(|e| e.to_string())?;
+        sqlx::query(
+            "UPDATE usuarios SET nombre = ?, tienda = ?, ubicacion = ?, cp = ? WHERE rol = 'admin'",
+        )
+        .bind(&nombre)
+        .bind(&tienda)
+        .bind(&ubicacion)
+        .bind(&cp)
+        .execute(&*state)
+        .await
+        .map_err(|e| e.to_string())?;
     } else {
         // Hay contraseña nueva: hashear y guardar todo
         let hashed = hash_password(&pass);
@@ -190,17 +194,21 @@ pub async fn validar_login_empleado(
     pass: String,
 ) -> Result<Option<String>, String> {
     auth.logout();
-    let rows = sqlx::query_as::<_, (String, String, i64)>("SELECT nombre, password, id FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'")
-        .fetch_all(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
+    let rows = sqlx::query_as::<_, (String, String, i64)>(
+        "SELECT nombre, password, id FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'",
+    )
+    .fetch_all(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
 
     for (nombre, hash, id) in rows {
         if verify_password(&pass, &hash) {
-            let _ = sqlx::query("UPDATE usuarios SET ultimo_login = datetime('now', 'localtime') WHERE id = ?")
-                .bind(id)
-                .execute(&*state)
-                .await;
+            let _ = sqlx::query(
+                "UPDATE usuarios SET ultimo_login = datetime('now', 'localtime') WHERE id = ?",
+            )
+            .bind(id)
+            .execute(&*state)
+            .await;
             auth.login(id, Role::Employee, nombre.clone());
             return Ok(Some(nombre));
         }

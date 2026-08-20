@@ -30,7 +30,13 @@ const KW_NOMBRE: &[&str] = &[
     "description",
     "item",
 ];
-const KW_COSTO: &[&str] = &["costo", "cost", "precio_compra", "precio costo", "cost price"];
+const KW_COSTO: &[&str] = &[
+    "costo",
+    "cost",
+    "precio_compra",
+    "precio costo",
+    "cost price",
+];
 const KW_VENTA: &[&str] = &[
     "venta",
     "publico",
@@ -54,20 +60,17 @@ const KW_CATEGORIA: &[&str] = &[
     "type",
     "section",
 ];
-const KW_STOCK: &[&str] = &["stock", "existencia", "cantidad", "inventario", "quantity", "inventory"];
-const KW_HEADER: &[&str] = &[
-    "nombre",
-    "producto",
-    "name",
-    "cost",
-    "price",
-    "venta",
-    "costo",
-    "precio",
-    "categor",
-    "category",
-    "tipo",
+const KW_STOCK: &[&str] = &[
     "stock",
+    "existencia",
+    "cantidad",
+    "inventario",
+    "quantity",
+    "inventory",
+];
+const KW_HEADER: &[&str] = &[
+    "nombre", "producto", "name", "cost", "price", "venta", "costo", "precio", "categor",
+    "category", "tipo", "stock",
 ];
 
 fn round2(x: f64) -> f64 {
@@ -164,8 +167,7 @@ fn contiene_kw(header: &str, kws: &[&str]) -> bool {
 /// Parsea un catálogo desde los bytes de un archivo Excel.
 pub fn parsear_excel(bytes: &[u8]) -> Result<Vec<ProductoCatalogo>, String> {
     let source = Cursor::new(bytes.to_vec());
-    let mut wb = Xlsx::new(source)
-        .map_err(|e| format!("Error al leer Excel: {e}"))?;
+    let mut wb = Xlsx::new(source).map_err(|e| format!("Error al leer Excel: {e}"))?;
 
     let mut productos = Vec::new();
 

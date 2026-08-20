@@ -13,20 +13,21 @@
 // ============================================================
 
 mod inventario;
+mod persistencia;
 mod similitud;
 mod vinculo;
-mod persistencia;
 
 pub use inventario::{cargar_inventario, ProductoDb, ProductoInventario};
+pub use persistencia::guardar_vinculacion;
 pub use similitud::{blob_a_embedding, cosine_similarity, normalizar, Embedder};
 pub use vinculo::{
     vincular_con_inventario, EstadisticasVinculacion, Match, ResultadoVinculacion, SinVincular,
 };
-pub use persistencia::guardar_vinculacion;
 
 // Imports que los tests del módulo usan vía `use super::*`.
 #[cfg(test)]
-use rusqlite::Connection;#[cfg(test)]
+use rusqlite::Connection;
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::path::Path;
@@ -102,8 +103,14 @@ mod tests {
 
     #[test]
     fn coseno_iguales_y_ortogonales() {
-        assert_eq!(cosine_similarity(&[1.0, 0.0, 0.0, 0.0], &[1.0, 0.0, 0.0, 0.0]), 1.0);
-        assert_eq!(cosine_similarity(&[1.0, 0.0, 0.0, 0.0], &[0.0, 1.0, 0.0, 0.0]), 0.0);
+        assert_eq!(
+            cosine_similarity(&[1.0, 0.0, 0.0, 0.0], &[1.0, 0.0, 0.0, 0.0]),
+            1.0
+        );
+        assert_eq!(
+            cosine_similarity(&[1.0, 0.0, 0.0, 0.0], &[0.0, 1.0, 0.0, 0.0]),
+            0.0
+        );
         assert_eq!(cosine_similarity(&[0.0, 0.0], &[0.0, 0.0]), 0.0);
     }
 
@@ -202,7 +209,10 @@ mod tests {
         assert_eq!(res.vinculados[0].producto_db.id, 3);
         assert_eq!(res.vinculados[0].producto_db.precio_venta, 30.0);
         assert_eq!(res.vinculados[1].producto_db.nombre, "Coca-Cola Classic");
-        assert_eq!(res.sin_vincular[0].producto_parseado["producto"], "JUGUETE RARO");
+        assert_eq!(
+            res.sin_vincular[0].producto_parseado["producto"],
+            "JUGUETE RARO"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -7,11 +7,11 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 
+use super::super::prompts::Mensaje;
+use super::super::variables::{Provider, MAX_TOKENS};
 use super::errores::ErrorCloud;
 use super::helpers::normalizar_mensajes;
 use super::sse::sse_lineas;
-use super::super::prompts::Mensaje;
-use super::super::variables::{MAX_TOKENS, Provider};
 use super::tipos::{Evento, Usage};
 
 /// Genera el stream de un modelo específico (gemini u openai-compatible).
@@ -25,9 +25,7 @@ pub(crate) async fn stream_modelo<'a>(
     api_key: &'a str,
     modelo: &'a str,
     messages: &'a [Mensaje],
-) -> std::pin::Pin<
-    Box<dyn futures_util::Stream<Item = Result<Evento, ErrorCloud>> + Send + 'a>,
-> {
+) -> std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<Evento, ErrorCloud>> + Send + 'a>> {
     if cfg.key == "google" {
         Box::pin(stream_google(cfg, client, api_key, modelo, messages).await)
     } else {

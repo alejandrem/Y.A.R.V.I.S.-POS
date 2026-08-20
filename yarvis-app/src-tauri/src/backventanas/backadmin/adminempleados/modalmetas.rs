@@ -1,7 +1,7 @@
-use sqlx::SqlitePool;
-use sqlx::Row;
-use crate::models::{EmployeeGoal, SalarioInfo};
 use crate::backventanas::auth::AuthState;
+use crate::models::{EmployeeGoal, SalarioInfo};
+use sqlx::Row;
+use sqlx::SqlitePool;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -32,7 +32,11 @@ pub async fn get_salario_info(
             let dias_semana: i32 = r.get("dias_semana");
 
             let horas_por_dia = calcular_horas(&horario_inicio, &horario_fin);
-            let salario_hora = if horas_por_dia > 0.0 { salario_diario / horas_por_dia } else { 0.0 };
+            let salario_hora = if horas_por_dia > 0.0 {
+                salario_diario / horas_por_dia
+            } else {
+                0.0
+            };
             let salario_semanal = salario_diario * dias_semana as f64;
             let salario_mensual = salario_semanal * 4.33;
 
@@ -59,7 +63,7 @@ pub async fn save_salario(
 ) -> Result<String, String> {
     auth.require_admin()?;
     let row = sqlx::query_as::<_, (String, String)>(
-        "SELECT horario_inicio, horario_fin FROM usuarios WHERE id = ?"
+        "SELECT horario_inicio, horario_fin FROM usuarios WHERE id = ?",
     )
     .bind(empleado_id)
     .fetch_optional(&*state)
@@ -67,14 +71,16 @@ pub async fn save_salario(
     .map_err(|e| e.to_string())?;
 
     match row {
-        Some(r) => { calcular_horas(&r.0, &r.1); }
+        Some(r) => {
+            calcular_horas(&r.0, &r.1);
+        }
         None => return Err("Empleado no encontrado".into()),
     };
 
     let salario_semanal = salario_diario * dias_semana as f64;
 
     sqlx::query(
-        "UPDATE usuarios SET salario_diario = ?, salario_semanal = ?, dias_semana = ? WHERE id = ?"
+        "UPDATE usuarios SET salario_diario = ?, salario_semanal = ?, dias_semana = ? WHERE id = ?",
     )
     .bind(salario_diario)
     .bind(salario_semanal)
@@ -103,8 +109,9 @@ pub async fn get_employee_goals(
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|r| {
-        EmployeeGoal {
+    Ok(rows
+        .into_iter()
+        .map(|r| EmployeeGoal {
             id: r.get("id"),
             employee_id: r.get("employee_id"),
             goal_type: r.get("goal_type"),
@@ -115,8 +122,8 @@ pub async fn get_employee_goals(
             is_completed: r.get::<i32, _>("is_completed") != 0,
             completed_at: r.try_get("completed_at").ok(),
             created_at: r.try_get("created_at").ok(),
-        }
-    }).collect())
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -132,7 +139,7 @@ pub async fn save_employee_goal(
 ) -> Result<String, String> {
     auth.require_admin()?;
     let existing = sqlx::query_as::<_, (i32,)>(
-        "SELECT id FROM employee_goals WHERE employee_id = ? AND goal_type = ?"
+        "SELECT id FROM employee_goals WHERE employee_id = ? AND goal_type = ?",
     )
     .bind(empleado_id)
     .bind(&goal_type)
@@ -226,13 +233,12 @@ pub async fn check_employee_goals(
         None => return Err("Empleado no encontrado".into()),
     };
 
-    let horario_row = sqlx::query_as::<_, (String,)>(
-        "SELECT horario_inicio FROM usuarios WHERE id = ?"
-    )
-    .bind(empleado_id)
-    .fetch_one(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
+    let horario_row =
+        sqlx::query_as::<_, (String,)>("SELECT horario_inicio FROM usuarios WHERE id = ?")
+            .bind(empleado_id)
+            .fetch_one(&*state)
+            .await
+            .map_err(|e| e.to_string())?;
     let horario_inicio = horario_row.0;
 
     let goal_rows = sqlx::query(
@@ -281,7 +287,7 @@ pub async fn check_employee_goals(
                 }
                 "puntualidad" => {
                     let ultimo_login = sqlx::query_as::<_, (Option<String>,)>(
-                        "SELECT ultimo_login FROM usuarios WHERE id = ?"
+                        "SELECT ultimo_login FROM usuarios WHERE id = ?",
                     )
                     .bind(empleado_id)
                     .fetch_one(&*state)

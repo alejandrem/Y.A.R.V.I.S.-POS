@@ -83,11 +83,13 @@ static BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
 #[cfg(feature = "llm-local")]
 pub(crate) fn backend_global() -> Resultado<&'static LlamaBackend> {
     if BACKEND.get().is_none() {
-        let backend = LlamaBackend::init()
-            .map_err(|e| format!("No se pudo iniciar llama.cpp: {e}"))?;
+        let backend =
+            LlamaBackend::init().map_err(|e| format!("No se pudo iniciar llama.cpp: {e}"))?;
         let _ = BACKEND.set(backend);
     }
-    BACKEND.get().ok_or_else(|| "llama.cpp no inicializado".to_string())
+    BACKEND
+        .get()
+        .ok_or_else(|| "llama.cpp no inicializado".to_string())
 }
 
 /// Caché global de modelos cargados. El Y.A.R.V.I.S. usa un SOLO modelo
@@ -117,7 +119,9 @@ pub fn cargar_modelo(clave: &str) -> Resultado<Arc<ModeloChat>> {
     }
 
     // Load path con double-checked locking.
-    let mut guard = cache.lock().map_err(|_| "cache de modelos envenenado".to_string())?;
+    let mut guard = cache
+        .lock()
+        .map_err(|_| "cache de modelos envenenado".to_string())?;
     if let Some(m) = guard.get(clave) {
         return Ok(Arc::clone(m));
     }
@@ -176,7 +180,12 @@ pub fn descargar_modelos() -> usize {
 pub fn modelo_cargado(clave: &str) -> bool {
     CACHE
         .get()
-        .map(|cache| cache.lock().unwrap_or_else(|p| p.into_inner()).contains_key(clave))
+        .map(|cache| {
+            cache
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains_key(clave)
+        })
         .unwrap_or(false)
 }
 

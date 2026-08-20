@@ -15,6 +15,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let (pool, db_path_str) = backventanas::db::db::initialize_db(app.handle());
+
+            // Job de fondo de finanzas: cada hora genera alertas automáticas
+            // y actualiza el estado de vencimiento de los gastos recurrentes.
+            backventanas::backadmin::adminfinanzas::alertas::iniciar_job_alertas(pool.clone());
+
             app.manage(pool);
             app.manage(backventanas::db::db::DbPath(db_path_str.clone()));
             app.manage(backventanas::auth::AuthState::default());

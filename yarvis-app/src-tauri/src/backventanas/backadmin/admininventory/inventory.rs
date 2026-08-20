@@ -1,8 +1,8 @@
-use sqlx::SqlitePool;
-use sha2::{Sha256, Digest};
-use crate::models::InventoryItem;
-use crate::backventanas::db::db::DbPath;
 use crate::backventanas::auth::AuthState;
+use crate::backventanas::db::db::DbPath;
+use crate::models::InventoryItem;
+use sha2::{Digest, Sha256};
+use sqlx::SqlitePool;
 
 /// Calcula SHA256 del contenido del catálogo
 fn calcular_hash_catalogo(contenido: &str) -> String {
@@ -13,12 +13,11 @@ fn calcular_hash_catalogo(contenido: &str) -> String {
 
 /// Verifica si un catálogo ya fue importado (por hash)
 async fn catalogo_ya_importado(pool: &SqlitePool, hash: &str) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM catalogos_importados WHERE hash = ?"
-    )
-    .bind(hash)
-    .fetch_one(pool)
-    .await?;
+    let result =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM catalogos_importados WHERE hash = ?")
+            .bind(hash)
+            .fetch_one(pool)
+            .await?;
     Ok(result > 0)
 }
 
@@ -30,7 +29,7 @@ async fn registrar_catalogo_importado(
     total_productos: i32,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO catalogos_importados (hash, ruta_archivo, total_productos) VALUES (?, ?, ?)"
+        "INSERT INTO catalogos_importados (hash, ruta_archivo, total_productos) VALUES (?, ?, ?)",
     )
     .bind(hash)
     .bind(ruta)
@@ -42,12 +41,10 @@ async fn registrar_catalogo_importado(
 
 /// Cuenta cuántos productos con el mismo nombre ya existen en la DB
 async fn contar_productos_por_nombre(pool: &SqlitePool, nombre: &str) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM productos WHERE nombre = ?"
-    )
-    .bind(nombre)
-    .fetch_one(pool)
-    .await?;
+    let result = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM productos WHERE nombre = ?")
+        .bind(nombre)
+        .fetch_one(pool)
+        .await?;
     Ok(result)
 }
 
@@ -66,7 +63,10 @@ pub struct CatalogoImportado {
 // ============================================================
 
 #[tauri::command]
-pub async fn get_inventory(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<InventoryItem>, String> {
+pub async fn get_inventory(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<Vec<InventoryItem>, String> {
     auth.require_operator()?;
     let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, f64, f64, f64, f64, f64, Option<String>, Option<String>)>(
         "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos"
@@ -75,18 +75,21 @@ pub async fn get_inventory(state: tauri::State<'_, SqlitePool>, auth: tauri::Sta
     .await
     .map_err(|e| e.to_string())?;
 
-    let items = rows.into_iter().map(|row| InventoryItem {
-        id: row.0,
-        nombre: row.1,
-        descripcion: row.2,
-        precio_costo: row.3,
-        precio_venta: row.4,
-        stock: row.5,
-        stock_minimo: row.6,
-        vendido: row.7,
-        codigo_barras: row.8,
-        categoria: row.9,
-    }).collect();
+    let items = rows
+        .into_iter()
+        .map(|row| InventoryItem {
+            id: row.0,
+            nombre: row.1,
+            descripcion: row.2,
+            precio_costo: row.3,
+            precio_venta: row.4,
+            stock: row.5,
+            stock_minimo: row.6,
+            vendido: row.7,
+            codigo_barras: row.8,
+            categoria: row.9,
+        })
+        .collect();
 
     Ok(items)
 }
@@ -146,7 +149,11 @@ pub async fn update_inventory_item(
 }
 
 #[tauri::command]
-pub async fn delete_inventory_item(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, id: i32) -> Result<(), String> {
+pub async fn delete_inventory_item(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    id: i32,
+) -> Result<(), String> {
     auth.require_admin()?;
     sqlx::query("DELETE FROM productos WHERE id = ?")
         .bind(id)
@@ -168,8 +175,14 @@ pub async fn importar_catalogo(
     // 1. Verificar si el catálogo ya fue importado (por hash)
     if let Some(ref contenido) = contenido_archivo {
         let hash = calcular_hash_catalogo(contenido);
-        if catalogo_ya_importado(&*state, &hash).await.map_err(|e| e.to_string())? {
-            return Err("Este catálogo ya fue importado anteriormente. No se permiten duplicados.".to_string());
+        if catalogo_ya_importado(&*state, &hash)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            return Err(
+                "Este catálogo ya fue importado anteriormente. No se permiten duplicados."
+                    .to_string(),
+            );
         }
     }
 
@@ -242,7 +255,10 @@ pub async fn buscar_producto_similar(
     _categoria: Option<String>,
 ) -> Result<Vec<crate::models::SimilarResult>, String> {
     auth.require_operator()?;
-    Err("Motor de IA no disponible: los embeddings aún no están implementados de forma nativa.".to_string())
+    Err(
+        "Motor de IA no disponible: los embeddings aún no están implementados de forma nativa."
+            .to_string(),
+    )
 }
 
 // ============================================================
@@ -255,7 +271,10 @@ pub async fn backfill_embeddings(
     auth: tauri::State<'_, AuthState>,
 ) -> Result<serde_json::Value, String> {
     auth.require_admin()?;
-    Err("Motor de IA no disponible: los embeddings aún no están implementados de forma nativa.".to_string())
+    Err(
+        "Motor de IA no disponible: los embeddings aún no están implementados de forma nativa."
+            .to_string(),
+    )
 }
 
 #[tauri::command]
@@ -271,13 +290,16 @@ pub async fn get_catalogos_importados(
     .await
     .map_err(|e| e.to_string())?;
 
-    let catalogos = rows.into_iter().map(|row| CatalogoImportado {
-        id: row.0,
-        hash: row.1,
-        ruta_archivo: row.2,
-        fecha_importacion: row.3,
-        total_productos: row.4,
-    }).collect();
+    let catalogos = rows
+        .into_iter()
+        .map(|row| CatalogoImportado {
+            id: row.0,
+            hash: row.1,
+            ruta_archivo: row.2,
+            fecha_importacion: row.3,
+            total_productos: row.4,
+        })
+        .collect();
 
     Ok(catalogos)
 }
@@ -297,18 +319,21 @@ pub async fn get_productos_por_catalogo(
     .await
     .map_err(|e| e.to_string())?;
 
-    let items = rows.into_iter().map(|row| InventoryItem {
-        id: row.0,
-        nombre: row.1,
-        descripcion: row.2,
-        precio_costo: row.3,
-        precio_venta: row.4,
-        stock: row.5,
-        stock_minimo: row.6,
-        vendido: row.7,
-        codigo_barras: row.8,
-        categoria: row.9,
-    }).collect();
+    let items = rows
+        .into_iter()
+        .map(|row| InventoryItem {
+            id: row.0,
+            nombre: row.1,
+            descripcion: row.2,
+            precio_costo: row.3,
+            precio_venta: row.4,
+            stock: row.5,
+            stock_minimo: row.6,
+            vendido: row.7,
+            codigo_barras: row.8,
+            categoria: row.9,
+        })
+        .collect();
 
     Ok(items)
 }

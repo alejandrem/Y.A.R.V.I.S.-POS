@@ -11,8 +11,14 @@ pub fn sanitize_path(path: &str) -> Result<String, String> {
     let path_str = canonical.to_string_lossy().to_string();
 
     let blocked = [
-        "/etc", "/proc", "/sys", "/dev", "/root",
-        "C:\\Windows", "C:\\Program Files", "C:\\ProgramData",
+        "/etc",
+        "/proc",
+        "/sys",
+        "/dev",
+        "/root",
+        "C:\\Windows",
+        "C:\\Program Files",
+        "C:\\ProgramData",
     ];
 
     let path_lower = path_str.to_lowercase();

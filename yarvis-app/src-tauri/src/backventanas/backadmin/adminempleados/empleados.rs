@@ -1,7 +1,7 @@
-use sqlx::SqlitePool;
-use sqlx::Row;
-use serde::{Deserialize, Serialize};
 use crate::backventanas::auth::AuthState;
+use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use sqlx::SqlitePool;
 
 #[derive(Serialize, Deserialize)]
 pub struct EmpleadoProfile {
@@ -56,7 +56,10 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 }
 
 #[tauri::command]
-pub async fn get_empleados(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<EmpleadoProfile>, String> {
+pub async fn get_empleados(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<Vec<EmpleadoProfile>, String> {
     auth.require_admin()?;
     let rows = sqlx::query(
         "SELECT id, nombre, estado, turno, horario_inicio, horario_fin, salario_semanal, salario_diario, dias_semana, meta_mensual, bono, registrado_en, ultimo_login
@@ -66,25 +69,32 @@ pub async fn get_empleados(state: tauri::State<'_, SqlitePool>, auth: tauri::Sta
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|r| EmpleadoProfile {
-        id: r.get("id"),
-        nombre: r.get("nombre"),
-        estado: r.get("estado"),
-        turno: r.get("turno"),
-        horario_inicio: r.get("horario_inicio"),
-        horario_fin: r.get("horario_fin"),
-        salario_semanal: decode_f64(&r, "salario_semanal"),
-        salario_diario: decode_f64(&r, "salario_diario"),
-        dias_semana: r.get("dias_semana"),
-        meta_mensual: decode_f64(&r, "meta_mensual"),
-        bono: decode_f64(&r, "bono"),
-        registrado_en: r.try_get("registrado_en").ok(),
-        ultimo_login: r.try_get("ultimo_login").ok(),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| EmpleadoProfile {
+            id: r.get("id"),
+            nombre: r.get("nombre"),
+            estado: r.get("estado"),
+            turno: r.get("turno"),
+            horario_inicio: r.get("horario_inicio"),
+            horario_fin: r.get("horario_fin"),
+            salario_semanal: decode_f64(&r, "salario_semanal"),
+            salario_diario: decode_f64(&r, "salario_diario"),
+            dias_semana: r.get("dias_semana"),
+            meta_mensual: decode_f64(&r, "meta_mensual"),
+            bono: decode_f64(&r, "bono"),
+            registrado_en: r.try_get("registrado_en").ok(),
+            ultimo_login: r.try_get("ultimo_login").ok(),
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, empleado_id: i32) -> Result<EmpleadoVentas, String> {
+pub async fn get_empleado_ventas(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    empleado_id: i32,
+) -> Result<EmpleadoVentas, String> {
     auth.require_admin()?;
     let nombre_row = sqlx::query_as::<_, (String,)>("SELECT nombre FROM usuarios WHERE id = ?")
         .bind(empleado_id)
@@ -133,17 +143,24 @@ pub async fn get_empleado_ventas(state: tauri::State<'_, SqlitePool>, auth: taur
 }
 
 #[tauri::command]
-pub async fn get_resumen_empleados(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<EmpleadoResumen, String> {
+pub async fn get_resumen_empleados(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<EmpleadoResumen, String> {
     auth.require_admin()?;
-    let activos = sqlx::query_as::<_, (i32,)>("SELECT COUNT(*) FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'")
-        .fetch_one(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
+    let activos = sqlx::query_as::<_, (i32,)>(
+        "SELECT COUNT(*) FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'",
+    )
+    .fetch_one(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let ventas = sqlx::query_as::<_, (f64,)>("SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE estado = 'completada'")
-        .fetch_one(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
+    let ventas = sqlx::query_as::<_, (f64,)>(
+        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE estado = 'completada'",
+    )
+    .fetch_one(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
 
     let nomina = sqlx::query_as::<_, (f64,)>("SELECT COALESCE(SUM(salario_semanal), 0) * 1.0 FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'")
         .fetch_one(&*state)
@@ -159,7 +176,11 @@ pub async fn get_resumen_empleados(state: tauri::State<'_, SqlitePool>, auth: ta
 }
 
 #[tauri::command]
-pub async fn get_cortes_empleado(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, empleado_id: i32) -> Result<Vec<CorteEmpleado>, String> {
+pub async fn get_cortes_empleado(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    empleado_id: i32,
+) -> Result<Vec<CorteEmpleado>, String> {
     auth.require_admin()?;
     let nombre_row = sqlx::query_as::<_, (String,)>("SELECT nombre FROM usuarios WHERE id = ?")
         .bind(empleado_id)
@@ -175,19 +196,22 @@ pub async fn get_cortes_empleado(state: tauri::State<'_, SqlitePool>, auth: taur
     let rows = sqlx::query(
         "SELECT id, fecha_apertura, fecha_cierre, monto_inicial, total_ventas, estado
          FROM cortes_caja WHERE usuario_id IN (SELECT id FROM usuarios WHERE nombre = ?)
-         ORDER BY fecha_apertura DESC LIMIT 20"
+         ORDER BY fecha_apertura DESC LIMIT 20",
     )
     .bind(&nombre)
     .fetch_all(&*state)
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|r| CorteEmpleado {
-        id: r.get("id"),
-        fecha_apertura: r.try_get("fecha_apertura").ok(),
-        fecha_cierre: r.try_get("fecha_cierre").ok(),
-        monto_inicial: decode_f64(&r, "monto_inicial"),
-        total_ventas: decode_f64(&r, "total_ventas"),
-        estado: r.get("estado"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| CorteEmpleado {
+            id: r.get("id"),
+            fecha_apertura: r.try_get("fecha_apertura").ok(),
+            fecha_cierre: r.try_get("fecha_cierre").ok(),
+            monto_inicial: decode_f64(&r, "monto_inicial"),
+            total_ventas: decode_f64(&r, "total_ventas"),
+            estado: r.get("estado"),
+        })
+        .collect())
 }

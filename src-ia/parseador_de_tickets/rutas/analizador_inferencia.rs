@@ -12,14 +12,14 @@ use std::sync::Arc;
 use llama_cpp_4::prelude::*;
 
 #[cfg(feature = "llm-local")]
+use super::analizador_json::extraer_json;
+#[cfg(feature = "llm-local")]
 use super::analizador_modelos::{
-    backend_global, INFERENCIA_LOCK, MAX_TOKENS, MAX_TOKENS_PARSEO, ModeloChat, N_BATCH, N_CTX,
-    Resultado, TEMPERATURA, TOP_P, n_threads_llm,
+    backend_global, n_threads_llm, ModeloChat, Resultado, INFERENCIA_LOCK, MAX_TOKENS,
+    MAX_TOKENS_PARSEO, N_BATCH, N_CTX, TEMPERATURA, TOP_P,
 };
 #[cfg(feature = "llm-local")]
 use super::analizador_prompt::SISTEMA_PROMPT;
-#[cfg(feature = "llm-local")]
-use super::analizador_json::extraer_json;
 
 /// Genera texto completo dado el prompt ya formateado con el chat template.
 /// `max_tokens` es un TECHO de generación por línea de uso: el chat usa 2048 y
@@ -63,7 +63,8 @@ fn generar(modelo: &ModeloChat, prompt: &str, max_tokens: i32) -> Resultado<Stri
                 .add(*token, pos as i32, &[0], es_ultimo)
                 .map_err(|e| format!("Error llenando batch del prompt: {e}"))?;
         }
-        ctx.decode(&mut batch).map_err(|e| format!("decode(prompt) falló: {e}"))?;
+        ctx.decode(&mut batch)
+            .map_err(|e| format!("decode(prompt) falló: {e}"))?;
     }
 
     let sampler = LlamaSampler::chain_simple([
@@ -106,7 +107,8 @@ fn generar(modelo: &ModeloChat, prompt: &str, max_tokens: i32) -> Resultado<Stri
             .add(token, n_cur, &[0], true)
             .map_err(|e| format!("Error llenando batch de generación: {e}"))?;
         n_cur += 1;
-        ctx.decode(&mut batch).map_err(|e| format!("decode(generación) falló: {e}"))?;
+        ctx.decode(&mut batch)
+            .map_err(|e| format!("decode(generación) falló: {e}"))?;
     }
 
     Ok(String::from_utf8_lossy(&salida).into_owned())
@@ -133,7 +135,10 @@ pub fn generar_bajo_lock(
 
 /// Ejecuta un análisis sobre el modelo indicado (espejo de `_ejecutar_analisis`).
 #[cfg(feature = "llm-local")]
-pub(crate) fn ejecutar_analisis(modelo: &Arc<ModeloChat>, texto: &str) -> Option<serde_json::Value> {
+pub(crate) fn ejecutar_analisis(
+    modelo: &Arc<ModeloChat>,
+    texto: &str,
+) -> Option<serde_json::Value> {
     let lineas: Vec<&str> = texto
         .trim()
         .lines()

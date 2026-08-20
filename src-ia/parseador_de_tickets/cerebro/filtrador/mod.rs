@@ -156,10 +156,7 @@ mod tests {
     #[test]
     fn normaliza_a_mayusculas() {
         assert_eq!(limpiar_producto("coca-cola 600ml"), "COCA-COLA 600ML");
-        assert_eq!(
-            limpiar_producto("Sabritas 16 12"),
-            "SABRITAS 16 12"
-        );
+        assert_eq!(limpiar_producto("Sabritas 16 12"), "SABRITAS 16 12");
     }
 
     #[test]
@@ -168,14 +165,8 @@ mod tests {
             limpiar_producto("BEBIDAS COCA-COLA 600ML"),
             "COCA-COLA 600ML"
         );
-        assert_eq!(
-            limpiar_producto("FRUTAS Y VERDURAS MANZANA"),
-            "MANZANA"
-        );
-        assert_eq!(
-            limpiar_producto("limpieza cloro"),
-            "CLORO"
-        );
+        assert_eq!(limpiar_producto("FRUTAS Y VERDURAS MANZANA"), "MANZANA");
+        assert_eq!(limpiar_producto("limpieza cloro"), "CLORO");
     }
 
     // ---------- es_categoria ----------

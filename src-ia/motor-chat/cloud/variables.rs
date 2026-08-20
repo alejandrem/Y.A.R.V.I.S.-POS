@@ -87,7 +87,10 @@ mod tests {
     #[test]
     fn modelos_free_extra_no_estan_en_orden_fallback() {
         for extra in MODELOS_FREE_EXTRA {
-            assert!(ORDEN_FALLBACK_FREE.contains(extra), "{extra} debe estar en el relevo");
+            assert!(
+                ORDEN_FALLBACK_FREE.contains(extra),
+                "{extra} debe estar en el relevo"
+            );
         }
     }
 }

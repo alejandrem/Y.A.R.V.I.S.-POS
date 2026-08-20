@@ -17,6 +17,7 @@ llm-local = ["dep:llama-cpp-4"]
 
 [dependencies]
 calamine = "0.26"
+chrono = "0.4"
 regex = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }

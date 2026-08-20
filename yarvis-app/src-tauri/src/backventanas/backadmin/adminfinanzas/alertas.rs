@@ -1,9 +1,12 @@
-use sqlx::SqlitePool;
-use chrono::Duration;
-use crate::backventanas::backadmin::adminfinanzas::models::*;
-use sqlx::Row;
-use chrono::Datelike;
 use crate::backventanas::auth::AuthState;
+use crate::backventanas::backadmin::adminfinanzas::fechas::calcular_proxima_fecha;
+use crate::backventanas::backadmin::adminfinanzas::metricas::{
+    calcular_utilidad_neta_periodo, sincronizar_resumen_mes_actual,
+};
+use crate::backventanas::backadmin::adminfinanzas::models::*;
+use chrono::{Datelike, Duration};
+use sqlx::Row;
+use sqlx::SqlitePool;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -12,38 +15,51 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 }
 
 #[tauri::command]
-pub async fn get_alertas(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, solo_no_leidas: bool) -> Result<Vec<AlertaFinanciera>, String> {
+pub async fn get_alertas(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    solo_no_leidas: bool,
+) -> Result<Vec<AlertaFinanciera>, String> {
     auth.require_admin()?;
     let mut query = String::from("SELECT * FROM alertas_financieras WHERE 1=1");
     if solo_no_leidas {
         query.push_str(" AND leida = 0");
     }
-    query.push_str(" ORDER BY 
+    query.push_str(
+        r#" ORDER BY
         CASE severidad WHEN 'rojo' THEN 0 WHEN 'amarillo' THEN 1 WHEN 'verde' THEN 2 ELSE 3 END,
         creada_en DESC
-        LIMIT 50");
+        LIMIT 50"#,
+    );
 
     let rows = sqlx::query(&query)
         .fetch_all(&*state)
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|row| AlertaFinanciera {
-        id: row.get("id"),
-        tipo: row.get("tipo"),
-        severidad: row.get("severidad"),
-        titulo: row.get("titulo"),
-        mensaje: row.get("mensaje"),
-        entidad_id: row.try_get("entidad_id").ok(),
-        entidad_tipo: row.try_get("entidad_tipo").ok(),
-        fecha_vencimiento: row.try_get("fecha_vencimiento").ok(),
-        leida: row.get::<i64, _>("leida") != 0,
-        creada_en: row.get("creada_en"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| AlertaFinanciera {
+            id: row.get("id"),
+            tipo: row.get("tipo"),
+            severidad: row.get("severidad"),
+            titulo: row.get("titulo"),
+            mensaje: row.get("mensaje"),
+            entidad_id: row.try_get("entidad_id").ok(),
+            entidad_tipo: row.try_get("entidad_tipo").ok(),
+            fecha_vencimiento: row.try_get("fecha_vencimiento").ok(),
+            leida: row.get::<i64, _>("leida") != 0,
+            creada_en: row.get("creada_en"),
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub async fn marcar_alerta_leida(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, id: i64) -> Result<(), String> {
+pub async fn marcar_alerta_leida(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    id: i64,
+) -> Result<(), String> {
     auth.require_admin()?;
     sqlx::query("UPDATE alertas_financieras SET leida = 1 WHERE id = ?")
         .bind(id)
@@ -54,14 +70,24 @@ pub async fn marcar_alerta_leida(state: tauri::State<'_, SqlitePool>, auth: taur
 }
 
 #[tauri::command]
-pub async fn generar_alertas_automaticas(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>) -> Result<Vec<AlertaFinanciera>, String> {
+pub async fn generar_alertas_automaticas(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<Vec<AlertaFinanciera>, String> {
     auth.require_admin()?;
     generar_alertas_automaticas_impl(&*state).await
 }
 
-pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<AlertaFinanciera>, String> {
+pub async fn generar_alertas_automaticas_impl(
+    state: &SqlitePool,
+) -> Result<Vec<AlertaFinanciera>, String> {
     let hoy = chrono::Local::now().date_naive();
     let hace_30_dias = hoy - Duration::days(30);
+
+    // `resumen_financiero_diario` es una caché, no la fuente de verdad.
+    // Se refresca para que reportes que la consuman no queden obsoletos;
+    // las alertas calculan su importe directamente desde las tablas vivas.
+    sincronizar_resumen_mes_actual(state).await?;
 
     let mut nuevas_alertas = Vec::new();
 
@@ -73,7 +99,7 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
            AND id NOT IN (
                SELECT entidad_id FROM alertas_financieras 
                WHERE tipo = 'gasto_vencimiento' AND entidad_tipo = 'gasto' AND leida = 0
-           )"#
+           )"#,
     )
     .bind(hoy.format("%Y-%m-%d").to_string())
     .fetch_all(&*state)
@@ -89,12 +115,13 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
         let dia_pago: Option<i32> = gasto.try_get("dia_pago").ok();
         let intervalo_dias: Option<i32> = gasto.try_get("intervalo_dias").ok();
 
-        // Calcular próxima fecha (lógica simplificada)
-        let proxima = calcular_proxima_fecha_simple(&fecha_inicio, &frecuencia, dia_pago, intervalo_dias, hoy);
-        
+        // Próxima ocurrencia calculada (día 0 = vence hoy).
+        let proxima =
+            calcular_proxima_fecha(&fecha_inicio, &frecuencia, dia_pago, intervalo_dias, hoy);
+
         if let Some(prox_fecha) = proxima {
             let dias = (prox_fecha - hoy).num_days();
-            
+
             let (severidad, titulo) = if dias <= 0 {
                 ("rojo".to_string(), "GASTO VENCIDO".to_string())
             } else if dias <= 3 {
@@ -107,7 +134,10 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
 
             let mensaje = format!(
                 "El gasto '{}' de ${:.2} vence el {} ({} días)",
-                nombre, monto_proyectado, prox_fecha.format("%d/%m/%Y"), dias
+                nombre,
+                monto_proyectado,
+                prox_fecha.format("%d/%m/%Y"),
+                dias
             );
 
             let alerta_id = sqlx::query(
@@ -149,7 +179,7 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
            AND c.id NOT IN (
                SELECT entidad_id FROM alertas_financieras 
                WHERE tipo = 'corte_pendiente' AND entidad_tipo = 'corte' AND leida = 0
-           )"#
+           )"#,
     )
     .fetch_all(&*state)
     .await
@@ -159,10 +189,14 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
         let corte_id: i64 = corte.get("id");
         let cajero: String = corte.get("nombre");
         let fecha_apertura: String = corte.get("fecha_apertura");
-        
-        let horas_abierto = chrono::Local::now().signed_duration_since(
-            chrono::DateTime::parse_from_str(&fecha_apertura, "%Y-%m-%d %H:%M:%S").unwrap().with_timezone(&chrono::Local)
-        ).num_hours();
+
+        let horas_abierto = chrono::Local::now()
+            .signed_duration_since(
+                chrono::DateTime::parse_from_str(&fecha_apertura, "%Y-%m-%d %H:%M:%S")
+                    .unwrap()
+                    .with_timezone(&chrono::Local),
+            )
+            .num_hours();
 
         let alerta_id = sqlx::query(
             r#"INSERT INTO alertas_financieras (tipo, severidad, titulo, mensaje, entidad_id, entidad_tipo)
@@ -180,7 +214,10 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
             tipo: "corte_pendiente".to_string(),
             severidad: "amarillo".to_string(),
             titulo: "CORTE SIN CERRAR".to_string(),
-            mensaje: format!("El corte #{} de {} lleva {} horas abierto", corte_id, cajero, horas_abierto),
+            mensaje: format!(
+                "El corte #{} de {} lleva {} horas abierto",
+                corte_id, cajero, horas_abierto
+            ),
             entidad_id: Some(corte_id),
             entidad_tipo: Some("corte".to_string()),
             fecha_vencimiento: None,
@@ -202,7 +239,7 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
            AND c.id NOT IN (
                SELECT entidad_id FROM alertas_financieras 
                WHERE tipo = 'diferencia_caja' AND entidad_tipo = 'corte' AND leida = 0
-           )"#
+           )"#,
     )
     .bind(hace_30_dias.format("%Y-%m-%d").to_string())
     .fetch_all(&*state)
@@ -218,7 +255,11 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
         let pct = (diferencia.abs() / total_ventas) * 100.0;
 
         let severidad = if pct > 10.0 { "rojo" } else { "amarillo" };
-        let titulo = if diferencia > 0.0 { "SOBRANTE EN CAJA" } else { "FALTANTE EN CAJA" };
+        let titulo = if diferencia > 0.0 {
+            "SOBRANTE EN CAJA"
+        } else {
+            "FALTANTE EN CAJA"
+        };
 
         let alerta_id = sqlx::query(
             r#"INSERT INTO alertas_financieras (tipo, severidad, titulo, mensaje, entidad_id, entidad_tipo)
@@ -238,7 +279,12 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
             tipo: "diferencia_caja".to_string(),
             severidad: severidad.to_string(),
             titulo: titulo.to_string(),
-            mensaje: format!("Corte #{}: diferencia de ${:.2} ({:.1}%)", corte_id, diferencia.abs(), pct),
+            mensaje: format!(
+                "Corte #{}: diferencia de ${:.2} ({:.1}%)",
+                corte_id,
+                diferencia.abs(),
+                pct
+            ),
             entidad_id: Some(corte_id),
             entidad_tipo: Some("corte".to_string()),
             fecha_vencimiento: None,
@@ -248,16 +294,15 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
     }
 
     // 4. Alerta de utilidad neta negativa en el mes
-    let utilidad_mes = sqlx::query(
-        r#"SELECT COALESCE(SUM(utilidad_neta), 0) as total FROM resumen_financiero_diario 
-           WHERE date(fecha) >= date('now', 'start of month') AND date(fecha) <= date('now')"#
+    let inicio_mes = chrono::NaiveDate::from_ymd_opt(hoy.year(), hoy.month(), 1)
+        .ok_or_else(|| "No se pudo calcular el inicio del mes actual".to_string())?;
+    let utilidad_total = calcular_utilidad_neta_periodo(
+        state,
+        &inicio_mes.format("%Y-%m-%d").to_string(),
+        &hoy.format("%Y-%m-%d").to_string(),
     )
-    .fetch_one(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
-    
-    let utilidad_total: f64 = decode_f64(&utilidad_mes, "total");
-    
+    .await?;
+
     if utilidad_total < 0.0 {
         // Verificar si ya existe alerta este mes
         let existe = sqlx::query_scalar::<_, i64>(
@@ -270,9 +315,12 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
         if existe == 0 {
             let alerta_id = sqlx::query(
                 r#"INSERT INTO alertas_financieras (tipo, severidad, titulo, mensaje, entidad_tipo)
-                   VALUES ('utilidad_negativa', 'rojo', 'UTILIDAD NETA NEGATIVA', ?, 'sistema')"#
+                   VALUES ('utilidad_negativa', 'rojo', 'UTILIDAD NETA NEGATIVA', ?, 'sistema')"#,
             )
-            .bind(format!("La utilidad neta del mes actual es de ${:.2}. Revisar gastos e ingresos.", utilidad_total))
+            .bind(format!(
+                "La utilidad neta del mes actual es de ${:.2}. Revisar gastos e ingresos.",
+                utilidad_total
+            ))
             .execute(&*state)
             .await
             .map_err(|e| e.to_string())?
@@ -296,73 +344,10 @@ pub async fn generar_alertas_automaticas_impl(state: &SqlitePool) -> Result<Vec<
     Ok(nuevas_alertas)
 }
 
-fn calcular_proxima_fecha_simple(fecha_inicio: &str, frecuencia: &str, dia_pago: Option<i32>, intervalo_dias: Option<i32>, desde: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
-    let inicio = chrono::NaiveDate::parse_from_str(fecha_inicio, "%Y-%m-%d").ok()?;
-    
-    match frecuencia {
-        "semanal" => {
-            let mut fecha = inicio;
-            while fecha <= desde {
-                fecha += Duration::days(7);
-            }
-            Some(fecha)
-        }
-        "quincenal" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 15) as u32;
-            let mut fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), desde.month(), dia)?;
-            if fecha <= desde {
-                if desde.month() == 12 {
-                    fecha = chrono::NaiveDate::from_ymd_opt(desde.year() + 1, 1, dia)?;
-                } else {
-                    fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), desde.month() + 1, dia)?;
-                }
-            }
-            Some(fecha)
-        }
-        "mensual" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 28) as u32;
-            let mut fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), desde.month(), dia)?;
-            if fecha <= desde {
-                if desde.month() == 12 {
-                    fecha = chrono::NaiveDate::from_ymd_opt(desde.year() + 1, 1, dia)?;
-                } else {
-                    fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), desde.month() + 1, dia)?;
-                }
-            }
-            Some(fecha)
-        }
-        "trimestral" => {
-            let dia = dia_pago.unwrap_or(1).clamp(1, 28) as u32;
-            let mes_base = ((desde.month() - 1) / 3) * 3 + 1;
-            let mut fecha = chrono::NaiveDate::from_ymd_opt(desde.year(), mes_base + 3, dia)?;
-            if fecha.month() > 12 {
-                fecha = chrono::NaiveDate::from_ymd_opt(desde.year() + 1, fecha.month() - 12, dia)?;
-            }
-            if fecha <= desde {
-                let mes = fecha.month() + 3;
-                if mes > 12 {
-                    fecha = chrono::NaiveDate::from_ymd_opt(fecha.year() + 1, mes - 12, dia)?;
-                } else {
-                    fecha = chrono::NaiveDate::from_ymd_opt(fecha.year(), mes, dia)?;
-                }
-            }
-            Some(fecha)
-        }
-        "personalizado" => {
-            let intervalo = intervalo_dias.unwrap_or(30) as i64;
-            let mut fecha = inicio;
-            while fecha <= desde {
-                fecha += Duration::days(intervalo);
-            }
-            Some(fecha)
-        }
-        _ => None,
-    }
-}
-
-// Background job para ejecutar alertas automáticas cada hora
+// Background job para ejecutar alertas automáticas cada hora.
+// Se arranca en lib.rs (setup) con el pool de la DB.
 pub fn iniciar_job_alertas(pool: SqlitePool) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hora
         loop {
             interval.tick().await;

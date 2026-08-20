@@ -1,7 +1,7 @@
-use sqlx::SqlitePool;
-use sqlx::Row;
-use serde::Serialize;
 use crate::backventanas::auth::{AuthState, Role};
+use serde::Serialize;
+use sqlx::Row;
+use sqlx::SqlitePool;
 
 #[derive(Serialize)]
 pub struct EmployeeProfile {
@@ -68,10 +68,10 @@ pub async fn get_employee_profile(
     };
 
     let row = sqlx::query(query)
-    .bind(lookup)
-    .fetch_optional(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
+        .bind(lookup)
+        .fetch_optional(&*state)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let r = match row {
         Some(r) => r,
@@ -84,7 +84,11 @@ pub async fn get_employee_profile(
     let horario_fin: String = r.get("horario_fin");
 
     let horas_por_dia = calcular_horas(&horario_inicio, &horario_fin);
-    let salario_hora = if horas_por_dia > 0.0 { salario_diario / horas_por_dia } else { 0.0 };
+    let salario_hora = if horas_por_dia > 0.0 {
+        salario_diario / horas_por_dia
+    } else {
+        0.0
+    };
     let salario_semanal = salario_diario * dias_semana as f64;
     let salario_mensual = salario_semanal * 4.33;
 
@@ -115,14 +119,17 @@ pub async fn get_employee_profile(
     .await
     .map_err(|e| e.to_string())?;
 
-    let goals = goal_rows.into_iter().map(|gr| EmployeeGoalSummary {
-        goal_type: gr.get("goal_type"),
-        goal_name: gr.try_get("goal_name").ok(),
-        bonus_amount: decode_f64(&gr, "bonus_amount"),
-        bonus_percentage: decode_f64(&gr, "bonus_percentage"),
-        ventas_threshold: gr.get("ventas_threshold"),
-        is_completed: gr.get::<i32, _>("is_completed") != 0,
-    }).collect();
+    let goals = goal_rows
+        .into_iter()
+        .map(|gr| EmployeeGoalSummary {
+            goal_type: gr.get("goal_type"),
+            goal_name: gr.try_get("goal_name").ok(),
+            bonus_amount: decode_f64(&gr, "bonus_amount"),
+            bonus_percentage: decode_f64(&gr, "bonus_percentage"),
+            ventas_threshold: gr.get("ventas_threshold"),
+            is_completed: gr.get::<i32, _>("is_completed") != 0,
+        })
+        .collect();
 
     Ok(EmployeeProfileFull { profile, goals })
 }

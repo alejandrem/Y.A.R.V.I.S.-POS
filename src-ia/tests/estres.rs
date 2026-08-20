@@ -94,7 +94,10 @@ fn fuzzing_basura_no_panica_en_ningun_parser() {
             assert!(h.len() == 5, "hora corrupta en iter {i}: {h:?} de {s:?}");
         }
         if let Some(fecha) = &f {
-            assert!(fecha.len() == 10 && fecha.as_bytes()[4] == b'-', "fecha corrupta {fecha:?}");
+            assert!(
+                fecha.len() == 10 && fecha.as_bytes()[4] == b'-',
+                "fecha corrupta {fecha:?}"
+            );
         }
 
         let metodo = extraer_metodo_pago(&s);
@@ -149,7 +152,10 @@ fn ningun_precio_es_nan_inf_o_absurdo() {
         ] {
             if let Some(item) = parsear_linea(&s, &mapeo, 20) {
                 assert!(finito(item.cantidad), "cantidad loca {item:?} de {s:?}");
-                assert!(finito(item.precio_unitario), "precio loco {item:?} de {s:?}");
+                assert!(
+                    finito(item.precio_unitario),
+                    "precio loco {item:?} de {s:?}"
+                );
                 assert!(finito(item.total), "total loco {item:?} de {s:?}");
                 if let Some(d) = item.descuento {
                     assert!(finito(d), "descuento loco {item:?} de {s:?}");
@@ -178,8 +184,8 @@ fn inf_nan_y_magnitudes_absurdas_se_neutralizan() {
         ("2 COCA nan", "COCA"),
         ("2 COCA -inf", "COCA"),
     ] {
-        let item = parsear_linea(linea, &precio_roto, 4)
-            .unwrap_or_else(|| panic!("no parseó {linea:?}"));
+        let item =
+            parsear_linea(linea, &precio_roto, 4).unwrap_or_else(|| panic!("no parseó {linea:?}"));
         assert_eq!(item.producto, nombre, "{linea}");
         assert_eq!(item.total, 0.0, "{linea} dejó pasar dinero roto");
         assert!(finito(item.total), "{linea}");
@@ -187,7 +193,10 @@ fn inf_nan_y_magnitudes_absurdas_se_neutralizan() {
 
     // Un número de 32 dígitos es folio/número de ticket → se descarta (RE_NUM_FINAL).
     let folio = "2 COCA 99999999999999999999999999999999";
-    assert!(parsear_linea(folio, &precio_roto, 4).is_none(), "folio gigante entró como item");
+    assert!(
+        parsear_linea(folio, &precio_roto, 4).is_none(),
+        "folio gigante entró como item"
+    );
 
     // CSV: una celda "inf" no debe convertirse en precio infinito.
     let csv_roto = "nombre,venta\nX,inf\n";
@@ -269,7 +278,10 @@ fn fechas_y_horas_imposibles_no_rompen() {
     ] {
         let (f, h) = extraer_fecha_hora_regex(s);
         if let Some(fecha) = &f {
-            assert!(fecha.len() == 10 && fecha.as_bytes()[4] == b'-', "{fecha:?} de {s:?}");
+            assert!(
+                fecha.len() == 10 && fecha.as_bytes()[4] == b'-',
+                "{fecha:?} de {s:?}"
+            );
         }
         if let Some(h) = &h {
             assert!(h.len() == 5, "{h:?} de {s:?}");
@@ -291,7 +303,7 @@ fn metodos_de_pago_trampa_se_mantienen_en_el_conjunto() {
         "EFECTIVO........... $1,234.56",
         "TARJETA DEBITO $500.00\nTOTAL $500.00",
         "no se pudo cobrar ningun metodo xd",
-        "METODO DE PAGO:" ,
+        "METODO DE PAGO:",
     ] {
         let m = extraer_metodo_pago(texto);
         assert!(
@@ -318,7 +330,10 @@ fn separadores_y_glitch_no_pasan_a_producto() {
         "***~~~",
     ] {
         assert!(!es_linea_util(s), "separador como util: {s:?}");
-        assert!(parsear_linea(s, &mapeo(), 10).is_none(), "separador como item: {s:?}");
+        assert!(
+            parsear_linea(s, &mapeo(), 10).is_none(),
+            "separador como item: {s:?}"
+        );
     }
 }
 
@@ -403,7 +418,11 @@ fn ticket_gigante_20mil_items_entra_completo() {
     let ruta = dir.join("mega.txt");
     std::fs::write(&ruta, &texto).unwrap();
 
-    let stats = procesar_carpeta_impl(vec![ruta.to_string_lossy().to_string()], mapeo(), db.clone());
+    let stats = procesar_carpeta_impl(
+        vec![ruta.to_string_lossy().to_string()],
+        mapeo(),
+        db.clone(),
+    );
 
     assert_eq!(stats.exitosos, 1);
     assert_eq!(stats.errores, 0);

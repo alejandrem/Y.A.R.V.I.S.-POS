@@ -1,5 +1,5 @@
-use sqlx::SqlitePool;
 use crate::backventanas::auth::AuthState;
+use sqlx::SqlitePool;
 
 #[tauri::command]
 pub async fn update_empleado(
@@ -41,7 +41,11 @@ pub async fn update_empleado(
 }
 
 #[tauri::command]
-pub async fn delete_empleado(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, empleado_id: i32) -> Result<String, String> {
+pub async fn delete_empleado(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    empleado_id: i32,
+) -> Result<String, String> {
     auth.require_admin()?;
     sqlx::query("DELETE FROM usuarios WHERE id = ? AND rol = 'empleado'")
         .bind(empleado_id)

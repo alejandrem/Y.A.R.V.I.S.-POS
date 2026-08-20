@@ -13,21 +13,21 @@
 // `filtrador::limpiar_producto`.
 // ============================================================
 
+mod encabezado;
+mod esquema;
 mod fechas;
 mod pagos;
-mod esquema;
 mod parser;
 mod segmentador;
-mod encabezado;
 mod totales;
 
+pub use encabezado::extraer_cajero;
+pub use esquema::{resolver_indice, Item, MapeoColumnas};
 pub use fechas::{extraer_fecha_hora_regex, tiene_fecha};
 pub use pagos::extraer_metodo_pago;
-pub use esquema::{MapeoColumnas, Item, resolver_indice};
-pub use parser::{PRECIO_MAXIMO, es_linea_util, limpiar_precio, parsear_linea};
-pub use encabezado::extraer_cajero;
-pub use segmentador::{TicketSegmento, segmentar};
-pub use totales::{TotalesTicket, extraer_totales};
+pub use parser::{es_linea_util, limpiar_precio, parsear_linea, PRECIO_MAXIMO};
+pub use segmentador::{segmentar, TicketSegmento};
+pub use totales::{extraer_totales, TotalesTicket};
 
 #[cfg(test)]
 mod tests {
@@ -189,8 +189,7 @@ mod tests {
             total: Some(-1),
             descuento: None,
         };
-        let item =
-            parsear_linea("CAJA DE 24 CERVEZAS MODELO $540.00", &m, 5).unwrap();
+        let item = parsear_linea("CAJA DE 24 CERVEZAS MODELO $540.00", &m, 5).unwrap();
         assert_eq!(item.producto, "CAJA DE 24 CERVEZAS MODELO");
         assert_eq!(item.total, 540.0);
     }

@@ -1,6 +1,6 @@
-use sqlx::SqlitePool;
 use crate::backventanas::auth::AuthState;
 use sqlx::Row;
+use sqlx::SqlitePool;
 
 #[derive(serde::Serialize)]
 pub struct TurnoInfo {
@@ -24,11 +24,14 @@ pub async fn get_turnos_empleados(
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|r| TurnoInfo {
-        empleado_id: r.get("id"),
-        nombre: r.get("nombre"),
-        turno: r.get("turno"),
-        horario_inicio: r.get("horario_inicio"),
-        horario_fin: r.get("horario_fin"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| TurnoInfo {
+            empleado_id: r.get("id"),
+            nombre: r.get("nombre"),
+            turno: r.get("turno"),
+            horario_inicio: r.get("horario_inicio"),
+            horario_fin: r.get("horario_fin"),
+        })
+        .collect())
 }

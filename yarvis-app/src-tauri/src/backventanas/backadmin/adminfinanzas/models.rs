@@ -196,4 +196,3 @@ pub struct FiltrosCortes {
     pub tipo_corte: Option<String>,
     pub estado: Option<String>,
 }
-

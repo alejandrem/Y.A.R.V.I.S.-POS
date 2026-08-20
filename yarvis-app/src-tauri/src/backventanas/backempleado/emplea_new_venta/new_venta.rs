@@ -1,6 +1,6 @@
-use sqlx::SqlitePool;
-use crate::models::{VentaRequest, VentaResponse, TiendaInfo};
 use crate::backventanas::auth::AuthState;
+use crate::models::{TiendaInfo, VentaRequest, VentaResponse};
+use sqlx::SqlitePool;
 
 #[tauri::command]
 pub async fn completar_venta(
@@ -18,7 +18,10 @@ pub async fn completar_venta(
         return Err("El monto pagado es menor al total".into());
     }
 
-    let metodo_pago = if venta.monto_efectivo > 0.0 && venta.monto_tarjeta > 0.0 && venta.monto_transferencia > 0.0 {
+    let metodo_pago = if venta.monto_efectivo > 0.0
+        && venta.monto_tarjeta > 0.0
+        && venta.monto_transferencia > 0.0
+    {
         "mixto"
     } else if venta.monto_efectivo > 0.0 && venta.monto_tarjeta > 0.0 {
         "efectivo/tarjeta"
@@ -73,12 +76,14 @@ pub async fn completar_venta(
         .map_err(|e| e.to_string())?;
 
         if let Some(producto_id) = item.id {
-            let _ = sqlx::query("UPDATE productos SET stock = stock - ?, vendido = vendido + ? WHERE id = ?")
-                .bind(item.cantidad)
-                .bind(item.cantidad)
-                .bind(producto_id)
-                .execute(&*state)
-                .await;
+            let _ = sqlx::query(
+                "UPDATE productos SET stock = stock - ?, vendido = vendido + ? WHERE id = ?",
+            )
+            .bind(item.cantidad)
+            .bind(item.cantidad)
+            .bind(producto_id)
+            .execute(&*state)
+            .await;
         }
     }
 
@@ -109,12 +114,11 @@ pub async fn get_tienda_info(
     auth: tauri::State<'_, AuthState>,
 ) -> Result<TiendaInfo, String> {
     auth.require_operator()?;
-    let row: (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT tienda, ubicacion, cp FROM usuarios WHERE rol = 'admin' LIMIT 1"
-    )
-    .fetch_one(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
+    let row: (Option<String>, Option<String>, Option<String>) =
+        sqlx::query_as("SELECT tienda, ubicacion, cp FROM usuarios WHERE rol = 'admin' LIMIT 1")
+            .fetch_one(&*state)
+            .await
+            .map_err(|e| e.to_string())?;
 
     Ok(TiendaInfo {
         nombre: row.0,

@@ -4,8 +4,7 @@ use std::sync::LazyLock;
 static RE_NO_WORD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[^\w\s]").expect("regex no-word"));
 
-static RE_ESPACIOS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\s+").expect("regex espacios"));
+static RE_ESPACIOS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("regex espacios"));
 
 /// Normaliza un nombre para comparación: minúsculas, sin especiales, sin
 /// espacios extra. Espejo de `_normalizar`.
@@ -30,8 +29,16 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
         .zip(b.iter())
         .map(|(x, y)| (*x as f64) * (*y as f64))
         .sum();
-    let norm_a: f64 = a.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt();
-    let norm_b: f64 = b.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt();
+    let norm_a: f64 = a
+        .iter()
+        .map(|x| (*x as f64) * (*x as f64))
+        .sum::<f64>()
+        .sqrt();
+    let norm_b: f64 = b
+        .iter()
+        .map(|x| (*x as f64) * (*x as f64))
+        .sum::<f64>()
+        .sqrt();
 
     if norm_a == 0.0 || norm_b == 0.0 {
         0.0

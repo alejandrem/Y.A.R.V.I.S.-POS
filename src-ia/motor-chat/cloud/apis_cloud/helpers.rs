@@ -111,8 +111,14 @@ mod tests {
 
     #[test]
     fn cola_fallback_modelo_no_free_o_otro_proveedor() {
-        assert_eq!(cola_modelos_a_probar("opencode", "gemini-2.0-flash"), vec!["gemini-2.0-flash"]);
-        assert_eq!(cola_modelos_a_probar("google", "mimo-v2.5-free"), vec!["mimo-v2.5-free"]);
+        assert_eq!(
+            cola_modelos_a_probar("opencode", "gemini-2.0-flash"),
+            vec!["gemini-2.0-flash"]
+        );
+        assert_eq!(
+            cola_modelos_a_probar("google", "mimo-v2.5-free"),
+            vec!["mimo-v2.5-free"]
+        );
     }
 
     #[test]

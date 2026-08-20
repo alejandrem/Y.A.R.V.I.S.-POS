@@ -15,13 +15,13 @@
 //! (A diferencia de Python, aquí se omiten las tools/function calling: el modelo
 //! cloud ya no llama search_inventory.)
 
+mod catalogo;
 mod errores;
 mod generacion;
 mod helpers;
 mod proveedores;
 mod sse;
 mod tipos;
-mod catalogo;
 
 pub use catalogo::listar_modelos;
 pub use generacion::{generar_completo, generar_stream};

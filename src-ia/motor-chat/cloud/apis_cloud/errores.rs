@@ -30,10 +30,16 @@ impl ErrorCloud {
 /// Traduce errores HTTP del proveedor a mensajes claros en español.
 fn error_amigable(status: u16, display: &str) -> String {
     match status {
-        429 => "Error 429: muchas preguntas al mismo tiempo. Espera 1 minuto y reintenta.".to_string(),
-        401 | 403 => format!("API key inválida (error {status}). Revisa tu clave en 'Agregar API'."),
+        429 => {
+            "Error 429: muchas preguntas al mismo tiempo. Espera 1 minuto y reintenta.".to_string()
+        }
+        401 | 403 => {
+            format!("API key inválida (error {status}). Revisa tu clave en 'Agregar API'.")
+        }
         402 => "Cuota agotada (error 402): revisa tu plan del proveedor.".to_string(),
-        404 => format!("Modelo no disponible (error 404). Revisa el nombre del modelo del proveedor."),
+        404 => {
+            format!("Modelo no disponible (error 404). Revisa el nombre del modelo del proveedor.")
+        }
         _ => format!("Error {status} del proveedor ({display})."),
     }
 }

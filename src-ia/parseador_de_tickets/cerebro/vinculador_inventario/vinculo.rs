@@ -50,8 +50,10 @@ pub fn vincular_con_inventario(
     }
 
     // Inventario con embedding para el match por similitud.
-    let inventario_con_embedding: Vec<&ProductoInventario> =
-        inventario.iter().filter(|p| p.embedding.is_some()).collect();
+    let inventario_con_embedding: Vec<&ProductoInventario> = inventario
+        .iter()
+        .filter(|p| p.embedding.is_some())
+        .collect();
 
     let mut vinculados = Vec::new();
     let mut sin_vincular = Vec::new();

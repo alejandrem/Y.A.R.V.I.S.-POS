@@ -1,9 +1,10 @@
-use sqlx::SqlitePool;
-use chrono::Duration;
+use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
 use crate::backventanas::db::db::DbPath;
+use chrono::Duration;
 use sqlx::Row;
-use crate::backventanas::auth::AuthState;
+use sqlx::SqlitePool;
+use std::path::PathBuf;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -12,7 +13,13 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 }
 
 #[tauri::command]
-pub async fn get_datos_grafica_pl(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, fecha_inicio: String, fecha_fin: String, granularidad: String) -> Result<Vec<DatoGraficaPL>, String> {
+pub async fn get_datos_grafica_pl(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    fecha_inicio: String,
+    fecha_fin: String,
+    granularidad: String,
+) -> Result<Vec<DatoGraficaPL>, String> {
     auth.require_admin()?;
     let group_by = match granularidad.as_str() {
         "dia" => "date(fecha)",
@@ -58,7 +65,12 @@ pub async fn get_datos_grafica_pl(state: tauri::State<'_, SqlitePool>, auth: tau
 }
 
 #[tauri::command]
-pub async fn get_gastos_por_categoria(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, fecha_inicio: String, fecha_fin: String) -> Result<Vec<DatoGraficaGastosCategoria>, String> {
+pub async fn get_gastos_por_categoria(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    fecha_inicio: String,
+    fecha_fin: String,
+) -> Result<Vec<DatoGraficaGastosCategoria>, String> {
     auth.require_admin()?;
     let rows = sqlx::query(
         r#"SELECT gr.categoria, COALESCE(SUM(pg.monto_pagado), 0) as total
@@ -66,7 +78,7 @@ pub async fn get_gastos_por_categoria(state: tauri::State<'_, SqlitePool>, auth:
            JOIN gastos_recurrentes gr ON pg.gasto_id = gr.id
            WHERE date(pg.fecha_pago) BETWEEN ? AND ?
            GROUP BY gr.categoria
-           ORDER BY total DESC"#
+           ORDER BY total DESC"#,
     )
     .bind(&fecha_inicio)
     .bind(&fecha_fin)
@@ -75,19 +87,31 @@ pub async fn get_gastos_por_categoria(state: tauri::State<'_, SqlitePool>, auth:
     .map_err(|e| e.to_string())?;
 
     let total_general: f64 = rows.iter().map(|r| decode_f64(r, "total")).sum();
-    
-    Ok(rows.into_iter().map(|row| {
-        let monto = decode_f64(&row, "total");
-        DatoGraficaGastosCategoria {
-            categoria: row.get("categoria"),
-            monto,
-            porcentaje: if total_general > 0.0 { (monto / total_general) * 100.0 } else { 0.0 },
-        }
-    }).collect())
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let monto = decode_f64(&row, "total");
+            DatoGraficaGastosCategoria {
+                categoria: row.get("categoria"),
+                monto,
+                porcentaje: if total_general > 0.0 {
+                    (monto / total_general) * 100.0
+                } else {
+                    0.0
+                },
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub async fn get_tendencia_cortes_z(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, fecha_inicio: String, fecha_fin: String) -> Result<Vec<DatoGraficaCortesZ>, String> {
+pub async fn get_tendencia_cortes_z(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    fecha_inicio: String,
+    fecha_fin: String,
+) -> Result<Vec<DatoGraficaCortesZ>, String> {
     auth.require_admin()?;
     let rows = sqlx::query(
         r#"SELECT 
@@ -100,7 +124,7 @@ pub async fn get_tendencia_cortes_z(state: tauri::State<'_, SqlitePool>, auth: t
            LEFT JOIN usuarios u ON c.usuario_id = u.id
            WHERE c.tipo_corte = 'Z' AND c.estado = 'cerrado'
            AND date(c.fecha_cierre) BETWEEN ? AND ?
-           ORDER BY date(c.fecha_cierre) ASC, c.turno"#
+           ORDER BY date(c.fecha_cierre) ASC, c.turno"#,
     )
     .bind(&fecha_inicio)
     .bind(&fecha_fin)
@@ -108,20 +132,32 @@ pub async fn get_tendencia_cortes_z(state: tauri::State<'_, SqlitePool>, auth: t
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|row| DatoGraficaCortesZ {
-        fecha: row.get("fecha"),
-        turno: row.try_get("turno").unwrap_or_default(),
-        total_ventas: decode_f64(&row, "total_ventas"),
-        diferencia: decode_f64(&row, "diferencia"),
-        cajero: row.get("cajero"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| DatoGraficaCortesZ {
+            fecha: row.get("fecha"),
+            turno: row.try_get("turno").unwrap_or_default(),
+            total_ventas: decode_f64(&row, "total_ventas"),
+            diferencia: decode_f64(&row, "diferencia"),
+            cajero: row.get("cajero"),
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub async fn get_ventas_vs_gastos_mensual(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, meses: i32) -> Result<Vec<DatoGraficaPL>, String> {
+pub async fn get_ventas_vs_gastos_mensual(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    meses: i32,
+) -> Result<Vec<DatoGraficaPL>, String> {
     auth.require_admin()?;
-    let fecha_inicio = (chrono::Local::now().date_naive() - Duration::days((meses * 30) as i64)).format("%Y-%m-%d").to_string();
-    let fecha_fin = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
+    let fecha_inicio = (chrono::Local::now().date_naive() - Duration::days((meses * 30) as i64))
+        .format("%Y-%m-%d")
+        .to_string();
+    let fecha_fin = chrono::Local::now()
+        .date_naive()
+        .format("%Y-%m-%d")
+        .to_string();
 
     let rows = sqlx::query(
         r#"SELECT 
@@ -144,20 +180,40 @@ pub async fn get_ventas_vs_gastos_mensual(state: tauri::State<'_, SqlitePool>, a
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|row| DatoGraficaPL {
-        fecha: row.get("mes"),
-        ingresos: decode_f64(&row, "ingresos"),
-        gastos: decode_f64(&row, "gastos"),
-        utilidad_neta: decode_f64(&row, "ingresos") - decode_f64(&row, "gastos"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| DatoGraficaPL {
+            fecha: row.get("mes"),
+            ingresos: decode_f64(&row, "ingresos"),
+            gastos: decode_f64(&row, "gastos"),
+            utilidad_neta: decode_f64(&row, "ingresos") - decode_f64(&row, "gastos"),
+        })
+        .collect())
 }
 
 #[tauri::command]
 pub async fn get_predicciones_financieras(
-    _days: i32,
-    _db_path: tauri::State<'_, DbPath>,
+    days: i32,
+    db_path: tauri::State<'_, DbPath>,
     auth: tauri::State<'_, AuthState>,
 ) -> Result<serde_json::Value, String> {
     auth.require_admin()?;
-    Err("Predicciones no disponibles: Prophet aún no está portado de forma nativa.".to_string())
+
+    let horizonte = validar_horizonte_prediccion(days)?;
+    let ruta_db = PathBuf::from(db_path.0.clone());
+    let data = tokio::task::spawn_blocking(move || {
+        src_ia::predicciones::predecir_ventas(&ruta_db, horizonte)
+    })
+    .await
+    .map_err(|e| format!("Falló el cálculo de predicciones financieras: {e}"))??;
+
+    // Mantiene el contrato que ya usa `GraficasPanel.tsx`.
+    Ok(serde_json::json!({ "data": data }))
+}
+
+fn validar_horizonte_prediccion(days: i32) -> Result<usize, String> {
+    if !(1..=365).contains(&days) {
+        return Err("El horizonte de predicción debe estar entre 1 y 365 días".to_string());
+    }
+    Ok(days as usize)
 }

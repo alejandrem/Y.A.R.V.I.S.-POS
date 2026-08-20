@@ -21,19 +21,14 @@ pub struct TotalesTicket {
     pub total: Option<f64>,
 }
 
-static RE_SUBTOTAL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\bsubtotal\b").expect("regex subtotal")
-});
-static RE_IVA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\biva\b").expect("regex iva")
-});
-static RE_TOTAL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\btotal\b").expect("regex total")
-});
+static RE_SUBTOTAL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bsubtotal\b").expect("regex subtotal"));
+static RE_IVA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\biva\b").expect("regex iva"));
+static RE_TOTAL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\btotal\b").expect("regex total"));
 /// Cualquier monto: `$1,234.56`, `192.56`, `50`, `16`.
-static RE_MONTO: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\$\s?\$?[\d.,]+|\$?\s?[\d][\d.,]*").expect("regex monto")
-});
+static RE_MONTO: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\s?\$?[\d.,]+|\$?\s?[\d][\d.,]*").expect("regex monto"));
 
 /// Último monto numérico del texto, ignorando los porcentajes (p. ej. "16%").
 fn ultimo_monto(tail: &str) -> Option<f64> {
@@ -129,7 +124,10 @@ mod tests {
 
     #[test]
     fn total_con_separador_y_sin_decimales() {
-        assert_eq!(monto_de_linea("TOTAL ---- $1,234.56", &RE_TOTAL), Some(1234.56));
+        assert_eq!(
+            monto_de_linea("TOTAL ---- $1,234.56", &RE_TOTAL),
+            Some(1234.56)
+        );
         assert_eq!(monto_de_linea("TOTAL $50", &RE_TOTAL), Some(50.0));
     }
 

@@ -1,8 +1,8 @@
-use sqlx::SqlitePool;
-use crate::backventanas::backadmin::adminfinanzas::models::*;
-use sqlx::Row;
-use serde::{Serialize, Deserialize};
 use crate::backventanas::auth::AuthState;
+use crate::backventanas::backadmin::adminfinanzas::models::*;
+use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use sqlx::SqlitePool;
 
 fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
@@ -11,13 +11,17 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 }
 
 #[tauri::command]
-pub async fn get_cortes_caja(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, filtros: FiltrosCortes) -> Result<Vec<CorteCaja>, String> {
+pub async fn get_cortes_caja(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    filtros: FiltrosCortes,
+) -> Result<Vec<CorteCaja>, String> {
     auth.require_admin()?;
     let mut query = String::from(
         r#"SELECT c.*, u.nombre as usuario_nombre 
            FROM cortes_caja c
            LEFT JOIN usuarios u ON c.usuario_id = u.id
-           WHERE 1=1"#
+           WHERE 1=1"#,
     );
     let mut params: Vec<String> = vec![];
 
@@ -55,35 +59,42 @@ pub async fn get_cortes_caja(state: tauri::State<'_, SqlitePool>, auth: tauri::S
 
     let rows = q.fetch_all(&*state).await.map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|row| CorteCaja {
-        id: row.get("id"),
-        fecha_apertura: row.get("fecha_apertura"),
-        fecha_cierre: row.try_get("fecha_cierre").ok(),
-        monto_inicial: decode_f64(&row, "monto_inicial"),
-        total_ventas: decode_f64(&row, "total_ventas"),
-        total_efectivo: decode_f64(&row, "total_efectivo"),
-        total_tarjeta: decode_f64(&row, "total_tarjeta"),
-        total_transferencia: decode_f64(&row, "total_transferencia"),
-        entradas_manuales: decode_f64(&row, "entradas_manuales"),
-        retiros_manuales: decode_f64(&row, "retiros_manuales"),
-        diferencia: decode_f64(&row, "diferencia"),
-        usuario_id: row.get("usuario_id"),
-        usuario_nombre: row.get("usuario_nombre"),
-        estado: row.get("estado"),
-        tipo_corte: row.get("tipo_corte"),
-        turno: row.try_get("turno").ok(),
-        observaciones: row.try_get("observaciones").ok(),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| CorteCaja {
+            id: row.get("id"),
+            fecha_apertura: row.get("fecha_apertura"),
+            fecha_cierre: row.try_get("fecha_cierre").ok(),
+            monto_inicial: decode_f64(&row, "monto_inicial"),
+            total_ventas: decode_f64(&row, "total_ventas"),
+            total_efectivo: decode_f64(&row, "total_efectivo"),
+            total_tarjeta: decode_f64(&row, "total_tarjeta"),
+            total_transferencia: decode_f64(&row, "total_transferencia"),
+            entradas_manuales: decode_f64(&row, "entradas_manuales"),
+            retiros_manuales: decode_f64(&row, "retiros_manuales"),
+            diferencia: decode_f64(&row, "diferencia"),
+            usuario_id: row.get("usuario_id"),
+            usuario_nombre: row.get("usuario_nombre"),
+            estado: row.get("estado"),
+            tipo_corte: row.get("tipo_corte"),
+            turno: row.try_get("turno").ok(),
+            observaciones: row.try_get("observaciones").ok(),
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub async fn get_corte_detalle(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, corte_id: i64) -> Result<CorteDetalle, String> {
+pub async fn get_corte_detalle(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    corte_id: i64,
+) -> Result<CorteDetalle, String> {
     auth.require_admin()?;
     let corte_row = sqlx::query(
         r#"SELECT c.*, u.nombre as usuario_nombre 
            FROM cortes_caja c
            LEFT JOIN usuarios u ON c.usuario_id = u.id
-           WHERE c.id = ?"#
+           WHERE c.id = ?"#,
     )
     .bind(corte_id)
     .fetch_optional(&*state)
@@ -119,10 +130,15 @@ pub async fn get_corte_detalle(state: tauri::State<'_, SqlitePool>, auth: tauri:
         "SELECT metodo_pago, COALESCE(SUM(total), 0) as total, COUNT(*) as count 
          FROM ventas 
          WHERE fecha BETWEEN ? AND ? AND estado = 'completada'
-         GROUP BY metodo_pago"
+         GROUP BY metodo_pago",
     )
     .bind(&corte.fecha_apertura)
-    .bind(corte.fecha_cierre.as_ref().unwrap_or(&chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()))
+    .bind(
+        corte
+            .fecha_cierre
+            .as_ref()
+            .unwrap_or(&chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
+    )
     .fetch_all(&*state)
     .await
     .map_err(|e| e.to_string())?;
@@ -130,9 +146,16 @@ pub async fn get_corte_detalle(state: tauri::State<'_, SqlitePool>, auth: tauri:
     Ok(CorteDetalle {
         corte,
         movimientos,
-        ventas_por_metodo: ventas_por_metodo.into_iter().map(|row| {
-            (row.get::<String, _>("metodo_pago"), decode_f64(&row, "total"), row.get::<i64, _>("count"))
-        }).collect(),
+        ventas_por_metodo: ventas_por_metodo
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<String, _>("metodo_pago"),
+                    decode_f64(&row, "total"),
+                    row.get::<i64, _>("count"),
+                )
+            })
+            .collect(),
     })
 }
 
@@ -143,23 +166,30 @@ pub struct CorteDetalle {
     pub ventas_por_metodo: Vec<(String, f64, i64)>,
 }
 
-#[tauri::command]
-pub async fn crear_corte_x(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
+// Crear un corte de caja. El tipo de corte lo define el payload (`tipo_corte`);
+// los comandos `crear_corte_x`/`crear_corte_z` lo fijan para que cada botón
+// de la UI cree siempre su tipo, pero la lógica real vive en un solo sitio.
+async fn crear_corte_impl(
+    state: &SqlitePool,
+    auth: &tauri::State<'_, AuthState>,
     datos: CrearCorteRequest,
 ) -> Result<i64, String> {
+    let tipo = match datos.tipo_corte.as_str() {
+        "X" => "X",
+        _ => "Z",
+    };
     let usuario_id = auth.require_admin()?.user_id;
-    
+
     let result = sqlx::query(
         r#"INSERT INTO cortes_caja (monto_inicial, tipo_corte, turno, observaciones, usuario_id, estado)
-           VALUES (?, 'X', ?, ?, ?, 'abierto')"#
+           VALUES (?, ?, ?, ?, ?, 'abierto')"#
     )
     .bind(datos.monto_inicial)
+    .bind(tipo)
     .bind(&datos.turno)
     .bind(&datos.observaciones)
     .bind(usuario_id)
-    .execute(&*state)
+    .execute(state)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -167,26 +197,23 @@ pub async fn crear_corte_x(
 }
 
 #[tauri::command]
+pub async fn crear_corte_x(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    mut datos: CrearCorteRequest,
+) -> Result<i64, String> {
+    datos.tipo_corte = "X".to_string();
+    crear_corte_impl(&*state, &auth, datos).await
+}
+
+#[tauri::command]
 pub async fn crear_corte_z(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
-    datos: CrearCorteRequest,
+    mut datos: CrearCorteRequest,
 ) -> Result<i64, String> {
-    let usuario_id = auth.require_admin()?.user_id;
-    
-    let result = sqlx::query(
-        r#"INSERT INTO cortes_caja (monto_inicial, tipo_corte, turno, observaciones, usuario_id, estado)
-           VALUES (?, 'Z', ?, ?, ?, 'abierto')"#
-    )
-    .bind(datos.monto_inicial)
-    .bind(&datos.turno)
-    .bind(&datos.observaciones)
-    .bind(usuario_id)
-    .execute(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(result.last_insert_rowid())
+    datos.tipo_corte = "Z".to_string();
+    crear_corte_impl(&*state, &auth, datos).await
 }
 
 #[tauri::command]
@@ -202,7 +229,8 @@ pub async fn cerrar_corte(
     retiros_manuales: f64,
 ) -> Result<(), String> {
     auth.require_admin()?;
-    let total_calculado = total_efectivo + total_tarjeta + total_transferencia + entradas_manuales - retiros_manuales;
+    let total_calculado =
+        total_efectivo + total_tarjeta + total_transferencia + entradas_manuales - retiros_manuales;
     let diferencia = total_calculado - total_ventas;
 
     sqlx::query(
@@ -216,7 +244,7 @@ pub async fn cerrar_corte(
            retiros_manuales = ?,
            diferencia = ?,
            estado = 'cerrado'
-           WHERE id = ?"#
+           WHERE id = ?"#,
     )
     .bind(total_ventas)
     .bind(total_efectivo)
@@ -258,7 +286,11 @@ pub async fn agregar_movimiento_caja(
 }
 
 #[tauri::command]
-pub async fn get_movimientos_corte(state: tauri::State<'_, SqlitePool>, auth: tauri::State<'_, AuthState>, corte_id: i64) -> Result<Vec<MovimientoCaja>, String> {
+pub async fn get_movimientos_corte(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    corte_id: i64,
+) -> Result<Vec<MovimientoCaja>, String> {
     auth.require_admin()?;
     let rows = sqlx::query_as::<_, (i64, i64, String, String, f64, Option<String>, Option<i64>, String)>(
         "SELECT id, corte_id, tipo, concepto, monto, metodo_pago, referencia_id, creado_en FROM movimientos_caja WHERE corte_id = ? ORDER BY creado_en ASC"
@@ -268,16 +300,19 @@ pub async fn get_movimientos_corte(state: tauri::State<'_, SqlitePool>, auth: ta
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|row| MovimientoCaja {
-        id: row.0,
-        corte_id: row.1,
-        tipo: row.2,
-        concepto: row.3,
-        monto: row.4,
-        metodo_pago: row.5,
-        referencia_id: row.6,
-        creado_en: row.7,
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| MovimientoCaja {
+            id: row.0,
+            corte_id: row.1,
+            tipo: row.2,
+            concepto: row.3,
+            monto: row.4,
+            metodo_pago: row.5,
+            referencia_id: row.6,
+            creado_en: row.7,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -294,7 +329,7 @@ pub async fn get_cortes_por_cajero_fecha(
            FROM cortes_caja c
            LEFT JOIN usuarios u ON c.usuario_id = u.id
            WHERE c.usuario_id = ? AND date(c.fecha_apertura) BETWEEN ? AND ?
-           ORDER BY c.fecha_apertura DESC"#
+           ORDER BY c.fecha_apertura DESC"#,
     )
     .bind(cajero_id)
     .bind(fecha_inicio)
@@ -303,23 +338,26 @@ pub async fn get_cortes_por_cajero_fecha(
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(rows.into_iter().map(|row| CorteCaja {
-        id: row.get("id"),
-        fecha_apertura: row.get("fecha_apertura"),
-        fecha_cierre: row.try_get("fecha_cierre").ok(),
-        monto_inicial: decode_f64(&row, "monto_inicial"),
-        total_ventas: decode_f64(&row, "total_ventas"),
-        total_efectivo: decode_f64(&row, "total_efectivo"),
-        total_tarjeta: decode_f64(&row, "total_tarjeta"),
-        total_transferencia: decode_f64(&row, "total_transferencia"),
-        entradas_manuales: decode_f64(&row, "entradas_manuales"),
-        retiros_manuales: decode_f64(&row, "retiros_manuales"),
-        diferencia: decode_f64(&row, "diferencia"),
-        usuario_id: row.get("usuario_id"),
-        usuario_nombre: row.get("usuario_nombre"),
-        estado: row.get("estado"),
-        tipo_corte: row.get("tipo_corte"),
-        turno: row.try_get("turno").ok(),
-        observaciones: row.try_get("observaciones").ok(),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| CorteCaja {
+            id: row.get("id"),
+            fecha_apertura: row.get("fecha_apertura"),
+            fecha_cierre: row.try_get("fecha_cierre").ok(),
+            monto_inicial: decode_f64(&row, "monto_inicial"),
+            total_ventas: decode_f64(&row, "total_ventas"),
+            total_efectivo: decode_f64(&row, "total_efectivo"),
+            total_tarjeta: decode_f64(&row, "total_tarjeta"),
+            total_transferencia: decode_f64(&row, "total_transferencia"),
+            entradas_manuales: decode_f64(&row, "entradas_manuales"),
+            retiros_manuales: decode_f64(&row, "retiros_manuales"),
+            diferencia: decode_f64(&row, "diferencia"),
+            usuario_id: row.get("usuario_id"),
+            usuario_nombre: row.get("usuario_nombre"),
+            estado: row.get("estado"),
+            tipo_corte: row.get("tipo_corte"),
+            turno: row.try_get("turno").ok(),
+            observaciones: row.try_get("observaciones").ok(),
+        })
+        .collect())
 }

@@ -408,9 +408,15 @@ mod tests {
     #[test]
     fn extraer_nombre_cantidad_no_come_volumen() {
         for (texto, esperado) in [
-            ("COCA-COLA 600ML 2880", ("COCA-COLA 600ML 2880".to_string(), 0)),
+            (
+                "COCA-COLA 600ML 2880",
+                ("COCA-COLA 600ML 2880".to_string(), 0),
+            ),
             ("COCA-COLA 600", ("COCA-COLA".to_string(), 600)),
-            ("Coca-Cola 600 ml 12", ("Coca-Cola 600 ml 12".to_string(), 0)),
+            (
+                "Coca-Cola 600 ml 12",
+                ("Coca-Cola 600 ml 12".to_string(), 0),
+            ),
             ("Agua 1500", ("Agua 1500".to_string(), 0)),
         ] {
             assert_eq!(extraer_nombre_cantidad(texto), esperado, "{texto}");
@@ -419,7 +425,10 @@ mod tests {
 
     #[test]
     fn extraer_nombre_cantidad_si_es_pieza_pequena() {
-        assert_eq!(extraer_nombre_cantidad("Producto 12"), ("Producto".to_string(), 12));
+        assert_eq!(
+            extraer_nombre_cantidad("Producto 12"),
+            ("Producto".to_string(), 12)
+        );
     }
 
     // ---------- End-to-end con categorías y múltiples productos ----------
@@ -438,9 +447,16 @@ PAN BLANCO 12 -- $15 $10 | SABRITAS 16 12
             vec!["COCA-COLA 600ML", "AGUA 1500", "PAN BLANCO 12", "SABRITAS"]
         );
         let categorias: Vec<&str> = productos.iter().map(|p| p.categoria.as_str()).collect();
-        assert_eq!(categorias, vec!["BEBIDAS", "BEBIDAS", "ABARROTES", "ABARROTES"]);
+        assert_eq!(
+            categorias,
+            vec!["BEBIDAS", "BEBIDAS", "ABARROTES", "ABARROTES"]
+        );
         for p in &productos {
-            assert!(!p.nombre.ends_with("--"), "nombre contaminado: {}", p.nombre);
+            assert!(
+                !p.nombre.ends_with("--"),
+                "nombre contaminado: {}",
+                p.nombre
+            );
         }
     }
 }

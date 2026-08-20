@@ -6,11 +6,11 @@
 // ============================================================
 
 #[cfg(feature = "llm-local")]
+use super::analizador_inferencia::ejecutar_analisis;
+#[cfg(feature = "llm-local")]
 use super::analizador_json::con_status_ok;
 #[cfg(feature = "llm-local")]
 use super::analizador_modelos::cargar_modelo;
-#[cfg(feature = "llm-local")]
-use super::analizador_inferencia::ejecutar_analisis;
 
 /// Analiza un ticket con el modelo 1.7B. Si no produce un `mapeo` válido,
 /// se reporta error (sin reintento con otro modelo).

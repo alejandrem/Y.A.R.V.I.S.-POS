@@ -54,7 +54,9 @@ pub(crate) fn buscar_gguf(base: &Path, rel_path: &str) -> Option<PathBuf> {
 
     for preferida in PREFERENCIA_QUANT {
         for archivo in &archivos_gguf {
-            let nombre = archivo.file_name().map(|f| f.to_string_lossy().to_lowercase());
+            let nombre = archivo
+                .file_name()
+                .map(|f| f.to_string_lossy().to_lowercase());
             if let Some(nombre) = nombre {
                 if nombre.contains(preferida) {
                     return Some(archivo.clone());
@@ -92,7 +94,14 @@ pub(crate) fn verificar_en(base: &Path) -> Vec<(&'static str, InfoModelo)> {
             }
         }
 
-        resultado.push((key, InfoModelo { ruta, existe, tamano_mb }));
+        resultado.push((
+            key,
+            InfoModelo {
+                ruta,
+                existe,
+                tamano_mb,
+            },
+        ));
     }
 
     resultado

@@ -33,7 +33,11 @@ impl Default for AuthState {
 impl AuthState {
     pub fn login(&self, user_id: i64, role: Role, name: String) {
         if let Ok(mut session) = self.session.lock() {
-            *session = Some(Session { user_id, role, name });
+            *session = Some(Session {
+                user_id,
+                role,
+                name,
+            });
         }
     }
 

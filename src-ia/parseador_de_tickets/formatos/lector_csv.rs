@@ -20,7 +20,14 @@ const PALABRAS_HEADER: &[&str] = &[
     "existencia",
 ];
 
-const PALABRAS_STOCK: &[&str] = &["stock", "existencia", "cantidad", "inventario", "qty", "quantity"];
+const PALABRAS_STOCK: &[&str] = &[
+    "stock",
+    "existencia",
+    "cantidad",
+    "inventario",
+    "qty",
+    "quantity",
+];
 
 const PALABRAS_CATEGORIA: &[&str] = &[
     "categoría",
@@ -135,7 +142,8 @@ pub fn parsear_csv(texto: &str) -> Vec<ProductoCatalogo> {
         let mut nombre: Option<String> = None;
         for (_, p) in &text_cols {
             let sin_puntos = p.replace('.', "");
-            let solo_digitos = !sin_puntos.is_empty() && sin_puntos.chars().all(|c| c.is_ascii_digit());
+            let solo_digitos =
+                !sin_puntos.is_empty() && sin_puntos.chars().all(|c| c.is_ascii_digit());
             if !solo_digitos {
                 nombre = Some(p.clone());
                 break;
@@ -218,7 +226,9 @@ pub fn parsear_csv(texto: &str) -> Vec<ProductoCatalogo> {
         }
 
         // Fallback final con solo 2 columnas de texto.
-        if (categoria.is_none() || categoria.as_deref() == Some(SIN_CATEGORIA)) && text_cols.len() == 2 {
+        if (categoria.is_none() || categoria.as_deref() == Some(SIN_CATEGORIA))
+            && text_cols.len() == 2
+        {
             let first_text = &text_cols[0].1;
             let second_text = &text_cols[1].1;
             if *first_text != nombre {

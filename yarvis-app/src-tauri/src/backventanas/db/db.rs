@@ -24,7 +24,10 @@ pub struct DbPath(pub String);
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
-    let app_dir = app.path().app_data_dir().expect("No se pudo obtener el directorio de datos");
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .expect("No se pudo obtener el directorio de datos");
     if !app_dir.exists() {
         fs::create_dir_all(&app_dir).expect("No se pudo crear el directorio de datos");
     }
@@ -49,12 +52,15 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
             .foreign_keys(true)
             .busy_timeout(std::time::Duration::from_secs(5));
 
-        let pool = SqlitePool::connect_with(options).await.expect("Fallo al conectar a SQLite");
+        let pool = SqlitePool::connect_with(options)
+            .await
+            .expect("Fallo al conectar a SQLite");
 
         // Aplica el esquema versionado (0001_inicial + futuras).
         // `sqlx::migrate!` embebe los .sql al compilar, así que el esquema
         // viaja DENTRO del binario (sigue siendo portable al 100%).
-        MIGRATOR.run(&pool)
+        MIGRATOR
+            .run(&pool)
             .await
             .expect("Fallo al aplicar migraciones de la DB");
 

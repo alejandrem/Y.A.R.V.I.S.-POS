@@ -1426,6 +1426,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream",
  "calamine",
+ "chrono",
  "futures-util",
  "llama-cpp-4",
  "regex",
