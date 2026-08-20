@@ -21,8 +21,11 @@ React &nbsp;·&nbsp; Rust &nbsp;·&nbsp; Tauri 2 &nbsp;·&nbsp; SQLite &nbsp;·&
 Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, con IA que corre **localmente** (y en nube con fallback). Cobra como una caja registradora, pero además **parsea tickets viejos, sugiere compras, avisa anomalías y conversa** con el dueño.
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Caja registradora (POS) que nunca depende de la IA para funcionar.
+
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Importación inteligente: sube tus 12,000 tickets en TXT/CSV/Excel y YARVIS aprende de tu historia.
+
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Chat que responde "¿cuánto gané hoy?" o "¿qué debería comprar para el fin de semana?".
+
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Portable y auto-sostenible: un ejecutable, una base de datos, cero servicios externos obligatorios.
 
 ---
@@ -30,9 +33,13 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 ## Estado del proyecto
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Binario único** — Tauri v2 empaqueta frontend + backend + motor IA juntos.
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **91 comandos Tauri** registrados en 21 módulos de backend.
+
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **94 comandos Tauri** registrados en 21 módulos de backend.
+
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Parseador 100% Rust** — reglas + LLM local bajo demanda.
+
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Chat cloud (OpenCode Zen/Gemini) con fallback local (Qwen 3 1.7B)**.
+
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Python eliminado** — migración completa documentada en `idea.md`.
 
 ---

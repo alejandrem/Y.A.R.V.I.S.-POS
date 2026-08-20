@@ -1,10 +1,27 @@
-//base de datos de yarvis (tablas solamente)
+// ============================================================
+// db.rs — Conexión a SQLite + migraciones versionadas (sqlx).
+//
+// El esquema NO vive en código: vive en `migrations/0001_inicial.sql`
+// (y siguientes). sqlx valida el hash de cada migración aplicada, así
+// que un cambio ad-hoc a una migración vieja rompe en el arranque en
+// vez de corromper la DB silenciosamente. Los cambios de esquema a
+// futuro = archivo nuevo en `migrations/`, nunca editar uno aplicado.
+// ============================================================
 use std::fs;
-use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+
+use sqlx::migrate::Migrator;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
+use sqlx::SqlitePool;
 use tauri::Manager;
 
 /// Estado simple para exponer la ruta de la DB al frontend.
 pub struct DbPath(pub String);
+
+/// Migraciones embebidas en el binario (compiladas desde `migrations/`).
+/// `sqlx::migrate!` calcula el hash de cada archivo: modificar una migración
+/// ya aplicada rompe el arranque a propósito (nunca edites una aplicada,
+/// añade una nueva con numeración creciente).
+static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
     let app_dir = app.path().app_data_dir().expect("No se pudo obtener el directorio de datos");
@@ -16,412 +33,31 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
     let db_path_str = db_path.to_string_lossy().to_string();
 
     tauri::async_runtime::block_on(async move {
+        // Journal=WAL, FK y busy_timeout van en las OPTIONS de conexión y NO
+        // como PRAGMA suelto al crear el pool: así aplican a CUALQUIER
+        // conexión que sqlx abra, no solo a la primera.
+        //
+        // FIX (auditoría): sin foreign_keys, TODAS las FOREIGN KEY ...
+        // ON DELETE CASCADE son decorativas (SQLite las trae apagadas por
+        // default y borrar una venta dejaría huérfanos en detalle_ventas).
+        // FIX (auditoría): sin busy_timeout, escrituras concurrentes desde
+        // distintos comandos Tauri devuelven SQLITE_BUSY (reintento 5s).
         let options = SqliteConnectOptions::new()
             .filename(&db_path)
-            .create_if_missing(true);
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .foreign_keys(true)
+            .busy_timeout(std::time::Duration::from_secs(5));
 
         let pool = SqlitePool::connect_with(options).await.expect("Fallo al conectar a SQLite");
 
-        // ========================
-        // ACTIVAR MODO WAL
-        // ========================
-        sqlx::query("PRAGMA journal_mode=WAL;")
-            .execute(&pool)
+        // Aplica el esquema versionado (0001_inicial + futuras).
+        // `sqlx::migrate!` embebe los .sql al compilar, así que el esquema
+        // viaja DENTRO del binario (sigue siendo portable al 100%).
+        MIGRATOR.run(&pool)
             .await
-            .expect("Fallo al activar modo WAL");
-
-        // FIX (auditoría): sin esto, TODAS las FOREIGN KEY ... ON DELETE CASCADE
-        // de este archivo son decorativas. SQLite trae el enforcement de FK
-        // apagado por default; sin este PRAGMA, borrar una venta deja huérfanos
-        // en detalle_ventas para siempre.
-        sqlx::query("PRAGMA foreign_keys = ON;")
-            .execute(&pool)
-            .await
-            .expect("Fallo al activar foreign_keys");
-
-        // FIX (auditoría): sin busy_timeout, escrituras concurrentes desde
-        // distintos comandos Tauri devuelven SQLITE_BUSY en vez de esperar y
-        // reintentar. El motor original sí lo tenía por conexión (5000ms).
-        sqlx::query("PRAGMA busy_timeout = 5000;")
-            .execute(&pool)
-            .await
-            .expect("Fallo al activar busy_timeout");
-
-        // ========================
-        // TABLA: usuarios
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
-            tienda TEXT,
-            password TEXT NOT NULL,
-            rol TEXT NOT NULL,
-            ubicacion TEXT,
-            cp TEXT,
-            salario_semanal REAL DEFAULT 0,
-            turno TEXT DEFAULT 'matutino',
-            horario_inicio TEXT DEFAULT '08:00',
-            horario_fin TEXT DEFAULT '14:00',
-            meta_mensual REAL DEFAULT 0,
-            bono REAL DEFAULT 0,
-            estado TEXT DEFAULT 'activo',
-            registrado_en DATETIME DEFAULT '2000-01-01 00:00:00',
-            ultimo_login DATETIME
-        )").execute(&pool).await.expect("Fallo al crear tabla de usuarios");
-
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN ubicacion TEXT").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN cp TEXT").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN salario_semanal REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN turno TEXT DEFAULT 'matutino'").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN horario_inicio TEXT DEFAULT '08:00'").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN horario_fin TEXT DEFAULT '14:00'").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN meta_mensual REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN bono REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN estado TEXT DEFAULT 'activo'").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN registrado_en DATETIME DEFAULT '2000-01-01 00:00:00'").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN ultimo_login DATETIME").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN salario_diario REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE usuarios ADD COLUMN dias_semana INTEGER DEFAULT 6").execute(&pool).await;
-
-        // ========================
-        // TABLA: employee_goals
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS employee_goals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id INTEGER NOT NULL,
-            goal_type TEXT NOT NULL,
-            goal_name TEXT,
-            ventas_threshold TEXT DEFAULT '5',
-            bonus_percentage REAL DEFAULT 0,
-            bonus_amount REAL DEFAULT 0,
-            is_completed INTEGER DEFAULT 0,
-            completed_at TEXT,
-            created_at TEXT DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (employee_id) REFERENCES usuarios(id)
-        )").execute(&pool).await.expect("Fallo al crear tabla employee_goals");
-
-        // ========================
-        // TABLA: productos
-        // ========================
-        // FIX (auditoría): se quitó "UNIQUE" inline de codigo_barras aquí.
-        // En SQLite, ALTER TABLE ADD COLUMN no permite agregar UNIQUE, así que
-        // una DB migrada (ver más abajo) nunca obtenía esa restricción aunque
-        // una DB nueva sí. Ahora AMBOS casos usan el mismo índice único parcial
-        // más abajo → mismo comportamiento sin importar la antigüedad de la DB.
-        sqlx::query("CREATE TABLE IF NOT EXISTS productos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
-            descripcion TEXT,
-            precio_costo REAL DEFAULT 0,
-            precio_venta REAL DEFAULT 0,
-            stock REAL DEFAULT 0,
-            stock_minimo REAL DEFAULT 0,
-            codigo_barras TEXT,
-            categoria TEXT,
-            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-        )").execute(&pool).await.expect("Fallo al crear tabla de productos");
-
-        // Migraciones para columnas faltantes en productos
-        let _ = sqlx::query("ALTER TABLE productos ADD COLUMN descripcion TEXT").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE productos ADD COLUMN categoria TEXT").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE productos ADD COLUMN codigo_barras TEXT").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE productos ADD COLUMN stock_minimo REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE productos ADD COLUMN vendido REAL DEFAULT 0").execute(&pool).await;
-
-        // FIX (auditoría): unicidad de código de barras aplicada de forma
-        // UNIFORME vía índice parcial (ignora NULLs, que son la mayoría de
-        // los productos sin código de barras). Funciona igual en DB nueva y
-        // en DB migrada, a diferencia del UNIQUE inline que se quitó arriba.
-        sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_productos_codigo_barras \
-             ON productos(codigo_barras) WHERE codigo_barras IS NOT NULL")
-            .execute(&pool).await.expect("Fallo al crear índice único de codigo_barras");
-
-        // FIX (auditoría): estas dos tablas son las que golpea el chatbot en
-        // CADA pregunta de ventas/productos (obtener_ventas_hoy, top vendidos,
-        // etc.). Sin índices, cada consulta es un table scan completo — con
-        // hasta 30,000 tickets parseados esto se vuelve el cuello de botella
-        // real del sistema, justo lo contrario de para qué migramos a Rust.
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos(nombre)")
-            .execute(&pool).await.expect("Fallo al crear índice idx_productos_nombre");
-
-        // ========================
-        // TABLA: clientes
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS clientes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
-            rfc TEXT UNIQUE,
-            email TEXT,
-            telefono TEXT,
-            direccion TEXT,
-            credito_limite REAL DEFAULT 0,
-            notas TEXT,
-            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-        )").execute(&pool).await.expect("Fallo al crear tabla de clientes");
-
-        // ========================
-        // TABLA: ventas
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS ventas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
-            total REAL NOT NULL,
-            subtotal REAL,
-            iva REAL,
-            descuento REAL DEFAULT 0,
-            metodo_pago TEXT DEFAULT 'efectivo',
-            cajero TEXT NOT NULL,
-            cliente_id INTEGER,
-            clima TEXT,
-            estado TEXT DEFAULT 'completada',
-            folio_ticket TEXT,
-            FOREIGN KEY (cliente_id) REFERENCES clientes(id)
-        )").execute(&pool).await.expect("Fallo al crear tabla de ventas");
-
-        // FIX (migración): bases creadas antes de `folio_ticket` no la tienen;
-        // el parseador masivo escribe esa columna así que se asegura aquí.
-        let tiene_folio: i64 = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM pragma_table_info('ventas') WHERE name = 'folio_ticket'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(0);
-        if tiene_folio == 0 {
-            sqlx::query("ALTER TABLE ventas ADD COLUMN folio_ticket TEXT")
-                .execute(&pool)
-                .await
-                .expect("Fallo al migrar columna folio_ticket");
-        }
-
-        // FIX (auditoría): índices en las columnas más consultadas de ventas.
-        // fecha → obtener_ventas_hoy/7dias/por_periodo (rango de fechas cada query)
-        // cajero → obtener_ventas_por_cajero, obtener_cancelaciones_por_cajero
-        // estado → todas las queries filtran "estado != 'cancelada'"
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha)")
-            .execute(&pool).await.expect("Fallo al crear índice idx_ventas_fecha");
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ventas_cajero ON ventas(cajero)")
-            .execute(&pool).await.expect("Fallo al crear índice idx_ventas_cajero");
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_ventas_estado ON ventas(estado)")
-            .execute(&pool).await.expect("Fallo al crear índice idx_ventas_estado");
-
-        // ========================
-        // TABLA: detalle_ventas
-        // ========================
-        // FIX: producto_id es nullable (None para productos no linkeados aun)
-        sqlx::query("CREATE TABLE IF NOT EXISTS detalle_ventas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            venta_id INTEGER NOT NULL,
-            producto_id INTEGER,
-            producto_nombre TEXT NOT NULL,
-            cantidad REAL NOT NULL,
-            precio_unitario REAL NOT NULL,
-            descuento REAL DEFAULT 0,
-            subtotal REAL NOT NULL,
-            FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE CASCADE,
-            FOREIGN KEY (producto_id) REFERENCES productos(id)
-        )").execute(&pool).await.expect("Fallo al crear tabla detalle_ventas");
-
-        // FIX (auditoría): venta_id → el JOIN de CADA query de ventas por
-        // producto/top vendidos/reembolsos. producto_nombre → todos los
-        // GROUP BY producto_nombre de consultas_db.py. Sin estos dos, cada
-        // pregunta al chatbot sobre productos escanea toda la tabla.
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_detalle_venta_id ON detalle_ventas(venta_id)")
-            .execute(&pool).await.expect("Fallo al crear índice idx_detalle_venta_id");
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_detalle_producto_nombre ON detalle_ventas(producto_nombre)")
-            .execute(&pool).await.expect("Fallo al crear índice idx_detalle_producto_nombre");
-
-        // ========================
-        // TABLA: ventas_diarias (historial con clima)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS ventas_diarias (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha DATE NOT NULL UNIQUE,
-            total_ventas REAL DEFAULT 0,
-            cantidad_tickets INTEGER DEFAULT 0,
-            temperatura_promedio REAL,
-            clima TEXT,
-            utilidad_bruta REAL,
-            utilidad_operativa REAL,
-            utilidad_neta REAL
-        )").execute(&pool).await.expect("Fallo al crear tabla ventas_diarias");
-
-        // ========================
-        // TABLA: cortes_caja
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS cortes_caja (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha_apertura DATETIME DEFAULT CURRENT_TIMESTAMP,
-            fecha_cierre DATETIME,
-            monto_inicial REAL DEFAULT 0,
-            total_ventas REAL DEFAULT 0,
-            total_efectivo REAL DEFAULT 0,
-            total_tarjeta REAL DEFAULT 0,
-            total_transferencia REAL DEFAULT 0,
-            diferencia REAL DEFAULT 0,
-            usuario_id INTEGER,
-            estado TEXT DEFAULT 'abierto',
-            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
-        )").execute(&pool).await.expect("Fallo al crear tabla cortes_caja");
-
-        // ========================
-        // TABLA: predicciones_futuras
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS predicciones_futuras (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha_prediccion DATE NOT NULL,
-            producto TEXT,
-            cantidad_sugerida REAL,
-            margen_error REAL,
-            confianza REAL,
-            generado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
-            notas TEXT
-        )").execute(&pool).await.expect("Fallo al crear tabla predicciones_futuras");
-
-        // ========================
-        // TABLA: knowledge_base (sqlite-vec placeholder)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS knowledge_base (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            contenido TEXT NOT NULL,
-            categoria TEXT NOT NULL,
-            embedding BLOB,
-            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-        )").execute(&pool).await.expect("Fallo al crear tabla knowledge_base");
-
-        // Migraciones para pagos parciales en ventas
-        let _ = sqlx::query("ALTER TABLE ventas ADD COLUMN monto_efectivo REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE ventas ADD COLUMN monto_tarjeta REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE ventas ADD COLUMN monto_transferencia REAL DEFAULT 0").execute(&pool).await;
-
-        // ========================
-        // TABLA: catalogos_importados (control de duplicados)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS catalogos_importados (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            hash TEXT UNIQUE NOT NULL,
-            ruta_archivo TEXT,
-            fecha_importacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-            total_productos INTEGER DEFAULT 0
-        )").execute(&pool).await.expect("Fallo al crear tabla catalogos_importados");
-
-        // ========================
-        // TABLA: gastos_recurrentes (Módulo Finanzas)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS gastos_recurrentes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
-            tipo TEXT NOT NULL,
-            categoria TEXT NOT NULL,
-            monto_proyectado REAL NOT NULL,
-            monto_real REAL DEFAULT 0,
-            frecuencia TEXT NOT NULL,
-            dia_pago INTEGER,
-            intervalo_dias INTEGER,
-            fecha_inicio DATE NOT NULL,
-            fecha_fin DATE,
-            estado_pago TEXT DEFAULT 'pendiente',
-            folio_comprobante TEXT,
-            comprobante_url TEXT,
-            notas TEXT,
-            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
-            actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-        )").execute(&pool).await.expect("Fallo al crear tabla gastos_recurrentes");
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gastos_fecha_inicio ON gastos_recurrentes(fecha_inicio)").execute(&pool).await;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gastos_estado ON gastos_recurrentes(estado_pago)").execute(&pool).await;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gastos_tipo ON gastos_recurrentes(tipo)").execute(&pool).await;
-
-        // ========================
-        // TABLA: pagos_gastos (Historial de pagos)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS pagos_gastos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            gasto_id INTEGER NOT NULL,
-            fecha_pago DATETIME NOT NULL,
-            monto_pagado REAL NOT NULL,
-            metodo_pago TEXT,
-            folio_comprobante TEXT,
-            comprobante_url TEXT,
-            notas TEXT,
-            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (gasto_id) REFERENCES gastos_recurrentes(id) ON DELETE CASCADE
-        )").execute(&pool).await.expect("Fallo al crear tabla pagos_gastos");
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_pagos_gasto_id ON pagos_gastos(gasto_id)").execute(&pool).await;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_pagos_fecha ON pagos_gastos(fecha_pago)").execute(&pool).await;
-
-        // ========================
-        // MIGRACIONES: cortes_caja (extender para cortes X/Z)
-        // ========================
-        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN tipo_corte TEXT DEFAULT 'Z'").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN turno TEXT").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN entradas_manuales REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN retiros_manuales REAL DEFAULT 0").execute(&pool).await;
-        let _ = sqlx::query("ALTER TABLE cortes_caja ADD COLUMN observaciones TEXT").execute(&pool).await;
-
-        // ========================
-        // TABLA: movimientos_caja (Detalle de entradas/salidas en corte)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS movimientos_caja (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            corte_id INTEGER NOT NULL,
-            tipo TEXT NOT NULL,
-            concepto TEXT NOT NULL,
-            monto REAL NOT NULL,
-            metodo_pago TEXT,
-            referencia_id INTEGER,
-            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (corte_id) REFERENCES cortes_caja(id) ON DELETE CASCADE
-        )").execute(&pool).await.expect("Fallo al crear tabla movimientos_caja");
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_movimientos_corte ON movimientos_caja(corte_id)").execute(&pool).await;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_movimientos_tipo ON movimientos_caja(tipo)").execute(&pool).await;
-
-        // ========================
-        // TABLA: resumen_financiero_diario (Materialized view para gráficas P&L)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS resumen_financiero_diario (
-            fecha DATE PRIMARY KEY,
-            ventas_totales REAL DEFAULT 0,
-            ventas_efectivo REAL DEFAULT 0,
-            ventas_tarjeta REAL DEFAULT 0,
-            ventas_transferencia REAL DEFAULT 0,
-            costo_ventas REAL DEFAULT 0,
-            utilidad_bruta REAL DEFAULT 0,
-            gastos_operativos REAL DEFAULT 0,
-            utilidad_operativa REAL DEFAULT 0,
-            impuestos_comisiones REAL DEFAULT 0,
-            utilidad_neta REAL DEFAULT 0,
-            margen_neto_pct REAL DEFAULT 0,
-            cortes_z_count INTEGER DEFAULT 0,
-            diferencia_caja_total REAL DEFAULT 0,
-            actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-        )").execute(&pool).await.expect("Fallo al crear tabla resumen_financiero_diario");
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_resumen_fecha ON resumen_financiero_diario(fecha)").execute(&pool).await;
-
-        // ========================
-        // TABLA: alertas_financieras (Semáforo de vencimientos)
-        // ========================
-        sqlx::query("CREATE TABLE IF NOT EXISTS alertas_financieras (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipo TEXT NOT NULL,
-            severidad TEXT NOT NULL,
-            titulo TEXT NOT NULL,
-            mensaje TEXT NOT NULL,
-            entidad_id INTEGER,
-            entidad_tipo TEXT,
-            fecha_vencimiento DATE,
-            leida INTEGER DEFAULT 0,
-            creada_en DATETIME DEFAULT CURRENT_TIMESTAMP
-        )").execute(&pool).await.expect("Fallo al crear tabla alertas_financieras");
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_alertas_tipo ON alertas_financieras(tipo)").execute(&pool).await;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_alertas_severidad ON alertas_financieras(severidad)").execute(&pool).await;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_alertas_leida ON alertas_financieras(leida)").execute(&pool).await;
+            .expect("Fallo al aplicar migraciones de la DB");
 
         (pool, db_path_str)
     })
 }
-
-

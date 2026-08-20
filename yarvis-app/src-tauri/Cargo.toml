@@ -21,7 +21,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-native-tls"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-native-tls", "migrate", "macros"] }
 tokio = { version = "1.38", features = ["full"] }
 tauri-plugin-dialog = "2"
 # Stream utilities para leer SSE chunk-by-chunk
