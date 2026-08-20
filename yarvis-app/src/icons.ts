@@ -65,7 +65,7 @@ export const ICONO_ALERTA_CIRCULO: IconInput = "M12 22a10 10 0 1 0 0-20 10 10 0 
 export const ICONO_INFO: IconInput = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 16v-4 M12 8h.01";
 
 // Signo de interrogación / ayuda
-export const ICONO_AYUDA: IconInput = "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3 M12 17h.01";
+export const ICONO_AYUDA: IconInput = "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0z M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3 M12 17h.01";
 
 // Menú / lista / opciones
 export const ICONO_MENU: IconInput = "M4 6h16 M4 12h16 M4 18h16";

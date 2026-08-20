@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import type { IconInput } from "morphicons/react";
-import { ICONO_CHECK, ICONO_FLECHA } from "./icons";
+import { ICONO_CHECK, ICONO_FLECHA, ICONO_OJO, ICONO_OJO_OCULTO } from "./icons";
 import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
@@ -26,14 +26,6 @@ const CORONA: IconInput = "M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zM5 20h14";
 
 const PERSONA_PLUS: IconInput = "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M19 8v6 M22 11h-6";
 const ESPADA: IconInput = "M14.5 17.5 3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2";
-
-const INVERTIR = "translate(24,0) scale(-1,1)";
-const OJO_INVERTIDO: IconInput = [
-  ["path", { d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0 m15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0", transform: INVERTIR }],
-];
-const OJO_OCULTO_INVERTIDO: IconInput = [
-  ["path", { d: "M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20", transform: INVERTIR }],
-];
 
 function LogoMorphing() {
   const [idx, setIdx] = useState(0);
@@ -302,7 +294,7 @@ function App() {
                         <div className="relative">
                           <input type={showLoginPass ? "text" : "password"} value={loginPass} onChange={(e) => setLoginPass(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLoginAdmin()} placeholder="••••••••" className="w-full px-4 py-2 pr-10 rounded-xl bg-neutral-50 border border-neutral-100 text-sm focus:outline-none focus:border-neutral-900" />
                           <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} aria-label={showLoginPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-300 hover:text-neutral-500 transition-colors">
-                            <MorphIcon icon={showLoginPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
+                            <MorphIcon icon={showLoginPass ? ICONO_OJO : ICONO_OJO_OCULTO} size={18} strokeWidth={1.8} />
                           </button>
                         </div>
                       </div>
@@ -339,7 +331,7 @@ function App() {
                             className="w-full px-4 py-2 pr-10 rounded-xl bg-neutral-50 border border-neutral-100 text-sm focus:outline-none focus:border-neutral-900"
                           />
                           <button type="button" onClick={() => setShowEmployeeLoginPass(!showEmployeeLoginPass)} aria-label={showEmployeeLoginPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-300 hover:text-neutral-500 transition-colors">
-                            <MorphIcon icon={showEmployeeLoginPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
+                            <MorphIcon icon={showEmployeeLoginPass ? ICONO_OJO : ICONO_OJO_OCULTO} size={18} strokeWidth={1.8} />
                           </button>
                         </div>
                       </div>

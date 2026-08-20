@@ -2,21 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import type { IconInput } from "morphicons/react";
-import { ICONO_USUARIO, ICONO_TIENDA, ICONO_CANDADO } from "../icons";
-
-const OJO: IconInput =
-  "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0 m15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0";
-const OJO_OCULTO: IconInput =
-  "M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20";
-
-// Versiones espejadas (invertidas) para el campo "Repetir"
-const INVERTIR = "translate(24,0) scale(-1,1)";
-const OJO_INVERTIDO: IconInput = [
-  ["path", { d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0 m15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0", transform: INVERTIR }],
-];
-const OJO_OCULTO_INVERTIDO: IconInput = [
-  ["path", { d: "M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20", transform: INVERTIR }],
-];
+import { ICONO_USUARIO, ICONO_TIENDA, ICONO_CANDADO, ICONO_OJO, ICONO_OJO_OCULTO } from "../icons";
 
 const SMILE: IconInput =
   "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z M9 10h.01M15 10h.01 M9.5 15a3.5 3.5 0 0 0 5 0";
@@ -136,7 +122,7 @@ const PrimerInicio = ({
               <MorphIcon icon={ICONO_CANDADO} size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <input type={showNewEmpPass ? "text" : "password"} value={newEmployeePass} onChange={(e) => setNewEmployeePass(e.target.value)} className={`${INPUT_CLS} pr-10`} />
               <button type="button" onClick={() => setShowNewEmpPass(!showNewEmpPass)} aria-label={showNewEmpPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors">
-                <MorphIcon icon={showNewEmpPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
+                <MorphIcon icon={showNewEmpPass ? ICONO_OJO : ICONO_OJO_OCULTO} size={18} strokeWidth={1.8} />
               </button>
             </div>
           </div>
@@ -146,7 +132,7 @@ const PrimerInicio = ({
               <MorphIcon icon={ICONO_CANDADO} size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <input type={showNewEmpConfirmPass ? "text" : "password"} value={newEmployeeConfirmPass} onChange={(e) => setNewEmployeeConfirmPass(e.target.value)} className={`${INPUT_CLS} pr-10`} />
               <button type="button" onClick={() => setShowNewEmpConfirmPass(!showNewEmpConfirmPass)} aria-label={showNewEmpConfirmPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors">
-                <MorphIcon icon={showNewEmpConfirmPass ? OJO_INVERTIDO : OJO_OCULTO_INVERTIDO} size={18} strokeWidth={1.8} />
+                <MorphIcon icon={showNewEmpConfirmPass ? ICONO_OJO : ICONO_OJO_OCULTO} size={18} strokeWidth={1.8} />
               </button>
             </div>
           </div>
@@ -216,7 +202,7 @@ const PrimerInicio = ({
               <MorphIcon icon={ICONO_CANDADO} size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className={`${INPUT_CLS} pr-10`} />
               <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors">
-                <MorphIcon icon={showPassword ? OJO_OCULTO : OJO} size={18} strokeWidth={1.8} />
+                <MorphIcon icon={showPassword ? ICONO_OJO_OCULTO : ICONO_OJO} size={18} strokeWidth={1.8} />
               </button>
             </div>
           </div>
@@ -226,7 +212,7 @@ const PrimerInicio = ({
               <MorphIcon icon={ICONO_CANDADO} size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={`${INPUT_CLS} pr-10`} />
               <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors">
-                <MorphIcon icon={showConfirmPassword ? OJO_OCULTO_INVERTIDO : OJO_INVERTIDO} size={18} strokeWidth={1.8} />
+                <MorphIcon icon={showConfirmPassword ? ICONO_OJO_OCULTO : ICONO_OJO} size={18} strokeWidth={1.8} />
               </button>
             </div>
           </div>
