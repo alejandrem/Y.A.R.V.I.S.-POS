@@ -21,7 +21,10 @@ fn cache_modelos() -> &'static Mutex<Vec<(String, Instant, Vec<ModeloDisponible>
 
 /// Lista los modelos disponibles de un proveedor (solo gratuitos en OpenCode).
 /// Devuelve `[{'id', 'name'}]` con caché de 60 segundos.
-pub async fn listar_modelos(provider: &str, api_key: &str) -> Result<Vec<ModeloDisponible>, String> {
+pub async fn listar_modelos(
+    provider: &str,
+    api_key: &str,
+) -> Result<Vec<ModeloDisponible>, String> {
     let cfg = PROVIDERS
         .iter()
         .find(|p| p.key == provider)
@@ -64,14 +67,26 @@ pub async fn listar_modelos(provider: &str, api_key: &str) -> Result<Vec<ModeloD
                     .unwrap_or(false)
             })
             .map(|m| {
-                let raw = m.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                let raw = m
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let id = raw.strip_prefix("models/").unwrap_or(&raw).to_string();
                 let name = m
                     .get("displayName")
                     .and_then(|n| n.as_str())
                     .unwrap_or(&id)
                     .to_string();
-                ModeloDisponible { id, name }
+                let context_window = m
+                    .get("inputTokenLimit")
+                    .or_else(|| m.get("contextWindow"))
+                    .and_then(|v| v.as_u64());
+                ModeloDisponible {
+                    id,
+                    name,
+                    context_window,
+                }
             })
             .collect()
     } else {
@@ -99,12 +114,30 @@ pub async fn listar_modelos(provider: &str, api_key: &str) -> Result<Vec<ModeloD
         lista
             .into_iter()
             .filter_map(|m| {
-                let id = m.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
+                let id = m
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if !es_free(&id) {
                     return None;
                 }
-                let name = m.get("name").and_then(|n| n.as_str()).unwrap_or(&id).to_string();
-                Some(ModeloDisponible { id, name })
+                let name = m
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or(&id)
+                    .to_string();
+                let context_window = m
+                    .get("context_length")
+                    .or_else(|| m.get("context_window"))
+                    .or_else(|| m.get("max_input_tokens"))
+                    .or_else(|| m.get("input_token_limit"))
+                    .and_then(|v| v.as_u64());
+                Some(ModeloDisponible {
+                    id,
+                    name,
+                    context_window,
+                })
             })
             .collect()
     };

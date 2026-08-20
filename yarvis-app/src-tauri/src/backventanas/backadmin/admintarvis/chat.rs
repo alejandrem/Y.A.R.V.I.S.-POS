@@ -5,15 +5,17 @@
 
 use tauri::Emitter;
 
-use src_ia::motor_chat::cloud::apis_cloud::{generar_completo, generar_stream, nombre_proveedor, Evento};
+use crate::backventanas::auth::AuthState;
+use futures_util::StreamExt;
+use src_ia::motor_chat::cloud::apis_cloud::{
+    generar_completo, generar_stream, nombre_proveedor, Evento,
+};
 use src_ia::motor_chat::cloud::prompts::{construir_mensajes_api, Mensaje};
 use src_ia::motor_chat::cloud::think::{SeparadorThink, TipoFragmento};
-use futures_util::StreamExt;
 use src_ia::motor_chat::llm::{
-    MODELO_CHAT, RAM_GB_MINIMA_1_7, cargar_modelo_1_7, chat_1_7, descargar_modelo_1_7,
-    modelo_1_7_cargado, ram_libre_gb, ram_total_gb,
+    cargar_modelo_1_7, chat_1_7, descargar_modelo_1_7, modelo_1_7_cargado, nombre_modelo_local,
+    ram_libre_gb, ram_total_gb, CONTEXTO_LOCAL, MODELO_CHAT, RAM_GB_MINIMA_1_7,
 };
-use crate::backventanas::auth::AuthState;
 
 /// Máximo de palabras que se consideran razonamiento en el stream cloud
 /// (espejo del `max_w` que usaba el motor original para `_separar_think`).
@@ -27,7 +29,9 @@ pub struct ChatResponse {
 
 /// Estado de los modelos locales y la RAM del sistema (nativo).
 #[tauri::command]
-pub async fn get_model_status(auth: tauri::State<'_, AuthState>) -> Result<serde_json::Value, String> {
+pub async fn get_model_status(
+    auth: tauri::State<'_, AuthState>,
+) -> Result<serde_json::Value, String> {
     auth.require_operator()?;
     let ram_libre = ram_libre_gb().unwrap_or(0.0);
     let ram_total = ram_total_gb().unwrap_or(0.0);
@@ -37,12 +41,48 @@ pub async fn get_model_status(auth: tauri::State<'_, AuthState>) -> Result<serde
         "models": { MODELO_CHAT: modelo_1_7_cargado() },
         "ram_gb": ram_total,
         "ram_libre_gb": ram_libre,
+        "local_model_path": src_ia::motor_chat::llm::ruta_modelo_local().to_string_lossy(),
+        "local_model_name": nombre_modelo_local(),
+        "local_context_window": CONTEXTO_LOCAL,
+    }))
+}
+
+/// Guarda la ruta GGUF elegida por el usuario y libera el modelo actual para
+/// que la siguiente carga use el archivo nuevo.
+#[tauri::command]
+pub async fn set_local_model_path(
+    auth: tauri::State<'_, AuthState>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    auth.require_operator()?;
+    let path = std::path::PathBuf::from(path.trim());
+    if !path.is_file() {
+        return Err(format!(
+            "El archivo del modelo no existe: {}",
+            path.display()
+        ));
+    }
+
+    tokio::task::spawn_blocking(descargar_modelo_1_7)
+        .await
+        .map_err(|e| format!("El hilo de descarga falló: {e}"))?;
+    src_ia::rutas::configurar_ruta_modelo(Some(path))?;
+
+    Ok(serde_json::json!({
+        "status": "ok",
+        "path": src_ia::motor_chat::llm::ruta_modelo_local().to_string_lossy(),
+        "name": nombre_modelo_local(),
+        "context_window": CONTEXTO_LOCAL,
+        "models": { MODELO_CHAT: false },
     }))
 }
 
 /// Carga el modelo local de conversación (1.7B) SOLO si hay ≥1GB de RAM libre.
 #[tauri::command]
-pub async fn load_chat_model(auth: tauri::State<'_, AuthState>, model: String) -> Result<serde_json::Value, String> {
+pub async fn load_chat_model(
+    auth: tauri::State<'_, AuthState>,
+    model: String,
+) -> Result<serde_json::Value, String> {
     auth.require_operator()?;
     if model != MODELO_CHAT {
         return Err(format!(
@@ -100,7 +140,10 @@ pub async fn stop_chat_stream(auth: tauri::State<'_, AuthState>) -> Result<Strin
 
 /// Descarga el modelo local de conversación (1.7B) para liberar RAM.
 #[tauri::command]
-pub async fn unload_chat_model(auth: tauri::State<'_, AuthState>, model: String) -> Result<serde_json::Value, String> {
+pub async fn unload_chat_model(
+    auth: tauri::State<'_, AuthState>,
+    model: String,
+) -> Result<serde_json::Value, String> {
     auth.require_operator()?;
     let descargado = tokio::task::spawn_blocking(descargar_modelo_1_7)
         .await
@@ -217,15 +260,21 @@ async fn _stream_cloud(
                 for (tipo, frag) in sep.procesar(&texto) {
                     if tipo == TipoFragmento::Token {
                         full_response.push_str(&frag);
-                        let _ = app.emit("chat-token", serde_json::json!({
-                            "token": frag,
-                            "model": modelo,
-                        }));
+                        let _ = app.emit(
+                            "chat-token",
+                            serde_json::json!({
+                                "token": frag,
+                                "model": modelo,
+                            }),
+                        );
                     } else {
-                        let _ = app.emit("chat-think", serde_json::json!({
-                            "token": frag,
-                            "model": modelo,
-                        }));
+                        let _ = app.emit(
+                            "chat-think",
+                            serde_json::json!({
+                                "token": frag,
+                                "model": modelo,
+                            }),
+                        );
                     }
                 }
             }
@@ -233,13 +282,16 @@ async fn _stream_cloud(
                 if model_used == "unknown" {
                     model_used = modelo;
                 }
-                let _ = app.emit("chat-usage", serde_json::json!({
-                    "usage": serde_json::json!({
-                        "prompt_tokens": usage.prompt_tokens,
-                        "completion_tokens": usage.completion_tokens,
-                        "total_tokens": usage.total_tokens,
+                let _ = app.emit(
+                    "chat-usage",
+                    serde_json::json!({
+                        "usage": serde_json::json!({
+                            "prompt_tokens": usage.prompt_tokens,
+                            "completion_tokens": usage.completion_tokens,
+                            "total_tokens": usage.total_tokens,
+                        }),
                     }),
-                }));
+                );
             }
             Err(e) => return Err(e),
         }
@@ -247,18 +299,24 @@ async fn _stream_cloud(
     for (tipo, frag) in sep.finalizar() {
         if tipo == TipoFragmento::Token {
             full_response.push_str(&frag);
-            let _ = app.emit("chat-token", serde_json::json!({
-                "token": frag,
-                "model": model_used,
-            }));
+            let _ = app.emit(
+                "chat-token",
+                serde_json::json!({
+                    "token": frag,
+                    "model": model_used,
+                }),
+            );
         }
     }
 
     let _ = app.emit("chat-done", serde_json::json!({ "model": model_used }));
-    let _ = app.emit("chat-complete", serde_json::json!({
-        "response": full_response,
-        "model": model_used,
-    }));
+    let _ = app.emit(
+        "chat-complete",
+        serde_json::json!({
+            "response": full_response,
+            "model": model_used,
+        }),
+    );
     Ok(full_response)
 }
 
@@ -270,7 +328,7 @@ async fn _chat_local(messages: Vec<serde_json::Value>) -> Result<ChatResponse, S
         .map_err(|e| format!("El hilo del modelo 1.7B falló: {e}"))??;
     Ok(ChatResponse {
         response,
-        model_used: MODELO_CHAT.to_string(),
+        model_used: nombre_modelo_local(),
     })
 }
 
@@ -295,26 +353,38 @@ async fn _stream_local(
         seg.push(c);
         n += 1;
         if n >= 40 {
-            let _ = app.emit("chat-token", serde_json::json!({
-                "token": seg,
-                "model": MODELO_CHAT,
-            }));
+            let _ = app.emit(
+                "chat-token",
+                serde_json::json!({
+                    "token": seg,
+                    "model": nombre_modelo_local(),
+                }),
+            );
             seg.clear();
             n = 0;
         }
     }
     if !seg.is_empty() {
-        let _ = app.emit("chat-token", serde_json::json!({
-            "token": seg,
-            "model": MODELO_CHAT,
-        }));
+        let _ = app.emit(
+            "chat-token",
+            serde_json::json!({
+                "token": seg,
+                "model": nombre_modelo_local(),
+            }),
+        );
     }
 
-    let _ = app.emit("chat-done", serde_json::json!({ "model": MODELO_CHAT }));
-    let _ = app.emit("chat-complete", serde_json::json!({
-        "response": cleaned,
-        "model": MODELO_CHAT,
-    }));
+    let _ = app.emit(
+        "chat-done",
+        serde_json::json!({ "model": nombre_modelo_local() }),
+    );
+    let _ = app.emit(
+        "chat-complete",
+        serde_json::json!({
+            "response": cleaned,
+            "model": nombre_modelo_local(),
+        }),
+    );
     Ok(cleaned)
 }
 
@@ -323,8 +393,16 @@ fn mensajes_serde_a_rust(messages: &[serde_json::Value]) -> Vec<Mensaje> {
     messages
         .iter()
         .map(|m| Mensaje {
-            role: m.get("role").and_then(|r| r.as_str()).unwrap_or("user").to_string(),
-            content: m.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string(),
+            role: m
+                .get("role")
+                .and_then(|r| r.as_str())
+                .unwrap_or("user")
+                .to_string(),
+            content: m
+                .get("content")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string(),
         })
         .collect()
 }

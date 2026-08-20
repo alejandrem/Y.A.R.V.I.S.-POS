@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Markdown from "react-markdown";
@@ -14,66 +14,72 @@ interface Message {
   timestamp: number;
 }
 
-export type ModelKey = "1.7B";
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+  updatedAt: number;
+  modelSelection?: ChatModelSelection;
+}
 
-export const MODEL_OPTIONS: { key: ModelKey; label: string; desc: string; minRam: number }[] = [
-  { key: "1.7B", label: "1.7B", desc: "El más capaz", minRam: 1 },
-];
+export type ModelKey = string;
 
-export const CLOUD_PROVIDERS: { id: string; display: string; defaultModel: string }[] = [
+export const CLOUD_PROVIDERS: { id: "google" | "opencode"; display: string; defaultModel: string }[] = [
   { id: "google", display: "Gemini", defaultModel: "gemini-2.0-flash" },
   { id: "opencode", display: "OpenCode", defaultModel: "mimo-v2.5-free" },
 ];
 
-export interface ActiveCloud {
-  provider: string;
-  apiKey: string;
-  display: string;
-  model: string;
+export interface CloudModel {
+  id: string;
+  name: string;
+  context_window?: number;
 }
+
+export interface ChatModelSelection {
+  provider: "" | "google" | "opencode";
+  apiKey: string;
+  model: string;
+  label: string;
+  contextWindow: number;
+}
+
+export interface ActiveCloud extends ChatModelSelection {}
 
 export function getActiveCloud(): ActiveCloud {
-  const empty: ActiveCloud = { provider: "", apiKey: "", display: "", model: "" };
+  const empty: ActiveCloud = {
+    provider: "",
+    apiKey: "",
+    model: "1.7B",
+    label: "Modelo local",
+    contextWindow: 4096,
+  };
+
   try {
-    const raw = localStorage.getItem("yarvis_api_keys");
-    if (!raw) return empty;
-    const keys = JSON.parse(raw) as Record<string, string>;
-    let stored: { provider?: string; model?: string } | null = null;
-    try {
-      stored = JSON.parse(localStorage.getItem("yarvis_cloud_model") || "null");
-    } catch { /* ignore */ }
-    for (const p of CLOUD_PROVIDERS) {
-      if ((keys[p.id] || "").trim()) {
-        const model =
-          stored && stored.provider === p.id && stored.model
-            ? stored.model
-            : p.defaultModel;
-        return { provider: p.id, apiKey: keys[p.id].trim(), display: p.display, model };
-      }
-    }
-  } catch { /* ignore */ }
-  return empty;
-}
+    const keys = JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}") as Record<string, string>;
+    const activeProvider = localStorage.getItem("yarvis_active_provider") as "google" | "opencode" | null;
+    const provider = activeProvider && (keys[activeProvider] || "").trim()
+      ? activeProvider
+      : CLOUD_PROVIDERS.find((p) => (keys[p.id] || "").trim())?.id;
+    if (!provider) return empty;
 
-function modelDotClass(model: string): string {
-  if (model === "1.7B") return "bg-emerald-500";
-  return "bg-blue-500";
-}
-
-function contextLimit(_model: string): number {
-  return 131072;
-}
-
-function fmtTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
+    const storedModel = localStorage.getItem(`yarvis_cloud_model_${provider}`) ||
+      localStorage.getItem("yarvis_cloud_model");
+    const model = storedModel || CLOUD_PROVIDERS.find((p) => p.id === provider)?.defaultModel || "";
+    return {
+      provider,
+      apiKey: keys[provider].trim(),
+      model,
+      label: `${provider === "google" ? "Gemini" : "OpenCode"} · ${model}`,
+      contextWindow: 131072,
+    };
+  } catch {
+    return empty;
+  }
 }
 
 interface ModelPickerState {
-  selectedModel: ModelKey;
   loadingModel: string | null;
-  loadedModels: Record<string, boolean>;
-  ramGb: number;
-  showPicker: boolean;
 }
 
 interface ChatWidgetProps {
@@ -81,89 +87,151 @@ interface ChatWidgetProps {
   userId: string;
   suggestions: string[];
   modelState: ModelPickerState;
-  onModelSelect: (model: ModelKey) => void;
-  onTogglePicker: () => void;
+  modelSelection?: ChatModelSelection;
   clearTrigger: number;
 }
 
-const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: ChatWidgetProps) => {
-  const { selectedModel, loadingModel } = modelState;
-  const [messages, setMessages] = useState<Message[]>([]);
+function sessionKey(userId: string) {
+  return `yarvis_chat_sessions_${userId}`;
+}
+
+function newSession(): ChatSession {
+  const now = Date.now();
+  return {
+    id: `chat-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    title: "Nuevo chat",
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function loadSessions(userId: string): ChatSession[] {
+  try {
+    const stored = localStorage.getItem(sessionKey(userId));
+    if (stored) {
+      const parsed = JSON.parse(stored) as ChatSession[];
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+
+    // Migración silenciosa del único chat que existía antes del historial.
+    const legacy = localStorage.getItem(`yarvis_chat_${userId}`);
+    const migrated = newSession();
+    if (legacy) migrated.messages = JSON.parse(legacy) as Message[];
+    return [migrated];
+  } catch {
+    return [newSession()];
+  }
+}
+
+function modelDotClass(model: string): string {
+  if (model === "1.7B" || model.toLowerCase().includes("qwen") || model.toLowerCase().includes("gguf")) {
+    return "bg-emerald-500";
+  }
+  return "bg-sky-500";
+}
+
+const ChatWidget = ({ role, userId, suggestions, modelState, modelSelection, clearTrigger }: ChatWidgetProps) => {
+  const fallbackSelection = modelSelection || getActiveCloud();
+  const localLoading = modelState.loadingModel;
+  const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions(userId));
+  const [activeChatId, setActiveChatId] = useState("");
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-
   const [streamingText, setStreamingText] = useState("");
   const [streamingModel, setStreamingModel] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [thinkingText, setThinkingText] = useState("");
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
-
   const [currentSuggestion, setCurrentSuggestion] = useState(0);
-
   const [contextUsed, setContextUsed] = useState(0);
-  const [contextMax, setContextMax] = useState(131072);
-  const usageRealRef = useRef(false);
+  const [contextMax, setContextMax] = useState(fallbackSelection.contextWindow || 4096);
+  const [showHistory, setShowHistory] = useState(true);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const stickToBottomRef = useRef(true);
   const streamingTextRef = useRef("");
   const streamingModelRef = useRef("");
   const thinkingTextRef = useRef("");
-  const unlistenRef = useRef<(() => void)[]>([]);
+  const usageRealRef = useRef(false);
+  const listenersRef = useRef<(() => void)[]>([]);
   const stopRef = useRef<(() => void) | null>(null);
+  const initializedSelectionRef = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      unlistenRef.current.forEach((fn) => fn());
-      unlistenRef.current = [];
-    };
-  }, []);
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeChatId) || sessions[0],
+    [sessions, activeChatId],
+  );
+  const messages = activeSession?.messages || [];
+  const currentSelection = activeSession?.modelSelection || fallbackSelection;
+  const selectionKey = `${fallbackSelection.provider}:${fallbackSelection.model}:${fallbackSelection.label}`;
+  const contextPercent = contextMax > 0 ? Math.min(100, Math.round((contextUsed / contextMax) * 100)) : 0;
 
-  const storageKey = `yarvis_chat_${userId}`;
-
-  useEffect(() => {
+  const persistSessions = (next: ChatSession[]) => {
+    setSessions(next);
     try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) setMessages(JSON.parse(saved));
-    } catch { /* ignore */ }
-  }, [storageKey]);
+      localStorage.setItem(sessionKey(userId), JSON.stringify(next));
+    } catch { /* localStorage can be unavailable in restricted webviews */ }
+  };
+
+  const updateActiveSession = (patch: Partial<ChatSession>) => {
+    if (!activeSession) return;
+    persistSessions(sessions.map((session) => (
+      session.id === activeSession.id ? { ...session, ...patch, updatedAt: Date.now() } : session
+    )));
+  };
+
+  useEffect(() => {
+    if (!sessions.some((session) => session.id === activeChatId)) {
+      setActiveChatId(sessions[0]?.id || "");
+    }
+  }, [sessions, activeChatId]);
+
+  // Un cambio explícito desde el selector del encabezado actualiza solo el chat abierto.
+  useEffect(() => {
+    if (!initializedSelectionRef.current) {
+      initializedSelectionRef.current = true;
+      return;
+    }
+    updateActiveSession({ modelSelection: fallbackSelection });
+    // La clave representa una elección manual; no dependemos del objeto mutable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionKey]);
+
+  useEffect(() => {
+    setContextMax(currentSelection.contextWindow || (currentSelection.provider ? 131072 : 4096));
+    usageRealRef.current = false;
+    setContextUsed(0);
+    setExpandedThinking(new Set());
+  }, [activeChatId, currentSelection.contextWindow, currentSelection.model]);
 
   useEffect(() => {
     if (clearTrigger > 0) {
-      setMessages([]);
+      updateActiveSession({ messages: [], modelSelection: currentSelection });
       setExpandedThinking(new Set());
-      localStorage.removeItem(storageKey);
       usageRealRef.current = false;
       setContextUsed(0);
     }
-  }, [clearTrigger, storageKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearTrigger]);
+
+  useEffect(() => {
+    return () => {
+      listenersRef.current.forEach((fn) => fn());
+      listenersRef.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     if (usageRealRef.current) return;
-    const chars =
-      messages.reduce((acc, m) => acc + (m.content || "").length, 0) + streamingText.length;
-    setContextUsed(Math.round(chars / 4));
-    setContextMax(contextLimit(getActiveCloud().model || streamingModel));
-  }, [messages, streamingText, streamingModel]);
-
-  const toggleThinking = (idx: number) => {
-    setExpandedThinking((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
-  };
-
-  const handleScroll = () => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stickToBottomRef.current = distanceFromBottom < 120;
-  };
+    const estimated = Math.round(messages.reduce((total, message) => total + message.content.length, 0) / 4);
+    setContextUsed(estimated);
+  }, [messages, streamingText]);
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
@@ -171,374 +239,257 @@ const ChatWidget = ({ role, userId, suggestions, modelState, clearTrigger }: Cha
   }, [messages, streamingText, thinkingText]);
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-      inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + "px";
+    if (!messages.length && !isStreaming) {
+      const interval = window.setInterval(() => {
+        setCurrentSuggestion((value) => (value + 1) % Math.max(suggestions.length, 1));
+      }, 2600);
+      return () => window.clearInterval(interval);
     }
-  }, [input]);
-
-  useEffect(() => {
-    if (messages.length > 0 || isStreaming) return;
-    const interval = setInterval(() => {
-      setCurrentSuggestion((prev) => (prev + 1) % suggestions.length);
-    }, 2500);
-    return () => clearInterval(interval);
   }, [messages.length, isStreaming, suggestions.length]);
 
-  const saveHistory = (msgs: Message[]) => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(msgs));
-    } catch { /* ignore */ }
+  useEffect(() => {
+    if (!inputRef.current) return;
+    inputRef.current.style.height = "auto";
+    inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`;
+  }, [input]);
+
+  const createChat = () => {
+    if (isLoading) return;
+    const chat = newSession();
+    persistSessions([chat, ...sessions]);
+    setActiveChatId(chat.id);
+    setError("");
+  };
+
+  const deleteChat = (id: string) => {
+    if (isLoading) return;
+    const remaining = sessions.filter((session) => session.id !== id);
+    const next = remaining.length ? remaining : [newSession()];
+    persistSessions(next);
+    if (id === activeSession?.id) setActiveChatId(next[0].id);
+  };
+
+  const startRename = (session: ChatSession) => {
+    setRenamingId(session.id);
+    setRenameValue(session.title);
+  };
+
+  const finishRename = () => {
+    if (!renamingId) return;
+    const title = renameValue.trim() || "Nuevo chat";
+    persistSessions(sessions.map((session) => session.id === renamingId ? { ...session, title } : session));
+    setRenamingId(null);
+  };
+
+  const handleScroll = () => {
+    const element = messagesContainerRef.current;
+    if (!element) return;
+    stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+  };
+
+  const toggleThinking = (index: number) => {
+    setExpandedThinking((previous) => {
+      const next = new Set(previous);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
   };
 
   const handleSend = async (text?: string) => {
-    const msg = (text || input).trim();
-    if (!msg || isLoading) return;
+    const messageText = (text || input).trim();
+    if (!messageText || isLoading || !activeSession) return;
 
-    setError("");
-    setInput("");
-
-    const userMessage: Message = {
-      role: "user",
-      content: msg,
-      timestamp: Date.now(),
-    };
-
+    const selection = currentSelection;
+    const userMessage: Message = { role: "user", content: messageText, timestamp: Date.now() };
     const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    stickToBottomRef.current = true;
+    const nextTitle = activeSession.title === "Nuevo chat" ? messageText.slice(0, 42) : activeSession.title;
+    persistSessions(sessions.map((session) => session.id === activeSession.id ? {
+      ...session,
+      title: nextTitle,
+      messages: updatedMessages,
+      modelSelection: selection,
+      updatedAt: Date.now(),
+    } : session));
+
+    setInput("");
+    setError("");
     setIsLoading(true);
     setIsStreaming(true);
     setStreamingText("");
+    setThinkingText("");
     streamingTextRef.current = "";
     streamingModelRef.current = "";
-    setThinkingText("");
     thinkingTextRef.current = "";
+    stickToBottomRef.current = true;
 
     let settled = false;
     let timeoutId = 0;
-
-    const cleanupListeners = () => {
-      unlistenRef.current.forEach((fn) => fn());
-      unlistenRef.current = [];
+    const cleanup = () => {
+      listenersRef.current.forEach((fn) => fn());
+      listenersRef.current = [];
     };
-
+    const saveMessages = (nextMessages: Message[]) => {
+      persistSessions(sessions.map((session) => session.id === activeSession.id ? {
+        ...session,
+        title: nextTitle,
+        messages: nextMessages,
+        modelSelection: selection,
+        updatedAt: Date.now(),
+      } : session));
+    };
     const finish = (response: string, model: string) => {
       if (settled) return;
       settled = true;
-      stopRef.current = null;
       window.clearTimeout(timeoutId);
-      cleanupListeners();
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: response,
-        model,
-        thinking: thinkingTextRef.current.trim() || undefined,
-        timestamp: Date.now(),
-      };
-      const finalMessages = [...updatedMessages, assistantMessage];
-      setMessages(finalMessages);
-      saveHistory(finalMessages);
-      setIsLoading(false);
-      setIsStreaming(false);
-      setStreamingText("");
-      setStreamingModel("");
-      setThinkingText("");
-      thinkingTextRef.current = "";
+      cleanup();
+      saveMessages([...updatedMessages, {
+        role: "assistant", content: response, model, thinking: thinkingTextRef.current.trim() || undefined, timestamp: Date.now(),
+      }]);
+      setIsLoading(false); setIsStreaming(false); setStreamingText(""); setStreamingModel(""); setThinkingText("");
     };
-
-    const fail = (errorMessage: string) => {
+    const fail = (reason: string) => {
       if (settled) return;
       settled = true;
-      stopRef.current = null;
       window.clearTimeout(timeoutId);
-      cleanupListeners();
-      saveHistory(updatedMessages);
-      setError(errorMessage);
-      setIsLoading(false);
-      setIsStreaming(false);
-      setStreamingText("");
-      setStreamingModel("");
-      setThinkingText("");
-      thinkingTextRef.current = "";
+      cleanup();
+      saveMessages(updatedMessages);
+      setError(reason); setIsLoading(false); setIsStreaming(false); setStreamingText(""); setStreamingModel(""); setThinkingText("");
     };
-
     const stop = () => {
       if (settled) return;
       settled = true;
-      stopRef.current = null;
       window.clearTimeout(timeoutId);
-      cleanupListeners();
-      const partial = streamingTextRef.current;
-      const finalMessages = partial.trim()
-        ? [
-            ...updatedMessages,
-            {
-              role: "assistant" as const,
-              content: partial,
-              model: streamingModelRef.current || undefined,
-              thinking: thinkingTextRef.current.trim() || undefined,
-              timestamp: Date.now(),
-            },
-          ]
-        : updatedMessages;
-      setMessages(finalMessages);
-      saveHistory(finalMessages);
-      setIsLoading(false);
-      setIsStreaming(false);
-      setStreamingText("");
-      setStreamingModel("");
-      setThinkingText("");
-      thinkingTextRef.current = "";
+      cleanup();
+      const partial = streamingTextRef.current.trim();
+      saveMessages(partial ? [...updatedMessages, {
+        role: "assistant", content: partial, model: streamingModelRef.current || undefined,
+        thinking: thinkingTextRef.current.trim() || undefined, timestamp: Date.now(),
+      }] : updatedMessages);
+      setIsLoading(false); setIsStreaming(false); setStreamingText(""); setStreamingModel(""); setThinkingText("");
       invoke("stop_chat_stream").catch(() => {});
     };
     stopRef.current = stop;
-
-    timeoutId = window.setTimeout(() => {
-      fail("El motor de IA tardó demasiado en responder. Inténtalo de nuevo.");
-    }, STREAM_TIMEOUT_MS);
+    timeoutId = window.setTimeout(() => fail("El motor tardó demasiado en responder. Inténtalo de nuevo."), STREAM_TIMEOUT_MS);
 
     try {
-      unlistenRef.current.push(await listen<{ token: string; model: string }>("chat-think", (event) => {
+      listenersRef.current.push(await listen<{ token: string; model: string }>("chat-think", (event) => {
         if (settled) return;
         thinkingTextRef.current += event.payload.token;
         setThinkingText(thinkingTextRef.current);
-        streamingModelRef.current = event.payload.model;
-        setStreamingModel(event.payload.model);
+        streamingModelRef.current = event.payload.model; setStreamingModel(event.payload.model);
       }));
-
-      unlistenRef.current.push(await listen<{ token: string; model: string }>("chat-token", (event) => {
+      listenersRef.current.push(await listen<{ token: string; model: string }>("chat-token", (event) => {
         if (settled) return;
         streamingTextRef.current += event.payload.token;
         setStreamingText(streamingTextRef.current);
-        streamingModelRef.current = event.payload.model;
-        setStreamingModel(event.payload.model);
+        streamingModelRef.current = event.payload.model; setStreamingModel(event.payload.model);
       }));
-
-      unlistenRef.current.push(await listen<{
-        usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
-      }>("chat-usage", (event) => {
-        if (settled) return;
-        const u = event.payload.usage;
-        const total = u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0);
-        if (total) {
-          usageRealRef.current = true;
-          setContextUsed(total);
-          setContextMax(contextLimit(getActiveCloud().model || streamingModelRef.current));
-        }
+      listenersRef.current.push(await listen<{ usage: { prompt_tokens?: number; total_tokens?: number } }>("chat-usage", (event) => {
+        const usage = event.payload.usage;
+        const total = usage.total_tokens || usage.prompt_tokens || 0;
+        if (total) { usageRealRef.current = true; setContextUsed(total); }
       }));
+      listenersRef.current.push(await listen<{ response: string; model: string }>("chat-complete", (event) => finish(event.payload.response, event.payload.model)));
+      listenersRef.current.push(await listen<{ error: string }>("chat-error", (event) => fail(event.payload.error)));
 
-      unlistenRef.current.push(await listen<{ response: string; model: string }>("chat-complete", (event) => {
-        finish(event.payload.response, event.payload.model);
-      }));
-
-      unlistenRef.current.push(await listen<{ error: string }>("chat-error", (event) => {
-        fail(event.payload.error);
-      }));
-
-      const cloud = getActiveCloud();
       await invoke("send_chat_stream", {
-        messages: updatedMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+        messages: updatedMessages.slice(-12).map((message) => ({ role: message.role, content: message.content })),
         role,
-        model: cloud.provider ? cloud.model : selectedModel,
-        provider: cloud.provider,
-        apiKey: cloud.apiKey,
+        model: selection.model,
+        provider: selection.provider,
+        apiKey: selection.apiKey,
       });
     } catch (err) {
       fail(String(err));
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       handleSend();
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      {/* MESSAGES */}
-      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-8 py-5 space-y-5 custom-scrollbar">
-        {messages.length === 0 && !isStreaming && (
-          <div className="flex flex-col items-center justify-center h-full animate-in fade-in duration-500">
-            <div className="w-16 h-16 bg-neutral-100 rounded-full flex items-center justify-center mb-6">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-500">
-                <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />
-              </svg>
+    <div className="yarvis-shell flex h-full min-h-0">
+      {showHistory && (
+        <aside className="yarvis-panel-soft hidden w-64 flex-shrink-0 flex-col border-r lg:flex">
+          <div className="flex items-center justify-between border-b yarvis-border px-5 py-5">
+            <div>
+              <p className="yarvis-faint text-[9px] font-black uppercase tracking-[0.22em]">Conversaciones</p>
+              <p className="yarvis-text mt-1 text-xs font-black">Historial de Y.A.R.V.I.S.</p>
             </div>
-            <p className="text-[17px] text-neutral-400 font-bold text-center max-w-md leading-relaxed h-8">
-              {suggestions[currentSuggestion]}
-              <span className="inline-block w-0.5 h-4 bg-neutral-400 ml-0.5 animate-pulse rounded-sm align-middle"></span>
-            </p>
+            <button onClick={createChat} title="Nuevo chat" className="yarvis-primary flex h-8 w-8 items-center justify-center rounded-xl text-lg transition-transform hover:scale-105">+</button>
           </div>
-        )}
-
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-300`}>
-            <div className={`max-w-[75%] ${msg.role === "user" ? "bg-neutral-900 text-white rounded-2xl rounded-br-md px-6 py-4" : "bg-neutral-50 border border-neutral-200 text-neutral-800 rounded-2xl rounded-bl-md px-6 py-4"}`}>
-              {msg.role === "assistant" ? (
-                <div className="chat-markdown text-[16px] font-bold leading-relaxed"><Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown></div>
-              ) : (
-                <p className="text-[16px] font-bold leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-              )}
-              {msg.role === "assistant" && msg.model && (
-                <div className="mt-2 pt-2 border-t border-neutral-200/50 flex items-center gap-1.5">
-                  <div className={`w-2 h-2 rounded-full ${modelDotClass(msg.model)}`}></div>
-                  <span className="text-[12px] font-black text-neutral-400 uppercase tracking-widest">{msg.model}</span>
-                </div>
-              )}
-              {msg.role === "assistant" && msg.thinking && (
-                <div className="mt-2">
-                  <button
-                    onClick={() => toggleThinking(idx)}
-                    className="flex items-center gap-1.5 text-[13px] font-black text-neutral-400 uppercase tracking-widest hover:text-neutral-600 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${expandedThinking.has(idx) ? "rotate-180" : ""}`}><path d="m6 9 6 6 6-6" /></svg>
-                    {expandedThinking.has(idx) ? "Ocultar hilo de pensamiento" : "Ver hilo de pensamiento"}
+          <div className="custom-scrollbar flex-1 space-y-1 overflow-y-auto p-3">
+            {[...sessions].sort((a, b) => b.updatedAt - a.updatedAt).map((session) => (
+              <div key={session.id} className={`group rounded-xl border p-2 transition-all ${session.id === activeSession?.id ? "yarvis-panel yarvis-border" : "border-transparent yarvis-hover-panel"}`}>
+                {renamingId === session.id ? (
+                  <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={finishRename} onKeyDown={(event) => { if (event.key === "Enter") finishRename(); if (event.key === "Escape") setRenamingId(null); }} className="yarvis-input w-full rounded-lg border px-2 py-1 text-[11px] font-bold outline-none" />
+                ) : (
+                  <button disabled={isLoading} onClick={() => setActiveChatId(session.id)} className="w-full text-left">
+                    <p className="yarvis-text truncate text-[11px] font-black">{session.title}</p>
+                    <p className="yarvis-faint mt-1 text-[9px] font-bold">{session.messages.length} mensajes</p>
                   </button>
-                  {expandedThinking.has(idx) && (
-                    <div className="mt-2 bg-neutral-100 border border-dashed border-neutral-300 rounded-xl px-4 py-3">
-                      <p className="text-[15px] font-medium text-neutral-400 italic leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar">{msg.thinking}</p>
-                    </div>
-                  )}
+                )}
+                <div className="mt-1 hidden items-center justify-end gap-1 group-hover:flex">
+                  <button onClick={() => startRename(session)} title="Renombrar" className="yarvis-muted rounded px-1 text-[10px] hover:text-current">✎</button>
+                  <button onClick={() => deleteChat(session.id)} title="Eliminar chat" className="rounded px-1 text-[10px] text-red-400 hover:text-red-500">×</button>
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
-        ))}
+          <div className="border-t yarvis-border px-5 py-4">
+            <p className="yarvis-faint truncate text-[9px] font-bold" title={currentSelection.label}>Modelo: {currentSelection.label}</p>
+          </div>
+        </aside>
+      )}
 
-        {/* THINKING BOX */}
-        {thinkingText && (
-          <div className="flex justify-start animate-in fade-in duration-300">
-            <div className="max-w-[75%] w-full bg-neutral-100 border border-dashed border-neutral-300 rounded-2xl rounded-bl-md px-6 py-4">
-              <div className="flex items-center gap-2.5 mb-2.5">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce"></div>
+      <section className="flex min-w-0 flex-1 flex-col">
+        <div ref={messagesContainerRef} onScroll={handleScroll} className="custom-scrollbar flex-1 overflow-y-auto px-5 py-6 sm:px-8">
+          {!messages.length && !isStreaming && (
+            <div className="flex h-full flex-col items-center justify-center animate-in fade-in duration-500">
+              <div className="yarvis-panel-soft yarvis-border mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border">
+                <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="yarvis-muted"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2M20 14h2M15 13v2M9 13v2" /></svg>
+              </div>
+              <p className="yarvis-muted max-w-md text-center text-base font-bold leading-relaxed">{suggestions[currentSuggestion] || "Pregúntale algo a Y.A.R.V.I.S."}</p>
+              <p className="yarvis-faint mt-3 text-[10px] font-black uppercase tracking-[0.2em]">{currentSelection.label}</p>
+            </div>
+          )}
+
+          <div className="mx-auto max-w-4xl space-y-5">
+            {messages.map((message, index) => (
+              <div key={`${message.timestamp}-${index}`} className={`flex animate-in fade-in slide-in-from-bottom-1 duration-300 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[88%] rounded-2xl border px-5 py-4 sm:max-w-[76%] ${message.role === "user" ? "yarvis-primary border-transparent" : "yarvis-panel-soft yarvis-border"}`}>
+                  {message.role === "assistant" ? <div className="chat-markdown yarvis-text text-[15px] font-bold leading-relaxed"><Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown></div> : <p className="text-[15px] font-bold leading-relaxed whitespace-pre-wrap">{message.content}</p>}
+                  {message.role === "assistant" && message.model && <div className="yarvis-border yarvis-muted mt-3 flex items-center gap-2 border-t pt-2 text-[10px] font-black uppercase tracking-widest"><span className={`h-2 w-2 rounded-full ${modelDotClass(message.model)}`} />{message.model}</div>}
+                  {message.role === "assistant" && message.thinking && <div className="mt-3"><button onClick={() => toggleThinking(index)} className="yarvis-muted text-[10px] font-black uppercase tracking-widest hover:text-current">{expandedThinking.has(index) ? "Ocultar razonamiento" : "Ver razonamiento"}</button>{expandedThinking.has(index) && <p className="yarvis-muted yarvis-panel mt-2 max-h-64 overflow-y-auto rounded-xl border border-dashed px-4 py-3 text-xs italic leading-relaxed">{message.thinking}</p>}</div>}
                 </div>
-                <span className="text-[17px] font-black text-neutral-500 uppercase tracking-widest">
-                  El modelo está pensando...
-                </span>
-                <span className="text-[12px] font-bold text-neutral-400 uppercase tracking-widest ml-auto">
-                  {streamingModel} · no es la respuesta final
-                </span>
               </div>
-              <p className="text-[15px] font-medium text-neutral-400 italic leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar">
-                {thinkingText}
-              </p>
-            </div>
-          </div>
-        )}
+            ))}
 
-        {/* STREAMING RESPONSE */}
-        {isStreaming && streamingText && (
-          <div className="flex justify-start animate-in fade-in duration-200">
-            <div className="max-w-[75%] bg-neutral-50 border border-neutral-200 text-neutral-800 rounded-2xl rounded-bl-md px-6 py-4">
-              <div className="chat-markdown text-[16px] font-bold leading-relaxed">
-                <Markdown remarkPlugins={[remarkGfm]}>{streamingText}</Markdown>
-                <span className="inline-block w-1.5 h-5 bg-neutral-900 ml-0.5 animate-pulse rounded-sm align-middle"></span>
-              </div>
-              <div className="mt-2 pt-2 border-t border-neutral-200/50 flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full animate-pulse ${modelDotClass(streamingModel)}`}></div>
-                <span className="text-[12px] font-black text-neutral-400 uppercase tracking-widest">
-                  {streamingModel || "..."} generando
-                </span>
-              </div>
-            </div>
+            {thinkingText && <div className="flex justify-start"><div className="yarvis-panel-soft yarvis-border max-w-[88%] rounded-2xl border border-dashed px-5 py-4 sm:max-w-[76%]"><p className="yarvis-muted mb-2 text-[10px] font-black uppercase tracking-widest">{streamingModel || "Modelo"} está pensando…</p><p className="yarvis-muted max-h-48 overflow-y-auto whitespace-pre-wrap text-xs italic leading-relaxed">{thinkingText}</p></div></div>}
+            {isStreaming && streamingText && <div className="flex justify-start"><div className="yarvis-panel-soft yarvis-border max-w-[88%] rounded-2xl border px-5 py-4 sm:max-w-[76%]"><div className="chat-markdown yarvis-text text-[15px] font-bold leading-relaxed"><Markdown remarkPlugins={[remarkGfm]}>{streamingText}</Markdown><span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-sm bg-current align-middle" /></div><p className="yarvis-muted mt-3 text-[10px] font-black uppercase tracking-widest">{streamingModel || "Generando"}</p></div></div>}
+            {isStreaming && !streamingText && !thinkingText && <div className="yarvis-muted text-xs font-black uppercase tracking-widest animate-pulse">{localLoading ? `Cargando ${localLoading}…` : `Conectando con ${currentSelection.label}…`}</div>}
+            <div ref={messagesEndRef} />
           </div>
-        )}
-
-        {/* WAITING FOR FIRST TOKEN */}
-        {isStreaming && !streamingText && !thinkingText && (
-          <div className="flex justify-start animate-in fade-in duration-300">
-            <div className="bg-neutral-50 border border-neutral-200 rounded-2xl rounded-bl-md px-6 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1.5">
-                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce"></div>
-                </div>
-                <span className="text-[13px] font-bold text-neutral-400 uppercase tracking-widest animate-pulse">
-                  {streamingModel ? `${streamingModel} escribiendo...` : "Escribiendo..."}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* LOADING STATE (before streaming) */}
-        {isLoading && !isStreaming && (
-          <div className="flex justify-start animate-in fade-in duration-300">
-            <div className="bg-neutral-50 border border-neutral-200 rounded-2xl rounded-bl-md px-6 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1.5">
-                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce"></div>
-                </div>
-                <span className="text-[13px] font-bold text-neutral-400 uppercase tracking-widest">
-                  {loadingModel ? `Cargando Qwen ${loadingModel}...` : "Conectando..."}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* INPUT */}
-      <div className="flex-shrink-0 px-8 pb-8 pt-3">
-        {contextUsed > 0 && (
-          <div className="mb-3 flex items-center gap-2.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-400 flex-shrink-0">Contexto</span>
-            <div className="flex-1 h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${contextUsed / contextMax > 0.85 ? "bg-red-500" : "bg-neutral-900"}`}
-                style={{ width: `${Math.min(100, (contextUsed / contextMax) * 100)}%` }}
-              />
-            </div>
-            <span className="text-[9px] font-bold text-neutral-400 flex-shrink-0 tabular-nums">
-              {fmtTokens(contextUsed)} / {fmtTokens(contextMax)} tok
-            </span>
-          </div>
-        )}
-        {error && (
-          <div className="mb-3 px-5 py-3 bg-red-50 border border-red-200 rounded-2xl text-[14px] font-bold text-red-600 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-            {error}
-            <button onClick={() => setError("")} className="ml-auto text-red-400 hover:text-red-600">×</button>
-          </div>
-        )}
-        <div className="flex items-end gap-3 bg-white border border-neutral-200 rounded-3xl px-5 py-4 shadow-lg shadow-neutral-200/50 focus-within:border-neutral-400 focus-within:shadow-xl focus-within:shadow-neutral-300/50 transition-all duration-300">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              if (error) setError("");
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Pregúntale a Y.A.R.V.I.S..."
-            rows={1}
-            className="flex-1 bg-transparent text-[17px] font-bold text-neutral-900 placeholder:text-neutral-400 resize-none outline-none leading-relaxed max-h-[120px]"
-          />
-          <button
-            onClick={() => (isLoading ? stopRef.current?.() : handleSend())}
-            disabled={!isLoading && !input.trim()}
-            title={isLoading ? "Detener" : "Enviar"}
-            className={`flex-shrink-0 w-10 h-10 text-white rounded-full flex items-center justify-center transition-all duration-200 disabled:cursor-not-allowed hover:scale-105 active:scale-95 shadow-md ${isLoading ? "bg-red-600 hover:bg-red-500" : "bg-neutral-900 hover:bg-neutral-800 disabled:bg-neutral-200"}`}
-          >
-            {isLoading ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
-            )}
-          </button>
         </div>
-      </div>
+
+        <div className="flex-shrink-0 px-5 pb-5 pt-3 sm:px-8 sm:pb-8">
+          <div className="mx-auto max-w-4xl">
+            {contextUsed > 0 && <div className="yarvis-muted mb-3 flex items-center gap-3 text-[10px] font-black uppercase tracking-widest"><span className="flex-shrink-0">Contexto usado</span><div className="yarvis-input h-2 flex-1 overflow-hidden rounded-full border"><div className={`h-full rounded-full transition-all duration-300 ${contextPercent > 85 ? "bg-red-500" : contextPercent > 65 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${contextPercent}%` }} /></div><span className="tabular-nums">{contextPercent}%</span></div>}
+            {error && <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-500">{error}<button onClick={() => setError("")} className="ml-auto text-lg">×</button></div>}
+            <div className="yarvis-panel yarvis-border yarvis-shadow flex items-end gap-3 rounded-2xl border px-4 py-3 transition-all focus-within:border-current">
+              <textarea ref={inputRef} value={input} onChange={(event) => { setInput(event.target.value); if (error) setError(""); }} onKeyDown={handleKeyDown} placeholder="Pregúntale a Y.A.R.V.I.S…" rows={1} className="yarvis-text flex-1 resize-none bg-transparent text-[15px] font-bold leading-relaxed outline-none placeholder:opacity-50" />
+              <button onClick={() => isLoading ? stopRef.current?.() : handleSend()} disabled={!isLoading && !input.trim()} title={isLoading ? "Detener" : "Enviar"} className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl transition-all disabled:cursor-not-allowed disabled:opacity-30 ${isLoading ? "bg-red-600 text-white" : "yarvis-primary"}`}>
+                {isLoading ? <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+              </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between lg:hidden"><button onClick={() => setShowHistory((value) => !value)} className="yarvis-muted text-[10px] font-black uppercase tracking-widest">{showHistory ? "Ocultar historial" : "Mostrar historial"}</button><span className="yarvis-faint text-[10px] font-bold">Enter para enviar · Shift + Enter para salto</span></div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 };

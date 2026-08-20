@@ -20,7 +20,7 @@ pub fn run() {
             app.manage(backventanas::auth::AuthState::default());
             Ok(())
         })
-.invoke_handler(tauri::generate_handler![
+        .invoke_handler(tauri::generate_handler![
             // Auth
             backventanas::backadmin::adminconfig::auth::check_setup_done,
             backventanas::backadmin::adminconfig::auth::guardar_admin,
@@ -129,6 +129,7 @@ pub fn run() {
             backventanas::backadmin::admintarvis::chat::get_cloud_models,
             backventanas::backadmin::admintarvis::chat::stop_chat_stream,
             backventanas::backadmin::admintarvis::chat::get_model_status,
+            backventanas::backadmin::admintarvis::chat::set_local_model_path,
             backventanas::backadmin::admintarvis::chat::load_chat_model,
             backventanas::backadmin::admintarvis::chat::unload_chat_model,
         ])

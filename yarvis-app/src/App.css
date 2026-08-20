@@ -325,3 +325,51 @@ body {
 .animate-loading-bar {
   animation: loading-bar 20s ease-in-out forwards;
 }
+
+/* ============================================================
+   Y.A.R.V.I.S. — superficies propias del chat
+   No dependen de los overrides globales de Tailwind: en oscuro no
+   invierten los botones negros ni dejan tarjetas blancas.
+   ============================================================ */
+
+.yarvis-shell {
+  --yarvis-bg: #f4f4f5;
+  --yarvis-panel: #ffffff;
+  --yarvis-panel-soft: #fafafa;
+  --yarvis-input: #f5f5f5;
+  --yarvis-border: #e4e4e7;
+  --yarvis-text: #18181b;
+  --yarvis-muted: #71717a;
+  --yarvis-faint: #a1a1aa;
+  --yarvis-primary: #18181b;
+  --yarvis-primary-text: #ffffff;
+  background: var(--yarvis-bg);
+  color: var(--yarvis-text);
+}
+
+.dark .yarvis-shell {
+  --yarvis-bg: #070707;
+  --yarvis-panel: #0d0d0d;
+  --yarvis-panel-soft: #111111;
+  --yarvis-input: #151515;
+  --yarvis-border: #262626;
+  --yarvis-text: #f4f4f5;
+  --yarvis-muted: #a1a1aa;
+  --yarvis-faint: #71717a;
+  --yarvis-primary: #202020;
+  --yarvis-primary-text: #fafafa;
+}
+
+.yarvis-panel { background: var(--yarvis-panel); border-color: var(--yarvis-border); }
+.yarvis-panel-soft { background: var(--yarvis-panel-soft); border-color: var(--yarvis-border); }
+.yarvis-input { background: var(--yarvis-input); border-color: var(--yarvis-border); color: var(--yarvis-text); }
+.yarvis-primary { background: var(--yarvis-primary); color: var(--yarvis-primary-text); }
+.yarvis-text { color: var(--yarvis-text); }
+.yarvis-muted { color: var(--yarvis-muted); }
+.yarvis-faint { color: var(--yarvis-faint); }
+.yarvis-border { border-color: var(--yarvis-border); }
+.yarvis-shadow { box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12); }
+.dark .yarvis-shadow { box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45); }
+.yarvis-shell button:hover { filter: brightness(0.97); }
+.dark .yarvis-shell button:hover { filter: brightness(1.12); }
+.yarvis-hover-panel:hover { background: var(--yarvis-panel-soft); }

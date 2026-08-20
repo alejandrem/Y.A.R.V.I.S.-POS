@@ -177,9 +177,7 @@ export default function Yarvis() {
             "¿Qué es lo más vendido esta semana?",
             "¿Qué productos no tienen sal?",
           ]}
-          modelState={{ selectedModel, loadingModel, loadedModels, ramGb, showPicker: showModelPicker }}
-          onModelSelect={handleModelSelect}
-          onTogglePicker={() => setShowModelPicker(!showModelPicker)}
+          modelState={{ loadingModel }}
           clearTrigger={clearTrigger}
         />
       </div>

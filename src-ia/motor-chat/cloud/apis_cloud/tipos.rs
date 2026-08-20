@@ -29,4 +29,7 @@ pub enum Evento {
 pub struct ModeloDisponible {
     pub id: String,
     pub name: String,
+    /// Ventana de contexto reportada por el proveedor, si el endpoint la incluye.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
 }

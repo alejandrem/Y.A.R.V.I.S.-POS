@@ -15,9 +15,26 @@
 //! tickets); el backend Tauri la activa con `features = ["llm-local"]`.
 
 use super::cloud::prompts::Mensaje;
+use std::path::PathBuf;
 
 /// Clave del modelo de conversación (único modelo local para el chat).
 pub const MODELO_CHAT: &str = "1.7B";
+/// Contexto seguro por defecto para modelos locales cargados por llama.cpp.
+pub const CONTEXTO_LOCAL: u64 = 4096;
+
+/// Ruta efectiva del GGUF usado por el parser y el chat local.
+pub fn ruta_modelo_local() -> PathBuf {
+    crate::rutas::ruta_modelo(MODELO_CHAT)
+}
+
+/// Nombre legible del modelo local configurado por el usuario.
+pub fn nombre_modelo_local() -> String {
+    ruta_modelo_local()
+        .file_name()
+        .and_then(|nombre| nombre.to_str())
+        .unwrap_or(MODELO_CHAT)
+        .to_string()
+}
 
 /// System prompt del 1.7B local: marca que está en fase de TESTING (previa al
 /// fine-tuning). Sin contexto de BD: solo identidad + reglas de prueba.
@@ -67,7 +84,8 @@ fn limpiar_think_local(texto: &str) -> String {
         Regex::new(r"(?s)<think(?:ing)?>.*?</think(?:ing)?>").expect("regex de think HTML válida")
     });
     let re_html_resp = RE_HTML_RESP.get_or_init(|| {
-        Regex::new(r"(?s)<think(?:ing)?>.*?<(?:/\s*)?response>").expect("regex de think HTML válida")
+        Regex::new(r"(?s)<think(?:ing)?>.*?<(?:/\s*)?response>")
+            .expect("regex de think HTML válida")
     });
     let re_space = RE_SPACE.get_or_init(|| {
         Regex::new(r#"(?s)(?:^|\n)\s*think(?:ing)?\b.*?(?:\n\s*)response(?:\n|$)"#)
@@ -232,13 +250,22 @@ mod tests {
         // Variante con espacio: el cierre " response" va SOLO a inicio de línea
         // y la palabra inglesa "response" en medio del texto NO debe cerrar.
         let crudo = " think\nOkay, la respuesta should be natural.\n response\n\nEstoy en fase de testing y puedo ayudarte.";
-        assert_eq!(limpiar_think_local(crudo), "Estoy en fase de testing y puedo ayudarte.");
+        assert_eq!(
+            limpiar_think_local(crudo),
+            "Estoy en fase de testing y puedo ayudarte."
+        );
 
         // Variante HTML (etiquetas con <>), como emitió el GGUF real.
         let crudo_html = " thinking\nOkay, la respuesta should be natural.\n response\n\nEstoy en fase de testing y puedo ayudarte.";
-        assert_eq!(limpiar_think_local(crudo_html), "Estoy en fase de testing y puedo ayudarte.");
+        assert_eq!(
+            limpiar_think_local(crudo_html),
+            "Estoy en fase de testing y puedo ayudarte."
+        );
 
         // Respuesta sin razonamiento no se toca.
-        assert_eq!(limpiar_think_local("Hola, ¿en qué te ayudo?"), "Hola, ¿en qué te ayudo?");
+        assert_eq!(
+            limpiar_think_local("Hola, ¿en qué te ayudo?"),
+            "Hola, ¿en qué te ayudo?"
+        );
     }
 }

@@ -5,21 +5,78 @@
 // ============================================================
 
 use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
 
 use super::rutas_modelos_config::{InfoModelo, MODELOS_CONFIG};
-use super::rutas_modelos_detect::{obtener_dir_lmstudio, resolver, verificar_en};
 #[cfg(test)]
 use super::rutas_modelos_detect::buscar_gguf;
+use super::rutas_modelos_detect::{obtener_dir_lmstudio, resolver, verificar_en};
+
+/// Ruta GGUF elegida explícitamente por el usuario desde la configuración.
+/// Cuando existe, se comparte entre el parser y el chat local.
+static RUTA_MODELO_PERSONALIZADA: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+
+fn ruta_personalizada() -> &'static RwLock<Option<PathBuf>> {
+    RUTA_MODELO_PERSONALIZADA.get_or_init(|| RwLock::new(None))
+}
 
 /// Ruta resuelta del modelo local "1.7B" (único del Y.A.R.V.I.S.; lo usan
 /// el parseo de tickets y la conversación local).
 pub fn ruta_modelo(clave: &str) -> PathBuf {
+    if let Some(ruta) = ruta_personalizada()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+    {
+        return ruta;
+    }
+
     let base = obtener_dir_lmstudio();
     let (_, candidatos) = MODELOS_CONFIG
         .iter()
         .find(|(k, _)| *k == clave)
         .expect("clave de modelo inválida (1.7B)");
     resolver(candidatos, &base)
+}
+
+/// Configura una ruta GGUF personalizada para el modelo local.
+/// `None` restaura la detección automática de LM Studio.
+pub fn configurar_ruta_modelo(ruta: Option<PathBuf>) -> Result<(), String> {
+    let validada = ruta
+        .map(|ruta| {
+            if !ruta.is_file() {
+                return Err(format!(
+                    "El archivo del modelo no existe: {}",
+                    ruta.display()
+                ));
+            }
+            if ruta
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.to_ascii_lowercase())
+                != Some("gguf".to_string())
+            {
+                return Err("El modelo local debe ser un archivo .gguf".to_string());
+            }
+            std::fs::canonicalize(&ruta)
+                .map(Some)
+                .map_err(|e| format!("No se pudo resolver la ruta del modelo: {e}"))
+        })
+        .transpose()?
+        .flatten();
+
+    *ruta_personalizada()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = validada;
+    Ok(())
+}
+
+/// Devuelve la ruta personalizada si el usuario configuró una.
+pub fn ruta_modelo_personalizada() -> Option<PathBuf> {
+    ruta_personalizada()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 pub fn qwen1_7() -> PathBuf {
@@ -122,7 +179,10 @@ mod tests {
         let (_, info) = &res[0];
         assert!(info.existe);
         assert!(info.tamano_mb > 0.0);
-        assert_eq!(info.ruta.file_name().unwrap().to_string_lossy(), "model-q4_k_m.gguf");
+        assert_eq!(
+            info.ruta.file_name().unwrap().to_string_lossy(),
+            "model-q4_k_m.gguf"
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }

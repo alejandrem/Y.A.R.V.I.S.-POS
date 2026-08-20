@@ -1,497 +1,275 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import ChatWidget, { type ModelKey, CLOUD_PROVIDERS, MODEL_OPTIONS, getActiveCloud } from "./ChatWidget";
+import { open } from "@tauri-apps/plugin-dialog";
+import ChatWidget, {
+  type ChatModelSelection,
+  type CloudModel,
+  CLOUD_PROVIDERS,
+} from "./ChatWidget";
 
-const API_PROVIDERS = [
-  { id: "google", name: "Google AI", placeholder: "AIza..." },
-  { id: "opencode", name: "OpenCode", placeholder: "sk-..." },
+type ProviderId = "google" | "opencode";
+
+const API_PROVIDERS: { id: ProviderId; name: string; description: string; placeholder: string }[] = [
+  { id: "opencode", name: "OpenCode", description: "Modelos gratuitos compatibles con OpenAI", placeholder: "sk-…" },
+  { id: "google", name: "Gemini", description: "Modelos de Google AI Studio", placeholder: "AIza…" },
 ];
 
-function pickBestModel(_ramGb: number): ModelKey {
-  return "1.7B";
+interface ModelStatus {
+  models: Record<string, boolean>;
+  ram_libre_gb?: number;
+  local_model_path?: string;
+  local_model_name?: string;
+  local_context_window?: number;
 }
 
 const AdminYarvis = () => {
-  const [showApiModal, setShowApiModal] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+  const [configSection, setConfigSection] = useState<"opencode" | "google" | "local">("opencode");
+  const [showModelMenu, setShowModelMenu] = useState(false);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}");
-    } catch {
-      return {};
-    }
+    try { return JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}"); } catch { return {}; }
   });
-
-  const [cloudModels, setCloudModels] = useState<{ id: string; name: string }[]>([]);
-  const [cloudModel, setCloudModel] = useState("");
-  const [cloudModelsLoading, setCloudModelsLoading] = useState(false);
-
-  const activeCloud = getActiveCloud();
-
-  const [selectedModel, setSelectedModel] = useState<ModelKey>("1.7B");
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [loadingModel, setLoadingModel] = useState<string | null>(null);
-  const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({
-    "1.7B": false,
+  const [localModelPath, setLocalModelPath] = useState(() => localStorage.getItem("yarvis_local_model_path") || "");
+  const [localModelName, setLocalModelName] = useState("Modelo local");
+  const [selectedProvider, setSelectedProvider] = useState<"" | ProviderId>(() => {
+    const stored = localStorage.getItem("yarvis_active_provider");
+    return stored === "google" || stored === "opencode" ? stored : "";
   });
+  const [selectedCloudModels, setSelectedCloudModels] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("yarvis_cloud_models_selected") || "{}"); } catch { return {}; }
+  });
+  const [cloudModels, setCloudModels] = useState<Record<string, CloudModel[]>>({});
+  const [cloudModelsLoading, setCloudModelsLoading] = useState<Record<string, boolean>>({});
+  const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({ "1.7B": false });
   const [ramGb, setRamGb] = useState(0);
-  const [clearTrigger, setClearTrigger] = useState(0);
-  const [modelAutoSelected, setModelAutoSelected] = useState(false);
+  const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [ramWarning, setRamWarning] = useState("");
+  const [configMessage, setConfigMessage] = useState("");
+  const [clearTrigger, setClearTrigger] = useState(0);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
 
-  const modelPickerRef = useRef<HTMLDivElement>(null);
-  const retryTimeoutRef = useRef<number>(0);
-  const ramWarningTimeoutRef = useRef<number>(0);
-  const mountedRef = useRef(true);
+  const refreshStatus = useCallback(async () => {
+    try {
+      const status = await invoke<ModelStatus>("get_model_status");
+      setLoadedModels(status.models || {});
+      setRamGb(status.ram_libre_gb || 0);
+      if (status.local_model_name && status.local_model_name !== "modelo_no_encontrado.gguf") setLocalModelName(status.local_model_name);
+      if (!localModelPath && status.local_model_path && !status.local_model_path.includes("modelo_no_encontrado")) setLocalModelPath(status.local_model_path);
+    } catch { /* la pantalla puede abrirse antes de autenticar el backend */ }
+  }, [localModelPath]);
 
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      window.clearTimeout(retryTimeoutRef.current);
-      window.clearTimeout(ramWarningTimeoutRef.current);
-    };
+    refreshStatus();
+    const timer = window.setInterval(refreshStatus, 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    const storedPath = localStorage.getItem("yarvis_local_model_path");
+    if (storedPath) {
+      invoke("set_local_model_path", { path: storedPath }).catch(() => {});
+    }
   }, []);
 
-  const fetchModelStatus = useCallback(async () => {
-    try {
-      const status = await invoke<{
-        models: Record<string, boolean>;
-        ram_gb: number;
-        ram_libre_gb?: number;
-      }>("get_model_status");
-      setLoadedModels(status.models);
-      setRamGb(status.ram_libre_gb ?? status.ram_gb);
-      if (!modelAutoSelected && (status.ram_libre_gb ?? 0) > 0) {
-        const best = pickBestModel(status.ram_libre_gb ?? 0);
-        setSelectedModel(best);
-        setModelAutoSelected(true);
-      }
-    } catch {
-      if (mountedRef.current) {
-        retryTimeoutRef.current = window.setTimeout(() => {
-          if (mountedRef.current) fetchModelStatus();
-        }, 5000);
-      }
-    }
-  }, [modelAutoSelected]);
-
   useEffect(() => {
-    fetchModelStatus();
-    const interval = window.setInterval(() => {
-      if (mountedRef.current) fetchModelStatus();
-    }, 5000);
-    return () => window.clearInterval(interval);
-  }, [fetchModelStatus]);
-
-  const refreshModelStatus = async () => {
-    try {
-      const status = await invoke<{
-        models: Record<string, boolean>;
-        ram_gb: number;
-        ram_libre_gb?: number;
-      }>("get_model_status");
-      setLoadedModels(status.models);
-      setRamGb(status.ram_libre_gb ?? status.ram_gb);
-      const loaded = (["1.7B"] as ModelKey[]).find((m) => status.models[m]);
-      setSelectedModel(loaded || "1.7B");
-    } catch {
-      setSelectedModel("1.7B");
-    }
-  };
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
-        setShowModelPicker(false);
-      }
+    const close = (event: MouseEvent) => {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(event.target as Node)) setShowModelMenu(false);
     };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  const handleModelSelect = async (model: ModelKey) => {
-    setShowModelPicker(false);
-    setRamWarning("");
-
-    if (loadedModels[model]) {
-      setSelectedModel(model);
-      return;
-    }
-
-    const MODEL_RAM: Record<ModelKey, number> = { "1.7B": 1 };
-    const needed = MODEL_RAM[model];
-    if (ramGb > 0 && ramGb < needed) {
-      setRamWarning(`RAM insuficiente para Qwen ${model}: tienes ${ramGb.toFixed(1)}GB, necesitas ≥${needed}GB`);
-      window.clearTimeout(ramWarningTimeoutRef.current);
-      ramWarningTimeoutRef.current = window.setTimeout(() => setRamWarning(""), 5000);
-      return;
-    }
-
-    const currentLoaded = (["1.7B"] as ModelKey[]).find((m) => loadedModels[m]);
-    if (currentLoaded) {
-      setLoadingModel(model);
-      setSelectedModel(model);
-      try {
-        await invoke("unload_chat_model", { model: currentLoaded });
-        const result = await invoke<{
-          status: string;
-          models: Record<string, boolean>;
-          ram_gb: number;
-          ram_libre_gb?: number;
-        }>("load_chat_model", { model });
-        setLoadedModels(result.models);
-        setRamGb(result.ram_libre_gb ?? result.ram_gb);
-      } catch {
-        await refreshModelStatus();
-      } finally {
-        setLoadingModel(null);
-      }
-    } else {
-      setLoadingModel(model);
-      setSelectedModel(model);
-      try {
-        const result = await invoke<{
-          status: string;
-          models: Record<string, boolean>;
-          ram_gb: number;
-          ram_libre_gb?: number;
-        }>("load_chat_model", { model });
-        setLoadedModels(result.models);
-        setRamGb(result.ram_libre_gb ?? result.ram_gb);
-      } catch {
-        await refreshModelStatus();
-      } finally {
-        setLoadingModel(null);
-      }
-    }
-  };
-
-  const currentModel = MODEL_OPTIONS.find((m) => m.key === selectedModel) || MODEL_OPTIONS[0];
-
-  const handleSaveApiKeys = () => {
-    localStorage.setItem("yarvis_api_keys", JSON.stringify(apiKeys));
-    setShowApiModal(false);
-    const first = CLOUD_PROVIDERS.find((p) => (apiKeys[p.id] || "").trim());
-    refreshCloudModels(first ? first.id : undefined, first ? apiKeys[first.id] : undefined);
-  };
-
-  const refreshCloudModels = async (provider?: string, apiKey?: string) => {
-    const p = provider ?? activeCloud.provider;
-    const k = apiKey ?? activeCloud.apiKey;
-    if (!p) {
-      setCloudModels([]);
-      setCloudModel("");
-      return;
-    }
-    setCloudModelsLoading(true);
+  const refreshCloudModels = useCallback(async (provider: ProviderId) => {
+    const apiKey = (apiKeys[provider] || "").trim();
+    if (!apiKey) return;
+    setCloudModelsLoading((previous) => ({ ...previous, [provider]: true }));
     try {
-      const res = await invoke<{ models: { id: string; name: string }[] }>("get_cloud_models", {
-        provider: p,
-        apiKey: k,
+      const result = await invoke<{ models: CloudModel[] }>("get_cloud_models", { provider, apiKey });
+      const models = result.models || [];
+      setCloudModels((previous) => ({ ...previous, [provider]: models }));
+      setSelectedCloudModels((previous) => {
+        const selected = previous[provider] && models.some((model) => model.id === previous[provider])
+          ? previous[provider]
+          : models[0]?.id || "";
+        const next = { ...previous, [provider]: selected };
+        localStorage.setItem("yarvis_cloud_models_selected", JSON.stringify(next));
+        return next;
       });
-      setCloudModels(res.models);
-      let stored: { provider?: string; model?: string } | null = null;
-      try {
-        stored = JSON.parse(localStorage.getItem("yarvis_cloud_model") || "null");
-      } catch { /* ignore */ }
-      const selected =
-        stored && stored.provider === p && stored.model
-          ? stored.model
-          : activeCloud.provider === p
-            ? activeCloud.model
-            : res.models[0]?.id ?? "";
-      setCloudModel(selected);
-    } catch {
-      /* ignore */
+    } catch (error) {
+      setConfigMessage(String(error));
     } finally {
-      setCloudModelsLoading(false);
+      setCloudModelsLoading((previous) => ({ ...previous, [provider]: false }));
+    }
+  }, [apiKeys]);
+
+  useEffect(() => {
+    (Object.keys(apiKeys) as ProviderId[]).filter((provider) => apiKeys[provider]).forEach((provider) => {
+      refreshCloudModels(provider);
+    });
+  // Solo se refresca al montar; el botón de actualizar cubre cambios explícitos.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const currentCloudModel = selectedProvider
+    ? cloudModels[selectedProvider]?.find((model) => model.id === selectedCloudModels[selectedProvider])
+    : undefined;
+
+  const currentSelection: ChatModelSelection = useMemo(() => {
+    if (selectedProvider) {
+      const providerName = selectedProvider === "google" ? "Gemini" : "OpenCode";
+      const model = selectedCloudModels[selectedProvider] || CLOUD_PROVIDERS.find((provider) => provider.id === selectedProvider)?.defaultModel || "";
+      return {
+        provider: selectedProvider,
+        apiKey: (apiKeys[selectedProvider] || "").trim(),
+        model,
+        label: `${providerName} · ${model || "sin modelo"}`,
+        contextWindow: currentCloudModel?.context_window || 131072,
+      };
+    }
+    return {
+      provider: "",
+      apiKey: "",
+      model: "1.7B",
+      label: localModelName || "Modelo local",
+      contextWindow: 4096,
+    };
+  }, [selectedProvider, selectedCloudModels, apiKeys, currentCloudModel, localModelName]);
+
+  const saveLocalPath = async (path: string) => {
+    setConfigMessage("");
+    try {
+      const result = await invoke<{ name: string; path: string }>("set_local_model_path", { path });
+      setLocalModelPath(result.path);
+      setLocalModelName(result.name);
+      localStorage.setItem("yarvis_local_model_path", result.path);
+      setConfigMessage("Modelo local configurado. Cárgalo desde el selector superior.");
+    } catch (error) {
+      setConfigMessage(String(error));
     }
   };
 
-  const selectCloudModel = (model: string) => {
-    setCloudModel(model);
-    try {
-      localStorage.setItem(
-        "yarvis_cloud_model",
-        JSON.stringify({ provider: activeCloud.provider, model })
-      );
-    } catch { /* ignore */ }
+  const chooseLocalModel = async () => {
+    const selected = await open({ multiple: false, filters: [{ name: "Modelo GGUF", extensions: ["gguf"] }] });
+    if (typeof selected === "string") {
+      setLocalModelPath(selected);
+      await saveLocalPath(selected);
+    }
   };
 
-  const toggleModelPicker = () => {
-    setShowModelPicker((prev) => {
-      if (!prev && activeCloud.provider && cloudModels.length === 0) refreshCloudModels();
-      return !prev;
-    });
+  const loadLocalModel = async () => {
+    if (!localModelPath) {
+      setShowConfig(true);
+      setConfigSection("local");
+      return;
+    }
+    setLoadingModel("local");
+    setRamWarning("");
+    try {
+      await invoke("set_local_model_path", { path: localModelPath });
+      const result = await invoke<ModelStatus>("load_chat_model", { model: "1.7B" });
+      setLoadedModels(result.models || { "1.7B": true });
+      setRamGb(result.ram_libre_gb || 0);
+      setSelectedProvider("");
+      localStorage.removeItem("yarvis_active_provider");
+    } catch (error) {
+      setRamWarning(String(error));
+    } finally {
+      setLoadingModel(null);
+    }
   };
+
+  const selectProvider = (provider: ProviderId) => {
+    if (!apiKeys[provider]) {
+      setShowConfig(true);
+      setConfigSection(provider);
+      return;
+    }
+    setSelectedProvider(provider);
+    localStorage.setItem("yarvis_active_provider", provider);
+    setShowModelMenu(false);
+    if (!cloudModels[provider]?.length) refreshCloudModels(provider);
+  };
+
+  const selectCloudModel = (provider: ProviderId, model: CloudModel) => {
+    const next = { ...selectedCloudModels, [provider]: model.id };
+    setSelectedCloudModels(next);
+    localStorage.setItem("yarvis_cloud_models_selected", JSON.stringify(next));
+    localStorage.setItem(`yarvis_cloud_model_${provider}`, model.id);
+    setSelectedProvider(provider);
+    localStorage.setItem("yarvis_active_provider", provider);
+    setShowModelMenu(false);
+  };
+
+  const saveApiConfig = async () => {
+    localStorage.setItem("yarvis_api_keys", JSON.stringify(apiKeys));
+    if (selectedProvider && !apiKeys[selectedProvider]) {
+      setSelectedProvider("");
+      localStorage.removeItem("yarvis_active_provider");
+    }
+    if (localModelPath) await saveLocalPath(localModelPath);
+    (Object.keys(apiKeys) as ProviderId[]).filter((provider) => apiKeys[provider]).forEach((provider) => refreshCloudModels(provider));
+    setShowConfig(false);
+    setConfigMessage("Configuración guardada.");
+  };
+
+  const isLocalLoaded = Object.values(loadedModels).some(Boolean);
 
   return (
-    <div className="h-full animate-in fade-in duration-500 flex flex-col bg-gradient-to-br from-neutral-50 via-white to-neutral-100">
-      <div className="flex-shrink-0 px-8 pt-8 pb-4">
-        <header className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="text-4xl font-black text-neutral-900 uppercase tracking-tight mb-1">Y.A.R.V.I.S.</h2>
-            <p className="text-[11px] font-black text-neutral-400 uppercase tracking-[0.3em]">Asistente Inteligente de Negocio</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setClearTrigger((t) => t + 1)}
-              className="flex items-center gap-2.5 px-5 py-3 bg-neutral-900 rounded-2xl shadow-sm hover:bg-neutral-800 transition-all"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-              </svg>
-              <span className="text-[11px] font-black text-white uppercase tracking-widest">Limpiar</span>
+    <div className="yarvis-shell flex h-full min-h-0 flex-col animate-in fade-in duration-500">
+      <header className="flex flex-shrink-0 flex-wrap items-center justify-between gap-4 px-6 pb-4 pt-6 sm:px-8 sm:pt-8">
+        <div>
+          <h2 className="yarvis-text mb-1 text-4xl font-black uppercase tracking-tight">Y.A.R.V.I.S.</h2>
+          <p className="yarvis-muted text-[11px] font-black uppercase tracking-[0.3em]">Asistente Inteligente de Negocio</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setClearTrigger((value) => value + 1)} className="yarvis-primary flex items-center gap-2 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all"><span className="text-base leading-none">↺</span> Limpiar chat</button>
+          <button onClick={() => { setShowConfig(true); setConfigMessage(""); }} className="yarvis-panel yarvis-border yarvis-text flex items-center gap-2 rounded-xl border px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all">⚙ Configurar modelos</button>
+          <div ref={modelMenuRef} className="relative">
+            <button onClick={() => setShowModelMenu((value) => !value)} className="yarvis-panel yarvis-border yarvis-text flex items-center gap-2 rounded-xl border px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">
+              <span className={`h-2.5 w-2.5 rounded-full ${loadingModel ? "animate-pulse bg-amber-500" : selectedProvider ? "bg-sky-500" : isLocalLoaded ? "bg-emerald-500" : "bg-zinc-500"}`} />
+              <span className="max-w-[180px] truncate">{loadingModel ? "Cargando modelo…" : currentSelection.label}</span><span className="text-xs opacity-50">⌄</span>
             </button>
-
-            <button
-              onClick={() => setShowApiModal(true)}
-              className="flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm hover:bg-white hover:shadow-md transition-all"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-500">
-                <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" />
-                <line x1="8" y1="12" x2="16" y2="12" />
-              </svg>
-              <span className="text-[11px] font-black text-neutral-600 uppercase tracking-widest">Agregar API</span>
-            </button>
-
-            <div ref={modelPickerRef} className="relative">
-              <button
-                onClick={toggleModelPicker}
-                disabled={!!loadingModel}
-                className="flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm hover:bg-white hover:shadow-md transition-all disabled:opacity-50"
-              >
-                <div className={`w-2.5 h-2.5 rounded-full ${loadingModel ? "bg-amber-500 animate-pulse" : activeCloud.provider ? "bg-blue-500" : "bg-emerald-500"}`}></div>
-                <span className="text-[11px] font-black text-neutral-600 uppercase tracking-widest">
-                  {loadingModel ? `Cargando...` : activeCloud.provider ? activeCloud.display : `Qwen ${currentModel.label}`}
-                </span>
-                {!loadingModel && (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><path d="m6 9 6 6 6-6" /></svg>
-                )}
+            {showModelMenu && <div className="yarvis-panel yarvis-border yarvis-shadow absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border p-2">
+              <p className="yarvis-faint px-3 py-2 text-[9px] font-black uppercase tracking-[0.2em]">Modelo para este chat</p>
+              <button onClick={loadLocalModel} disabled={loadingModel === "local"} className={`yarvis-panel-soft flex w-full items-center gap-3 rounded-xl p-3 text-left ${!selectedProvider ? "ring-1 ring-emerald-500" : ""}`}>
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /><span className="min-w-0 flex-1"><span className="yarvis-text block truncate text-xs font-black">{localModelName}</span><span className="yarvis-faint block truncate text-[10px] font-bold">{localModelPath || "Configura una ruta GGUF"}</span><span className="yarvis-faint block text-[9px] font-bold">RAM libre: {ramGb > 0 ? `${ramGb.toFixed(1)} GB` : "…"}</span></span><span className="text-[9px] font-black uppercase text-emerald-500">{isLocalLoaded ? "Listo" : "Cargar"}</span>
               </button>
-
-              {showModelPicker && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-neutral-200 rounded-2xl shadow-2xl shadow-neutral-200/50 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                  <div className="p-2">
-                    <p className="px-4 py-2 text-[10px] font-black text-neutral-400 uppercase tracking-widest">
-                      Seleccionar modelo
-                    </p>
-                    {activeCloud.provider && (
-                      <div className="mb-1">
-                        <div className="px-4 py-2 flex items-center justify-between">
-                          <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">
-                            Modelo de {activeCloud.display}
-                          </p>
-                          <button
-                            onClick={() => refreshCloudModels()}
-                            title="Actualizar lista de modelos"
-                            className="flex items-center gap-1 text-[9px] font-black text-neutral-500 uppercase tracking-widest hover:text-neutral-900 transition-colors"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={cloudModelsLoading ? "animate-spin" : ""}><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
-                            {cloudModelsLoading ? "..." : "Actualizar"}
-                          </button>
-                        </div>
-                        <div className="px-2 pb-1 max-h-40 overflow-y-auto custom-scrollbar space-y-1">
-                          {cloudModels.length === 0 && !cloudModelsLoading && (
-                            <p className="px-3 py-2 text-[10px] font-bold text-neutral-400">
-                              Sin modelos cargados. Pulsa Actualizar.
-                            </p>
-                          )}
-                          {cloudModels.map((m) => (
-                            <button
-                              key={m.id}
-                              onClick={() => selectCloudModel(m.id)}
-                              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${cloudModel === m.id ? "bg-neutral-900 text-white" : "hover:bg-neutral-50 text-neutral-700"}`}
-                            >
-                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cloudModel === m.id ? "bg-white" : "bg-blue-500"}`}></div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-black truncate">{m.name}</p>
-                                <p className={`text-[9px] font-bold truncate ${cloudModel === m.id ? "text-white/50" : "text-neutral-400"}`}>{m.id}</p>
-                              </div>
-                              {cloudModel === m.id && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white flex-shrink-0"><polyline points="20 6 9 17 4 12" /></svg>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {MODEL_OPTIONS.map((opt) => {
-                      const isLoaded = loadedModels[opt.key];
-                      const isLoadingThis = loadingModel === opt.key;
-                      const canFit = ramGb >= opt.minRam;
-
-                      return (
-                        <button
-                          key={opt.key}
-                          onClick={() => handleModelSelect(opt.key)}
-                          disabled={isLoadingThis || (!isLoaded && !canFit)}
-                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all ${selectedModel === opt.key
-                            ? "bg-neutral-900 text-white"
-                            : "hover:bg-neutral-50 text-neutral-700"
-                            } ${!isLoaded && !canFit ? "opacity-40 cursor-not-allowed" : ""}`}
-                        >
-                          <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isLoadingThis ? "bg-amber-500 animate-pulse"
-                            : isLoaded ? "bg-emerald-500"
-                              : selectedModel === opt.key ? "bg-white"
-                                : "bg-emerald-500"
-                            }`}></div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className={`text-[12px] font-black ${selectedModel === opt.key ? "text-white" : "text-neutral-900"}`}>
-                                Qwen {opt.label}
-                              </p>
-                              {isLoaded && (
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${selectedModel === opt.key ? "bg-white/20 text-white" : "bg-emerald-50 text-emerald-600"}`}>
-                                  LISTO
-                                </span>
-                              )}
-                              {isLoadingThis && (
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 animate-pulse">
-                                  CARGANDO
-                                </span>
-                              )}
-                              {!isLoaded && !canFit && (
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-red-50 text-red-500">
-                                  RAM INSUF.
-                                </span>
-                              )}
-                            </div>
-                            <p className={`text-[10px] font-bold mt-0.5 ${selectedModel === opt.key ? "text-white/50" : "text-neutral-400"}`}>
-                              {opt.desc}
-                            </p>
-                          </div>
-                          {selectedModel === opt.key && (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white flex-shrink-0"><polyline points="20 6 9 17 4 12" /></svg>
-                          )}
-                        </button>
-                      );
-                    })}
-                    <div className="px-4 py-2.5 border-t border-neutral-100 mt-1 space-y-0.5">
-                      <p className="text-[10px] font-black text-neutral-500">
-                        {activeCloud.provider
-                          ? `Usando API: ${activeCloud.display}${cloudModel ? ` · ${cloudModel}` : ""}`
-                          : `Modelo local: Qwen ${currentModel.label}`}
-                      </p>
-                      <p className="text-[10px] font-bold text-neutral-400">
-                        RAM libre: {ramGb > 0 ? `${ramGb.toFixed(1)}GB` : "..."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className={`flex items-center gap-2.5 px-5 py-3 bg-white/80 backdrop-blur-sm border border-neutral-200 rounded-2xl shadow-sm ${loadingModel ? "opacity-100" : "opacity-90"}`}>
-              <div className={`w-2.5 h-2.5 rounded-full ${loadingModel
-                ? "bg-amber-500 animate-pulse"
-                : activeCloud.provider
-                  ? "bg-blue-500 animate-pulse shadow-lg shadow-blue-500/50"
-                  : Object.values(loadedModels).some(Boolean)
-                    ? "bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50"
-                    : "bg-neutral-300"}`}></div>
-              <span className="text-[11px] font-black text-neutral-600 uppercase tracking-widest">
-                {loadingModel ? "Cargando..." : activeCloud.provider ? "API en línea" : Object.values(loadedModels).some(Boolean) ? "Activado" : "Desactivado"}
-              </span>
-            </div>
+              {API_PROVIDERS.map((provider) => <div key={provider.id} className="mt-1">
+                <button onClick={() => selectProvider(provider.id)} disabled={!apiKeys[provider.id]} className={`yarvis-hover-panel flex w-full items-center gap-3 rounded-xl p-3 text-left disabled:cursor-not-allowed disabled:opacity-40 ${selectedProvider === provider.id ? "yarvis-panel-soft ring-1 ring-sky-500" : ""}`}>
+                  <span className="h-2.5 w-2.5 rounded-full bg-sky-500" /><span className="min-w-0 flex-1"><span className="yarvis-text block text-xs font-black">{provider.name}</span><span className="yarvis-faint block text-[10px] font-bold">{apiKeys[provider.id] ? `${cloudModels[provider.id]?.length || 0} modelos detectados` : "Agrega una API para activar"}</span></span><span className="text-xs opacity-50">›</span>
+                </button>
+                {selectedProvider === provider.id && <div className="max-h-44 overflow-y-auto px-2 pb-2">
+                  <button onClick={() => refreshCloudModels(provider.id)} className="yarvis-muted mb-1 flex w-full justify-end text-[9px] font-black uppercase tracking-widest">{cloudModelsLoading[provider.id] ? "Actualizando…" : "↻ Actualizar lista"}</button>
+                  {(cloudModels[provider.id] || []).map((model) => <button key={model.id} onClick={() => selectCloudModel(provider.id, model)} className={`yarvis-hover-panel flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left ${selectedCloudModels[provider.id] === model.id ? "yarvis-primary" : ""}`}><span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-black">{model.name}</span><span className="block truncate text-[9px] opacity-60">{model.id}</span></span>{selectedCloudModels[provider.id] === model.id && <span>✓</span>}</button>)}
+                </div>}
+              </div>)}
+              <div className="yarvis-border mt-2 border-t px-3 pt-3"><p className="yarvis-faint text-[9px] font-bold">Contexto: {Math.round(currentSelection.contextWindow / 1000)}k posiciones aprox. · se muestra como porcentaje en el chat.</p></div>
+            </div>}
           </div>
-        </header>
-      </div>
+          <span className="yarvis-panel-soft yarvis-border yarvis-muted flex items-center gap-2 rounded-xl border px-4 py-3 text-[10px] font-black uppercase tracking-widest"><span className={`h-2 w-2 rounded-full ${selectedProvider ? "bg-sky-500" : isLocalLoaded ? "bg-emerald-500" : "bg-zinc-500"}`} />{selectedProvider ? "API en línea" : isLocalLoaded ? "Local listo" : "Sin modelo"}</span>
+        </div>
+      </header>
 
-      <div className="flex-1 min-h-0 px-8 pb-8">
-        <div className="h-full bg-white/70 backdrop-blur-md rounded-[3rem] border border-neutral-200/80 shadow-2xl shadow-neutral-300/30 overflow-hidden relative">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-neutral-900/10 to-transparent"></div>
-          {loadingModel && (
-            <div className="absolute top-1 left-0 right-0 z-10 px-8 py-3 bg-amber-50 border-b border-amber-200">
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-black text-amber-700 uppercase tracking-widest">
-                      Cargando Qwen {loadingModel}
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-500">Esto puede tardar 10-30 seg...</span>
-                  </div>
-                  <div className="h-2 bg-amber-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-500 rounded-full animate-loading-bar"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {ramWarning && (
-            <div className="absolute top-1 left-0 right-0 z-10 px-8 py-3 bg-red-50 border-b border-red-200">
-              <div className="flex items-center gap-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 flex-shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-                <span className="text-[11px] font-black text-red-600 uppercase tracking-widest">{ramWarning}</span>
-              </div>
-            </div>
-          )}
-          <ChatWidget
-            role="admin"
-            userId="admin"
-            suggestions={[
-              "¿Hubo algo raro hoy?",
-              "¿Cuánto gané libre hoy quitando el costo de los productos?",
-              "¿Qué debería comprar para el fin de semana?",
-              "¿Qué productos están por agotarse?",
-              "Resumen de ventas de hoy",
-              "¿Qué empleados tienen más reembolsos?",
-            ]}
-            modelState={{ selectedModel, loadingModel, loadedModels, ramGb, showPicker: showModelPicker }}
-            onModelSelect={handleModelSelect}
-            onTogglePicker={() => setShowModelPicker(!showModelPicker)}
-            clearTrigger={clearTrigger}
-          />
+      {loadingModel && <div className="mx-6 mb-3 flex-shrink-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-3 sm:mx-8"><div className="flex items-center justify-between"><span className="text-[10px] font-black uppercase tracking-widest text-amber-500">Cargando modelo local…</span><span className="text-[10px] font-bold text-amber-500">Puede tardar unos segundos</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-amber-500/20"><div className="h-full animate-loading-bar rounded-full bg-amber-500" /></div></div>}
+      {ramWarning && <div className="mx-6 mb-3 flex-shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-3 text-xs font-bold text-red-500 sm:mx-8">{ramWarning}</div>}
+
+      <div className="min-h-0 flex-1 px-4 pb-4 sm:px-8 sm:pb-8">
+        <div className="yarvis-panel yarvis-border yarvis-shadow h-full min-h-0 overflow-hidden rounded-[2rem] border">
+          <ChatWidget role="admin" userId="admin" suggestions={["¿Hubo algo raro hoy?", "¿Cuánto gané libre hoy quitando el costo de los productos?", "¿Qué debería comprar para el fin de semana?", "¿Qué productos están por agotarse?", "Resumen de ventas de hoy", "¿Qué empleados tienen más reembolsos?"]} modelState={{ loadingModel }} modelSelection={currentSelection} clearTrigger={clearTrigger} />
         </div>
       </div>
 
-      {/* API KEY MODAL */}
-      {showApiModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-8 py-6 border-b border-neutral-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-neutral-900 uppercase tracking-tight">Configurar API</h3>
-                <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mt-1">Agrega tu clave de proveedor IA</p>
-              </div>
-              <button onClick={() => setShowApiModal(false)} className="w-10 h-10 bg-neutral-100 hover:bg-neutral-200 rounded-xl flex items-center justify-center transition-all">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-500"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-            <div className="px-8 py-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {API_PROVIDERS.map((provider) => (
-                <div key={provider.id} className="space-y-2">
-                  <label className="text-[11px] font-black text-neutral-500 uppercase tracking-widest flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-neutral-900"></div>
-                    {provider.name}
-                  </label>
-                  <input
-                    type="password"
-                    value={apiKeys[provider.id] || ""}
-                    onChange={(e) => setApiKeys({ ...apiKeys, [provider.id]: e.target.value })}
-                    placeholder={provider.placeholder}
-                    className="w-full bg-neutral-50 border border-neutral-200 px-5 py-3.5 rounded-2xl text-[13px] font-medium text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-900 focus:ring-4 focus:ring-neutral-900/5 transition-all"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="px-8 py-5 border-t border-neutral-100 bg-neutral-50/50 flex gap-3">
-              <button
-                onClick={() => setShowApiModal(false)}
-                className="flex-1 py-3.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-2xl text-[12px] font-black uppercase tracking-widest transition-all"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveApiKeys}
-                className="flex-1 py-3.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest transition-all shadow-lg"
-              >
-                Guardar
-              </button>
-            </div>
+      {showConfig && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+        <div className="yarvis-shell yarvis-panel yarvis-border yarvis-shadow max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border">
+          <div className="yarvis-border flex items-center justify-between border-b px-6 py-5 sm:px-8"><div><h3 className="yarvis-text text-lg font-black uppercase tracking-tight">Fuentes de inteligencia</h3><p className="yarvis-muted mt-1 text-[10px] font-bold uppercase tracking-widest">Configura API cloud o tu modelo local</p></div><button onClick={() => setShowConfig(false)} className="yarvis-panel-soft yarvis-muted flex h-9 w-9 items-center justify-center rounded-xl text-xl">×</button></div>
+          <div className="flex gap-2 overflow-x-auto px-6 pt-5 sm:px-8">{[{ id: "opencode", label: "OpenCode" }, { id: "google", label: "Gemini" }, { id: "local", label: "Modelo local" }].map((item) => <button key={item.id} onClick={() => setConfigSection(item.id as typeof configSection)} className={`flex-shrink-0 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${configSection === item.id ? "yarvis-primary" : "yarvis-panel-soft yarvis-muted"}`}>{item.label}</button>)}</div>
+          <div className="custom-scrollbar max-h-[55vh] overflow-y-auto px-6 py-6 sm:px-8">
+            {configSection !== "local" ? <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">{configSection === "opencode" ? "OpenCode" : "Gemini"}</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">{API_PROVIDERS.find((provider) => provider.id === configSection)?.description}</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">API key</label><input type="password" value={apiKeys[configSection] || ""} onChange={(event) => setApiKeys({ ...apiKeys, [configSection]: event.target.value })} placeholder={API_PROVIDERS.find((provider) => provider.id === configSection)?.placeholder} className="yarvis-input mt-2 w-full rounded-xl border px-4 py-3 text-sm outline-none focus:border-sky-500" /><div className="mt-5 flex items-center justify-between"><span className="yarvis-faint text-[10px] font-bold">{cloudModels[configSection]?.length || 0} modelos disponibles</span><button onClick={() => refreshCloudModels(configSection)} className="yarvis-muted text-[10px] font-black uppercase tracking-widest">{cloudModelsLoading[configSection] ? "Actualizando…" : "Actualizar modelos"}</button></div></div></div> : <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">Cualquier modelo GGUF</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">Selecciona Qwen 0.5B, 1.5B, 1.7B, 1.9B u otro modelo compatible con llama.cpp. El contexto local usa un valor seguro de 4096.</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">Ruta del archivo .gguf</label><div className="mt-2 flex gap-2"><input value={localModelPath} onChange={(event) => setLocalModelPath(event.target.value)} placeholder="/home/ale/Modelos/Qwen.gguf" className="yarvis-input min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm outline-none focus:border-emerald-500" /><button onClick={chooseLocalModel} className="yarvis-primary rounded-xl px-4 text-[10px] font-black uppercase tracking-widest">Buscar</button></div>{localModelName && <p className="yarvis-muted mt-3 truncate text-[10px] font-bold">Actual: {localModelName}</p>}</div></div>}
+            {configMessage && <p className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-xs font-bold text-sky-500">{configMessage}</p>}
           </div>
+          <div className="yarvis-border flex gap-3 border-t px-6 py-5 sm:px-8"><button onClick={() => setShowConfig(false)} className="yarvis-panel-soft yarvis-muted flex-1 rounded-xl py-3 text-[10px] font-black uppercase tracking-widest">Cerrar</button><button onClick={saveApiConfig} className="yarvis-primary flex-1 rounded-xl py-3 text-[10px] font-black uppercase tracking-widest">Guardar configuración</button></div>
         </div>
-      )}
+      </div>}
     </div>
   );
 };
