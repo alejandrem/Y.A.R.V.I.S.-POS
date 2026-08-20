@@ -41,6 +41,32 @@ const ChatInput = ({
     inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`;
   }, [input]);
 
+  // Al montar oculto (KeepAlive: display:none) scrollHeight mide 0 y el textarea queda
+  // de 0px. Cuando se hace visible, el ResizeObserver lo redimensiona a su altura real.
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    let raf = 0;
+    const resize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const height = Math.min(textarea.scrollHeight, 120);
+        if (height <= 0) return;
+        const next = `${height}px`;
+        if (textarea.style.height !== next) {
+          textarea.style.height = "auto";
+          textarea.style.height = next;
+        }
+      });
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(textarea);
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, []);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();

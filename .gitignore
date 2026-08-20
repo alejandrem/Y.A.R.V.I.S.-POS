@@ -1,9 +1,4 @@
-# Python Virtual Environments
-venv/
-.venv/
-__pycache__/
-*.py[cod]
-*$py.class
+
 
 # Node / Frontend
 node_modules/

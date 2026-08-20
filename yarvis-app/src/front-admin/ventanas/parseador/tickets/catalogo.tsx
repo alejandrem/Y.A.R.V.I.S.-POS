@@ -30,7 +30,7 @@ const Catalogo = ({ catalogPath, catalogItems, busy, onSelectCatalog, onImportCa
         <div className="space-y-2 max-h-48 overflow-y-auto">
           {catalogItems.slice(0, 6).map((item, index) => <div key={`${item.nombre}-${index}`} className="flex justify-between gap-4 text-sm"><span className="truncate font-bold text-neutral-700">{item.nombre}</span><span className="text-neutral-400">${item.precio_venta.toFixed(2)}</span></div>)}
         </div>
-        <button disabled={busy} onClick={onImportCatalog} className="w-full mt-5 rounded-2xl bg-neutral-900 text-white py-4 text-[10px] font-black uppercase tracking-widest disabled:opacity-40">{busy ? "Importando catálogo..." : "Importar catálogo maestro"}</button>
+        <button disabled={busy} onClick={onImportCatalog} className="w-full mt-5 rounded-2xl bg-neutral-950 text-neutral-50 py-4 text-[10px] font-black uppercase tracking-widest disabled:opacity-40">{busy ? "Importando catálogo..." : "Importar catálogo maestro"}</button>
       </div>
     )}
   </section>

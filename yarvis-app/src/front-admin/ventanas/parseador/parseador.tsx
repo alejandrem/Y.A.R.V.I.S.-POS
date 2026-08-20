@@ -201,7 +201,7 @@ const Parseador = () => {
         <nav className="relative inline-flex rounded-full border border-neutral-200 bg-neutral-100 p-1.5" aria-label="Secciones del parseador">
           <span
             aria-hidden="true"
-            className="absolute inset-y-1.5 left-1.5 w-[calc(50%-0.375rem)] rounded-full bg-neutral-900 shadow-lg transition-transform duration-300 ease-out"
+            className="absolute inset-y-1.5 left-1.5 w-[calc(50%-0.375rem)] rounded-full bg-neutral-950 shadow-lg transition-transform duration-300 ease-out"
             style={{ transform: view === "tickets" ? "translateX(0)" : "translateX(100%)" }}
           />
           {tabs.map((tab) => {
@@ -210,7 +210,7 @@ const Parseador = () => {
               <button
                 key={tab.id}
                 onClick={() => setView(tab.id)}
-                className={`relative z-10 w-40 sm:w-48 rounded-full py-3.5 text-[11px] sm:text-xs font-black uppercase tracking-widest transition-colors duration-300 ${active ? "text-white" : "text-neutral-900 hover:text-neutral-600"}`}
+                className={`relative z-10 w-40 sm:w-48 rounded-full py-3.5 text-[11px] sm:text-xs font-black uppercase tracking-widest transition-colors duration-300 ${active ? "text-neutral-50" : "text-neutral-950 hover:text-neutral-600"}`}
               >
                 {tab.label}
               </button>

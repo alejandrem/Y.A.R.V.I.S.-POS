@@ -1,15 +1,17 @@
+// Módulo Clientes (en desarrollo).
+// Contenido provisional: aviso de que está en producción próximamente.
+// Reemplazará el placeholder de texto sin UI.
 const AdminClientes = () => (
-  <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto">
-    <header className="mb-10 text-center">
-      <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight mb-2">CLIENTES</h2>
-      <div className="h-1.5 w-12 bg-neutral-900 rounded-full mx-auto"></div>
-    </header>
-    <div className="bg-neutral-50 p-10 rounded-[2.5rem] border border-neutral-100 shadow-inner">
-      <p className="text-xl text-neutral-600 font-light leading-relaxed first-letter:text-4xl first-letter:font-black first-letter:text-neutral-900">
-        Aqui mostraremos la gestion de los clientes y pedidos como Quien me compra, cuanto me compra, cuanto me genera y cuando fue su ultima visita, ademas de ver los pedidos encargados por clientes generados por el empleado, visualizando el formato de pago, los productos, si se aplico algun descuento, los tipos de ganancia etc. con la opcion de crear facturas reportes
-      </p>
+  <section className="bg-white rounded-[2.5rem] border border-neutral-100 shadow-xl p-6 sm:p-10">
+    <div className="text-center py-8 sm:py-12">
+      <div className="mx-auto w-16 h-16 rounded-2xl bg-neutral-950 text-neutral-50 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-[0.35em] text-neutral-400 mt-6">Módulo en producción</p>
+      <h3 className="text-2xl font-black text-neutral-900 mt-2">Gestión de clientes</h3>
+      <p className="text-sm text-neutral-500 mt-3 max-w-md mx-auto">Próximamente podrás ver quién te compra, cuánto te genera, su última visita y los pedidos encargados por cada cliente.</p>
     </div>
-  </div>
+  </section>
 );
 
 export default AdminClientes;

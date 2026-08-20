@@ -106,7 +106,7 @@ const AdminDashboard = ({
         </div>
       </aside>
 
-      {/* CONTENIDO CENTRAL */}
+      {/* CONTENIDO CENTRAL. Solo se monta en el DOM la pantalla activa (ahorro de RAM/CPU). */}
       <section className="flex-1 p-6 bg-white overflow-y-auto custom-scrollbar">
         {activeTab === "inventario" && <Inventario activeTab={activeTab} />}
         {activeTab === "ajustes" && (
@@ -118,13 +118,13 @@ const AdminDashboard = ({
             initialCp={initialCp}
           />
         )}
-        {activeTab === "tickets" && <Tickets />}
+        {activeTab === "tickets" && <Tickets active={activeTab === "tickets"} />}
         {activeTab === "ventas" && <AdminVentas />}
         {activeTab === "finanzas" && <AdminFinanzas />}
         {activeTab === "clientes" && <AdminClientes />}
         {activeTab === "empleados" && <AdminEmpleados activeTab={activeTab} />}
         {activeTab === "parseador" && <Parseador />}
-        {activeTab === "yarvis" && <AdminYarvis />}
+        {activeTab === "yarvis" && <AdminYarvis active={activeTab === "yarvis"} />}
       </section>
     </main>
   );

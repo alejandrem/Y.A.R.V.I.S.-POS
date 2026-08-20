@@ -1,5 +1,10 @@
+// Definición de salarios, metas y bonos por empleado.
+// Piel reconstruida con ModalShell: selector, salario con proyección en vivo,
+// metas del sistema y metas personalizadas. La lógica se conserva.
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MorphIcon } from "morphicons/react";
+import { ModalShell, Campo, inputCls, ICONO_TARGET, ICONO_CHECK, ICONO_USUARIO, ICONO_DOLAR, ICONO_MAS, ICONO_PREMIO, ICONO_BORRAR, ICONO_TRENDING, ICONO_RELOJ } from "./ui";
 
 interface EmpleadoProfile {
   id: number;
@@ -45,6 +50,14 @@ interface ModalMetasProps {
   onSaved: () => void;
 }
 
+const formatTime12 = (t: string) => {
+  if (!t || t === "00:00") return "Sin horario";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")}${ampm}`;
+};
+
 const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [salarioDiario, setSalarioDiario] = useState(0);
@@ -62,6 +75,7 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
       loadSalarioInfo();
       loadGoals();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   const loadSalarioInfo = async () => {
@@ -179,315 +193,265 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
     }
   };
 
-  return (
-    <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto custom-scrollbar p-8 space-y-5 animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="text-center">
-          <h2 className="text-lg font-black text-neutral-900 uppercase">
-            🎯 Definir Metas y Salarios
-          </h2>
-          <div className="h-0.5 w-8 bg-neutral-900 mx-auto mt-2 rounded-full"></div>
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mt-2">
-            Los cambios se guardan automáticamente
-          </p>
-        </header>
+  const selectedEmp = empleados.find((e) => e.id === selectedId);
 
-        {/* SELECTOR DE EMPLEADO */}
-        <div className="max-h-[120px] overflow-y-auto custom-scrollbar space-y-2">
-          {empleados.map((emp) => (
-            <button
-              key={emp.id}
-              onClick={() => handleSelect(emp)}
-              className={`w-full p-3 rounded-2xl border-2 transition-all text-left ${
-                selectedId === emp.id
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-100 bg-neutral-50 hover:border-neutral-300"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase">{emp.nombre}</span>
-                <span className="text-[9px] font-bold text-neutral-400">
+  const proyeccion = [
+    { label: "× Hora", valor: hora },
+    { label: "× Día", valor: salarioDiario },
+    { label: "× Semana", valor: semanal },
+    { label: "× Mes", valor: mensual },
+  ];
+
+  return (
+    <ModalShell icono={ICONO_TARGET} titulo="Metas y Sueldos" subtitulo="Salarios, metas del sistema y personalizadas" onClose={onClose} ancho="max-w-2xl">
+      {/* SELECTOR DE EMPLEADO */}
+      <div>
+        <p className="text-[10px] font-black text-neutral-500 uppercase tracking-wider ml-1 mb-2">Selecciona un empleado</p>
+        <div className="max-h-36 overflow-y-auto custom-scrollbar space-y-2 pr-1">
+          {empleados.map((emp) => {
+            const activo = selectedId === emp.id;
+            return (
+              <button
+                key={emp.id}
+                onClick={() => handleSelect(emp)}
+                className={`w-full flex items-center justify-between p-3.5 rounded-2xl border-2 transition-all ${
+                  activo
+                    ? "border-neutral-950 bg-neutral-950 text-neutral-50"
+                    : "border-neutral-100 bg-neutral-50 hover:border-neutral-300"
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <MorphIcon icon={ICONO_USUARIO} size={15} strokeWidth={2.2} spring="smooth" className={activo ? "text-neutral-50" : "text-neutral-400"} />
+                  <span className="text-[11px] font-black uppercase">{emp.nombre}</span>
+                </span>
+                <span className={`text-[9px] font-bold uppercase tracking-widest ${activo ? "text-neutral-400" : "text-neutral-400"}`}>
                   {emp.horario_inicio && emp.horario_fin && emp.horario_inicio !== "00:00"
-                    ? `${emp.horario_inicio} - ${emp.horario_fin}`
+                    ? `${formatTime12(emp.horario_inicio)} - ${formatTime12(emp.horario_fin)}`
                     : "Sin horario"}
                 </span>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
+      </div>
 
-        {selectedId && (
-          <div className="space-y-5 animate-in slide-in-from-top-2 duration-200">
-
-            {/* SECCION: SALARIO */}
-            <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="text-base">💰</span>
-                <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">
-                  Salario
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                <div className="space-y-1">
-                  <label className="text-[8px] sm:text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
-                    Pago Diario ($)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={10}
-                    value={salarioDiario || ""}
-                    onChange={(e) => setSalarioDiario(Number(e.target.value))}
-                    placeholder="0"
-                    className="w-full px-3 py-2.5 rounded-xl bg-white border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
-                    Días / Semana
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={7}
-                    value={diasSemana || ""}
-                    onChange={(e) => setDiasSemana(Number(e.target.value))}
-                    placeholder="6"
-                    className="w-full px-3 py-2.5 rounded-xl bg-white border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
-                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
-                  <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Hora</p>
-                  <p className="text-sm font-black text-neutral-900 mt-1">${hora.toFixed(2)}</p>
-                </div>
-                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
-                  <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Día</p>
-                  <p className="text-sm font-black text-neutral-900 mt-1">${salarioDiario.toFixed(2)}</p>
-                </div>
-                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
-                  <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Semana</p>
-                  <p className="text-sm font-black text-neutral-900 mt-1">${semanal.toFixed(2)}</p>
-                </div>
-                <div className="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 text-center border border-neutral-100">
-                  <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">x Mes</p>
-                  <p className="text-sm font-black text-neutral-900 mt-1">${mensual.toFixed(2)}</p>
-                </div>
-              </div>
-
-              <p className="text-[8px] font-bold text-neutral-300 text-center">
-                Basado en horario: {horasPorDia.toFixed(1)}h/día · {diasSemana} días/semana
-              </p>
+      {selectedId && (
+        <div className="animate-in slide-in-from-top-2 duration-200 space-y-6">
+          {/* SALARIO */}
+          <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-neutral-950">
+                <MorphIcon icon={ICONO_DOLAR} size={15} strokeWidth={2.4} spring="smooth" />
+              </span>
+              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Salario</p>
             </div>
 
-            {/* SECCION: METAS DEL SISTEMA */}
-            <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="text-base">🏆</span>
-                <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">
-                  Metas del Sistema
-                </p>
-              </div>
-
-              {/* META VENTAS */}
-              <div className={`rounded-xl p-4 border-2 transition-all ${
-                ventasCompletada ? "border-green-500 bg-green-50" : "border-neutral-200 bg-white"
-              }`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">📈</span>
-                    <p className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">
-                      Meta de Ventas
-                    </p>
-                  </div>
-                  {ventasCompletada && (
-                    <span className="text-[9px] font-black text-green-600 uppercase bg-green-100 px-2 py-0.5 rounded-lg">
-                      ✅ Cumplida
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
-                      Meta de Venta Semanal
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <span className="text-sm font-black text-neutral-500">$</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={50}
-                        value={ventasThreshold || ""}
-                        onChange={(e) => {
-                          setVentasThreshold(e.target.value);
-                        }}
-                        placeholder="0"
-                        className="w-full px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
-                      Si cumple, darle % de lo que vendió
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        step={1}
-                        value={ventasBonusPct || ""}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          if (v >= 1 && v <= 10) setVentasBonusPct(v);
-                        }}
-                        placeholder="3"
-                        className="w-full px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                      />
-                      <span className="text-xs font-black text-neutral-400">%</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-neutral-100 rounded-xl p-3 text-center">
-                  <p className="text-sm font-black text-neutral-700">
-                    Si vende ${umbralVenta.toFixed(2)} → bono de ${(umbralVenta * ventasBonusPct / 100).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-
-              {/* META PUNTUALIDAD */}
-              <div className={`rounded-xl p-4 border-2 transition-all ${
-                puntualidadCompletada ? "border-green-500 bg-green-50" : "border-neutral-200 bg-white"
-              }`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">⏰</span>
-                    <p className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">
-                      Meta de Puntualidad
-                    </p>
-                  </div>
-                  {puntualidadCompletada && (
-                    <span className="text-[9px] font-black text-green-600 uppercase bg-green-100 px-2 py-0.5 rounded-lg">
-                      ✅ Cumplida
-                    </span>
-                  )}
-                </div>
-
-                <p className="text-[9px] font-bold text-neutral-400 mb-2">
-                  Si se registra antes de 5 min del inicio de su turno
-                </p>
-
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider ml-1">
-                    Bono fijo ($)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={10}
-                    value={puntualidadBonus || ""}
-                    onChange={(e) => {
-                      setPuntualidadBonus(Number(e.target.value));
-                    }}
-                    placeholder="0"
-                    className="w-full px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* SECCION: METAS PERSONALIZADAS */}
-            <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="text-base">➕</span>
-                <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">
-                  Metas Personalizadas
-                </p>
-              </div>
-
-              <div className="grid grid-cols-[1fr_100px_40px] gap-2">
-                <input
-                  type="text"
-                  placeholder="Nombre de la meta"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  className="px-3 py-2 rounded-xl bg-white border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                />
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Pago Diario ($)">
                 <input
                   type="number"
                   min={0}
                   step={10}
-                  placeholder="Bono $"
-                  value={customBonus || ""}
-                  onChange={(e) => setCustomBonus(Number(e.target.value))}
-                  className="px-3 py-2 rounded-xl bg-white border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
+                  value={salarioDiario || ""}
+                  onChange={(e) => setSalarioDiario(Number(e.target.value))}
+                  placeholder="0"
+                  className={inputCls}
                 />
-                <button
-                  onClick={handleAddCustom}
-                  disabled={!customName.trim() || customBonus <= 0}
-                  className="rounded-xl bg-neutral-900 text-white font-black text-lg hover:bg-neutral-800 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  +
-                </button>
-              </div>
+              </Campo>
+              <Campo label="Días / Semana">
+                <input
+                  type="number"
+                  min={1}
+                  max={7}
+                  value={diasSemana || ""}
+                  onChange={(e) => setDiasSemana(Number(e.target.value))}
+                  placeholder="6"
+                  className={inputCls}
+                />
+              </Campo>
+            </div>
 
-              {customGoals.length > 0 ? (
-                <div className="space-y-2">
-                  {customGoals.map((g) => (
-                    <div
-                      key={g.id}
-                      className="flex items-center justify-between bg-white rounded-xl px-4 py-3 border border-neutral-100"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-2.5 h-2.5 rounded-full ${g.is_completed ? "bg-green-500" : "bg-neutral-300"}`}></span>
-                        <span className="text-xs font-black text-neutral-700 uppercase">{g.goal_name}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-neutral-500">${g.bonus_amount}</span>
-                        {g.is_completed && (
-                          <span className="text-[8px] font-black text-green-600 uppercase">✅</span>
-                        )}
-                        <button
-                          onClick={() => handleDeleteGoal(g.id)}
-                          className="text-neutral-300 hover:text-red-500 transition-colors text-sm font-bold"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {proyeccion.map((p) => (
+                <div key={p.label} className="bg-white rounded-xl p-3 text-center border border-neutral-100">
+                  <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">{p.label}</p>
+                  <p className="text-sm font-black text-neutral-900 mt-1">${p.valor.toFixed(2)}</p>
                 </div>
-              ) : (
-                <p className="text-[9px] font-bold text-neutral-300 text-center py-2">
-                  No hay metas personalizadas aún
+              ))}
+            </div>
+
+            <p className="text-[8px] font-bold text-neutral-400 text-center">
+              Basado en horario: {horasPorDia.toFixed(1)}h/día · {diasSemana} días/semana · {selectedEmp?.horario_inicio && selectedEmp.horario_inicio !== "00:00" ? `${formatTime12(selectedEmp.horario_inicio)} - ${formatTime12(selectedEmp?.horario_fin ?? "")}` : "sin turno"}
+            </p>
+          </div>
+
+          {/* METAS DEL SISTEMA */}
+          <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-neutral-950">
+                <MorphIcon icon={ICONO_PREMIO} size={15} strokeWidth={2.4} spring="smooth" />
+              </span>
+              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Metas del Sistema</p>
+            </div>
+
+            {/* META VENTAS */}
+            <div className={`rounded-xl p-4 border-2 transition-all ${ventasCompletada ? "border-emerald-400 bg-emerald-50" : "border-neutral-200 bg-white"}`}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="flex items-center gap-2 text-[9px] font-black text-neutral-500 uppercase tracking-widest">
+                  <MorphIcon icon={ICONO_TRENDING} size={14} strokeWidth={2.4} spring="smooth" />
+                  Meta de Ventas
                 </p>
-              )}
+                {ventasCompletada && (
+                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase bg-emerald-100 px-2 py-0.5 rounded-lg">
+                    <MorphIcon icon={ICONO_CHECK} size={11} strokeWidth={3} spring="snappy" reducedMotion="user" />
+                    Cumplida
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                <Campo label="Meta de Venta Semanal ($)">
+                  <input value={ventasThreshold} onChange={(e) => setVentasThreshold(e.target.value)} placeholder="0" className={inputCls} />
+                </Campo>
+                <Campo label="Si cumple, % de lo vendido">
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      step={1}
+                      value={ventasBonusPct || ""}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (v >= 1 && v <= 10) setVentasBonusPct(v);
+                      }}
+                      placeholder="3"
+                      className={`${inputCls} pr-9`}
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-neutral-400">%</span>
+                  </div>
+                </Campo>
+              </div>
+              <div className="bg-neutral-100 rounded-xl p-3 text-center">
+                <p className="text-sm font-black text-neutral-700">
+                  Si vende ${umbralVenta.toFixed(2)} → bono de ${(umbralVenta * ventasBonusPct / 100).toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            {/* META PUNTUALIDAD */}
+            <div className={`rounded-xl p-4 border-2 transition-all ${puntualidadCompletada ? "border-emerald-400 bg-emerald-50" : "border-neutral-200 bg-white"}`}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="flex items-center gap-2 text-[9px] font-black text-neutral-500 uppercase tracking-widest">
+                  <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.2} spring="smooth" />
+                  Meta de Puntualidad
+                </p>
+                {puntualidadCompletada && (
+                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase bg-emerald-100 px-2 py-0.5 rounded-lg">
+                    <MorphIcon icon={ICONO_CHECK} size={11} strokeWidth={3} spring="snappy" reducedMotion="user" />
+                    Cumplida
+                  </span>
+                )}
+              </div>
+              <p className="text-[9px] font-bold text-neutral-400 mb-2">Si se registra antes de 5 min del inicio de su turno</p>
+              <Campo label="Bono fijo ($)">
+                <input
+                  type="number"
+                  min={0}
+                  step={10}
+                  value={puntualidadBonus || ""}
+                  onChange={(e) => setPuntualidadBonus(Number(e.target.value))}
+                  placeholder="0"
+                  className={inputCls}
+                />
+              </Campo>
             </div>
           </div>
-        )}
 
-        <div className="pt-2">
-          <button
-            onClick={handleSaveAll}
-            disabled={!selectedId}
-            className="w-full py-4 rounded-xl bg-neutral-900 text-white text-xs font-black uppercase tracking-[0.2em] hover:bg-neutral-800 transition-all shadow-xl shadow-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Guardar Todo
-          </button>
+          {/* METAS PERSONALIZADAS */}
+          <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-neutral-950">
+                <MorphIcon icon={ICONO_MAS} size={15} strokeWidth={2.4} spring="smooth" />
+              </span>
+              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Metas Personalizadas</p>
+            </div>
+
+            <div className="grid grid-cols-[1fr_100px_44px] gap-2">
+              <input
+                type="text"
+                placeholder="Nombre de la meta"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                className={inputCls}
+              />
+              <input
+                type="number"
+                min={0}
+                step={10}
+                placeholder="Bono $"
+                value={customBonus || ""}
+                onChange={(e) => setCustomBonus(Number(e.target.value))}
+                className={inputCls}
+              />
+              <button
+                onClick={handleAddCustom}
+                disabled={!customName.trim() || customBonus <= 0}
+                className="rounded-xl bg-neutral-950 text-neutral-50 font-black hover:bg-neutral-800 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center active:scale-[0.95]"
+              >
+                <MorphIcon icon={ICONO_MAS} size={16} strokeWidth={2.5} spring="snappy" />
+              </button>
+            </div>
+
+            {customGoals.length > 0 ? (
+              <div className="space-y-2">
+                {customGoals.map((g) => (
+                  <div key={g.id} className="flex items-center justify-between bg-white rounded-xl px-4 py-3 border border-neutral-100">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${g.is_completed ? "bg-emerald-500" : "bg-neutral-300"}`} />
+                      <span className="text-[11px] font-black text-neutral-700 uppercase">{g.goal_name}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-black text-neutral-900">${g.bonus_amount}</span>
+                      {g.is_completed && (
+                        <span className="text-emerald-600 flex items-center">
+                          <MorphIcon icon={ICONO_CHECK} size={11} strokeWidth={3} spring="snappy" reducedMotion="user" />
+                        </span>
+                      )}
+                      <button
+                        onClick={() => handleDeleteGoal(g.id)}
+                        aria-label={`Eliminar meta ${g.goal_name}`}
+                        className="text-neutral-300 hover:text-red-500 transition-colors flex items-center"
+                      >
+                        <MorphIcon icon={ICONO_BORRAR} size={15} strokeWidth={2.2} spring="snappy" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[9px] font-bold text-neutral-400 text-center py-2 uppercase tracking-widest">No hay metas personalizadas aún</p>
+            )}
+          </div>
         </div>
+      )}
+
+      <div className="pt-2 space-y-2">
+        <button
+          onClick={handleSaveAll}
+          disabled={!selectedId}
+          className="w-full inline-flex items-center justify-center gap-2.5 py-4 rounded-xl bg-neutral-950 text-neutral-50 text-xs font-black uppercase tracking-[0.2em] hover:bg-neutral-800 transition-all shadow-xl shadow-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+        >
+          <MorphIcon icon={ICONO_CHECK} size={16} strokeWidth={2.5} spring="snappy" />
+          Guardar Todo
+        </button>
+        <button
+          onClick={onClose}
+          className="w-full py-3 text-[10px] font-black text-neutral-400 uppercase tracking-widest hover:text-neutral-900 transition-colors"
+        >
+          Cancelar
+        </button>
       </div>
-    </div>
+    </ModalShell>
   );
 };
 

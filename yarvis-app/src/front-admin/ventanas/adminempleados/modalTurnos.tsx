@@ -1,5 +1,10 @@
+// Configuración de turnos/horarios por empleado.
+// Piel reconstruida con ModalShell + selector de empleado + campos de hora.
+// La lógica de selección y guardado se conserva.
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MorphIcon } from "morphicons/react";
+import { ModalShell, Campo, inputCls, ICONO_RELOJ, ICONO_CHECK, ICONO_USUARIO } from "./ui";
 
 interface EmpleadoProfile {
   id: number;
@@ -21,6 +26,14 @@ interface ModalTurnosProps {
   onClose: () => void;
   onSaved: () => void;
 }
+
+const formatTime12 = (t: string) => {
+  if (!t || t === "00:00") return "Sin horario";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")}${ampm}`;
+};
 
 const ModalTurnos = ({ empleados, onClose, onSaved }: ModalTurnosProps) => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -60,102 +73,76 @@ const ModalTurnos = ({ empleados, onClose, onSaved }: ModalTurnosProps) => {
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg p-8 space-y-5 animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="text-center">
-          <h2 className="text-lg font-black text-neutral-900 uppercase">
-            🕒 Configurar Turnos / Horarios
-          </h2>
-          <div className="h-0.5 w-8 bg-neutral-900 mx-auto mt-2 rounded-full"></div>
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mt-2">
-            Define el horario libre para cada empleado
-          </p>
-        </header>
-
-        <div className="max-h-[180px] overflow-y-auto custom-scrollbar space-y-2">
-          {empleados.map((emp) => (
-            <button
-              key={emp.id}
-              onClick={() => handleSelect(emp)}
-              className={`w-full p-4 rounded-2xl border-2 transition-all text-left ${
-                selectedId === emp.id
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-100 bg-neutral-50 hover:border-neutral-300"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase">{emp.nombre}</span>
-                <span className={`text-[9px] font-bold ${selectedId === emp.id ? 'text-neutral-400' : 'text-neutral-400'}`}>
-                  {emp.horario_inicio && emp.horario_fin && emp.horario_inicio !== "00:00"
-                    ? `${emp.horario_inicio} - ${emp.horario_fin}`
-                    : "Sin horario"}
-                </span>
-              </div>
-            </button>
-          ))}
+    <ModalShell icono={ICONO_RELOJ} titulo="Configurar Turnos" subtitulo="Define el horario libre de cada empleado" onClose={onClose} ancho="max-w-lg">
+      <div className="space-y-4">
+        <div>
+          <p className="text-[10px] font-black text-neutral-500 uppercase tracking-wider ml-1 mb-2">Selecciona un empleado</p>
+          <div className="max-h-44 overflow-y-auto custom-scrollbar space-y-2 pr-1">
+            {empleados.map((emp) => {
+              const activo = selectedId === emp.id;
+              const tieneHorario = emp.horario_inicio && emp.horario_fin && emp.horario_inicio !== "00:00";
+              return (
+                <button
+                  key={emp.id}
+                  onClick={() => handleSelect(emp)}
+                  className={`w-full flex items-center justify-between p-3.5 rounded-2xl border-2 transition-all ${
+                    activo
+                      ? "border-neutral-950 bg-neutral-950 text-neutral-50"
+                      : "border-neutral-100 bg-neutral-50 hover:border-neutral-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <MorphIcon icon={ICONO_USUARIO} size={15} strokeWidth={2.2} spring="smooth" className={activo ? "text-neutral-50" : "text-neutral-400"} />
+                    <span className="text-[11px] font-black uppercase">{emp.nombre}</span>
+                  </span>
+                  <span className={`text-[9px] font-bold uppercase tracking-widest ${activo ? "text-neutral-400" : "text-neutral-400"}`}>
+                    {tieneHorario ? `${formatTime12(emp.horario_inicio!)} - ${formatTime12(emp.horario_fin!)}` : "Sin horario"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {selectedId && (
-          <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">
-                  Hora de Entrada
-                </label>
-                <input
-                  type="time"
-                  value={horarioInicio}
-                  onChange={(e) => setHorarioInicio(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">
-                  Hora de Salida
-                </label>
-                <input
-                  type="time"
-                  value={horarioFin}
-                  onChange={(e) => setHorarioFin(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm font-bold focus:outline-none focus:border-neutral-900"
-                />
-              </div>
+          <div className="animate-in slide-in-from-top-2 duration-200 space-y-4 bg-neutral-50 rounded-2xl p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Hora de Entrada">
+                <input type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} className={inputCls} />
+              </Campo>
+              <Campo label="Hora de Salida">
+                <input type="time" value={horarioFin} onChange={(e) => setHorarioFin(e.target.value)} className={inputCls} />
+              </Campo>
             </div>
-
             {horarioInicio && horarioFin && (
-              <div className="bg-neutral-50 rounded-xl p-3 text-center">
+              <div className="bg-white rounded-xl p-3 text-center border border-neutral-100">
                 <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Horario definido</p>
-                <p className="text-sm font-black text-neutral-900 mt-1">
-                  {horarioInicio} - {horarioFin}
+                <p className="text-sm font-black text-neutral-900 mt-1 uppercase">
+                  {formatTime12(horarioInicio)} - {formatTime12(horarioFin)}
                 </p>
               </div>
             )}
           </div>
         )}
-
-        <div className="pt-2 space-y-2">
-          <button
-            onClick={handleSave}
-            disabled={!selectedId}
-            className="w-full py-4 rounded-xl bg-neutral-900 text-white text-xs font-black uppercase tracking-[0.2em] hover:bg-neutral-800 transition-all shadow-xl shadow-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Guardar Horario
-          </button>
-          <button
-            onClick={onClose}
-            className="w-full py-3 text-[10px] font-bold text-neutral-400 uppercase tracking-widest"
-          >
-            Cancelar
-          </button>
-        </div>
       </div>
-    </div>
+
+      <div className="pt-2 space-y-2">
+        <button
+          onClick={handleSave}
+          disabled={!selectedId}
+          className="w-full inline-flex items-center justify-center gap-2.5 py-4 rounded-xl bg-neutral-950 text-neutral-50 text-xs font-black uppercase tracking-[0.2em] hover:bg-neutral-800 transition-all shadow-xl shadow-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98]"
+        >
+          <MorphIcon icon={ICONO_CHECK} size={16} strokeWidth={2.5} spring="snappy" />
+          Guardar Horario
+        </button>
+        <button
+          onClick={onClose}
+          className="w-full py-3 text-[10px] font-black text-neutral-400 uppercase tracking-widest hover:text-neutral-900 transition-colors"
+        >
+          Cancelar
+        </button>
+      </div>
+    </ModalShell>
   );
 };
 

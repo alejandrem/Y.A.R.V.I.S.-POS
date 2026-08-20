@@ -16,7 +16,11 @@ interface CorteDb {
   total_efectivo: number;
 }
 
-const Tickets = () => {
+interface TicketsProps {
+  active?: boolean;
+}
+
+const Tickets = ({ active = true }: TicketsProps) => {
   const [selectedRange, setSelectedRange] = useState("1 AÑO");
   
   const [tickets, setTickets] = useState<TicketDb[]>([]);
@@ -37,9 +41,12 @@ const Tickets = () => {
     }
   };
 
+  // Se monta una vez (KeepAlive) y recarga datos al volver a la pestaña,
+  // manteniendo el rango seleccionado. No depende de fetchData para evitar loops.
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (active) fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   // Filtrado real por rango de fechas
   const filteredTickets = useMemo(() => {

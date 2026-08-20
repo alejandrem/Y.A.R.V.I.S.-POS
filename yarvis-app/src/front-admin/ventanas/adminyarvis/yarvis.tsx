@@ -33,7 +33,11 @@ interface ModelStatus {
   local_context_window?: number;
 }
 
-const AdminYarvis = () => {
+interface AdminYarvisProps {
+  active?: boolean;
+}
+
+const AdminYarvis = ({ active = true }: AdminYarvisProps) => {
   const [showConfig, setShowConfig] = useState(false);
   const [configSection, setConfigSection] = useState<"opencode" | "google" | "local">("opencode");
   const [showModelMenu, setShowModelMenu] = useState(false);
@@ -97,10 +101,11 @@ const AdminYarvis = () => {
   }, [localModelPath]);
 
   useEffect(() => {
+    if (!active) return;
     refreshStatus();
     const timer = window.setInterval(refreshStatus, 5000);
     return () => window.clearInterval(timer);
-  }, [refreshStatus]);
+  }, [refreshStatus, active]);
 
   useEffect(() => {
     const storedPath = localStorage.getItem("yarvis_local_model_path");
