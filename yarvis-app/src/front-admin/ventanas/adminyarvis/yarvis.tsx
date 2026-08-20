@@ -1,11 +1,22 @@
+// Panel de administración de Y.A.R.V.I.S.
+// Selector de modelo (local GGUF o cloud OpenCode/Gemini), botón "Limpiar chat" y
+// "Configurar modelos". Orquesta el ChatWidget con su configuración vigente.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { MorphIcon, type IconInput } from "morphicons/react";
 import ChatWidget, {
   type ChatModelSelection,
   type CloudModel,
   CLOUD_PROVIDERS,
 } from "./ChatWidget";
+import {
+  ICONO_CHECK,
+  ICONO_ENGRANAJE,
+  ICONO_PAUSA,
+  ICONO_REINICIAR,
+  ICONO_ROBOT,
+} from "../../../App";
 
 type ProviderId = "google" | "opencode";
 
@@ -46,7 +57,34 @@ const AdminYarvis = () => {
   const [ramWarning, setRamWarning] = useState("");
   const [configMessage, setConfigMessage] = useState("");
   const [clearTrigger, setClearTrigger] = useState(0);
+  const [clearIcon, setClearIcon] = useState<IconInput>(ICONO_REINICIAR);
+  const [configIcon, setConfigIcon] = useState<IconInput>(ICONO_ENGRANAJE);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const clearIconTimeoutsRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    return () => {
+      clearIconTimeoutsRef.current.forEach(window.clearTimeout);
+    };
+  }, []);
+
+  const handleClearChat = () => {
+    setClearTrigger((value) => value + 1);
+    clearIconTimeoutsRef.current.forEach(window.clearTimeout);
+    clearIconTimeoutsRef.current = [
+      window.setTimeout(() => setClearIcon(ICONO_PAUSA), 0),
+      window.setTimeout(() => setClearIcon(ICONO_CHECK), 180),
+      window.setTimeout(() => setClearIcon(ICONO_REINICIAR), 600),
+    ];
+  };
+
+  const handleConfigHoverEnter = () => {
+    setConfigIcon(ICONO_ROBOT);
+  };
+
+  const handleConfigHoverLeave = () => {
+    setConfigIcon(ICONO_ENGRANAJE);
+  };
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -218,12 +256,13 @@ const AdminYarvis = () => {
     <div className="yarvis-shell flex h-full min-h-0 flex-col animate-in fade-in duration-500">
       <header className="flex flex-shrink-0 flex-wrap items-center justify-between gap-4 px-6 pb-4 pt-6 sm:px-8 sm:pt-8">
         <div>
-          <h2 className="yarvis-text mb-1 text-4xl font-black uppercase tracking-tight">Y.A.R.V.I.S.</h2>
-          <p className="yarvis-muted text-[11px] font-black uppercase tracking-[0.3em]">Asistente Inteligente de Negocio</p>
+          <h2 className="yarvis-text mb-2 text-4xl font-black uppercase tracking-tight">Y.A.R.V.I.S.</h2>
+          <div className="h-1.5 w-12 rounded-full bg-neutral-900 dark:bg-neutral-200" />
+          <p className="yarvis-muted mt-2 text-[11px] font-black uppercase tracking-[0.3em]">Asistente Inteligente de Negocio</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => setClearTrigger((value) => value + 1)} className="yarvis-primary flex items-center gap-2 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all"><span className="text-base leading-none">↺</span> Limpiar chat</button>
-          <button onClick={() => { setShowConfig(true); setConfigMessage(""); }} className="yarvis-panel yarvis-border yarvis-text flex items-center gap-2 rounded-xl border px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all">⚙ Configurar modelos</button>
+          <button onClick={handleClearChat} className="yarvis-primary flex items-center gap-2 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all"><MorphIcon icon={clearIcon} size={16} strokeWidth={2.5} spring="smooth" /> Limpiar chat</button>
+          <button onMouseEnter={handleConfigHoverEnter} onMouseLeave={handleConfigHoverLeave} onClick={() => { setShowConfig(true); setConfigMessage(""); }} className="yarvis-panel yarvis-border yarvis-text flex items-center gap-2 rounded-xl border px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-all"><MorphIcon icon={configIcon} size={16} strokeWidth={2} spring="smooth" /> Configurar modelos</button>
           <div ref={modelMenuRef} className="relative">
             <button onClick={() => setShowModelMenu((value) => !value)} className="yarvis-panel yarvis-border yarvis-text flex items-center gap-2 rounded-xl border px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">
               <span className={`h-2.5 w-2.5 rounded-full ${loadingModel ? "animate-pulse bg-amber-500" : selectedProvider ? "bg-sky-500" : isLocalLoaded ? "bg-emerald-500" : "bg-zinc-500"}`} />
