@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use std::collections::HashSet;
 use std::sync::mpsc::Sender;
 
-use super::almacen::{cargar_estado, garantizar_columna_folio, insertar_venta};
+use super::almacen::{cargar_estado, cargar_productos_por_nombre, garantizar_columna_folio, insertar_venta};
 use super::archivos::{leer_archivo_tolerante, nombre_de_archivo};
 use super::items::resolver_totales_venta;
 use super::resumen::{
@@ -36,6 +36,7 @@ pub fn procesar_archivos(
     };
     // Columna folio_ticket: las DBs creadas antes de la migración no la tienen.
     garantizar_columna_folio(&conn);
+    let productos_por_nombre = cargar_productos_por_nombre(&conn);
 
     for archivo in archivos {
         let nombre_archivo = nombre_de_archivo(archivo);
@@ -155,6 +156,7 @@ pub fn procesar_archivos(
                 subtotal,
                 iva,
                 total,
+                &productos_por_nombre,
             ) {
                 Ok(venta_id) => {
                     items_totales += items.len();

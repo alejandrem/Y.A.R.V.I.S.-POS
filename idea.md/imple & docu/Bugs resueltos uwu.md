@@ -390,3 +390,37 @@ Orden de implementación sugerido (por impacto/poco riesgo)
 4. C3, C4, C5 (bloqueo de loop, fugas, locks) → riesgo medio, requiere probar concurrencia.
 5. B1, B2 (backfill COALESCE/schema check, RAM MemAvailable).
 6. A1, C1, C2 (los más invasivos: refactor del stream de lote y aislamiento de sesión) → por último, requieren refactores y pruebas end-to-end.
+
+---
+
+## FASE F — Frontend Finanzas (Tauri + React)
+
+### Bug F1: Dashboard de Finanzas muestra $0.00 en todos los KPIs — ALTO (RESUELTO)
+
+**Archivo:** `yarvis-app/src/front-admin/ventanas/adminfinanzas/finanzas.tsx`
+
+**Causa raiz (doble):**
+
+1. **Rango de fechas por defecto demasiado angosto:** `rangoPorDefecto()` usaba 30 dias hacia atras. Las funciones del backend (`get_resumen_periodo`, `get_datos_grafica_pl`, `get_gastos_por_categoria`, etc.) reciben las fechas del frontend y filtran con `WHERE date(fecha) BETWEEN ? AND ?`. Si no hay ventas completadas ni pagos en los ultimos 30 dias, todo retorna $0. La grafica "Ventas vs Gastos" SÍ mostraba datos porque `get_ventas_vs_gastos_mensual` calcula sus propias fechas internamente en Rust (6 meses hacia atras con `chrono::Local::now()`), ignorando el rango del frontend.
+
+2. **`Promise.all` bloqueante:** `cargarResumen()` usaba `Promise.all([get_resumen_periodo, get_punto_equilibrio])`. Si UNA de las dos fallaba (auth, BD, schema), la entera fallaba y NINGUNO de los dos estados se seteaba. `cargarGraficas()` usaba el mismo patron con 4 invokes: si `get_datos_grafica_pl` fallaba, ni `get_ventas_vs_gastos_mensual` ni `get_gastos_por_categoria` ni `get_tendencia_cortes_z` se seteaban. Los `catch {}` vacios tragaban los errores silenciosamente.
+
+**Por que era confuso:**
+- El usuario veia $0.00 en KPIs y "SIN DATOS" en graficas
+- Pero la barra "Ventas vs Gastos" mostraba datos (porque usa fechas propias)
+- No habia errores visibles en la UI (los catch tragaban todo)
+- Parecia que el backend no funcionaba, pero en realidad funcionaba: el frontend pasaba fechas que no incluian datos
+
+**Solucion:**
+
+1. `rangoPorDefecto()`: cambiado de 30 dias a 6 meses (`ini.setMonth(ini.getMonth() - 6)`)
+2. Cada invoke ahora es independiente con su propio `try/catch`: si `get_resumen_periodo` falla, las graficas igual se cargan
+3. `cargarPuntoEq()` separado de `cargarResumen()` para que no se bloqueen mutuamente
+4. `Promise.allSettled()` en `cargarTodo()` en vez de `Promise.all()`
+5. Todos los `catch` ahora tienen `console.error` con tag `[FINANZAS]` para debuggar desde la consola del navegador (F12)
+
+**Archivos modificados:**
+- `yarvis-app/src/front-admin/ventanas/adminfinanzas/finanzas.tsx` — rango, carga de datos, error handling
+- `yarvis-app/src/front-admin/types.ts` — 15 interfaces TypeScript nuevas para finanzas
+
+**Leccion aprendida:** Cuando el frontend y el backend calculan rangos de fechas por separado, pueden divergir silenciosamente. Idealmente el frontend deberia enviar el rango al backend y el backend deberia usar ese rango en TODAS las funciones (como ya hace `get_resumen_periodo`). Las funciones que calculan sus propias fechas (como `get_ventas_vs_gastos_mensual` y `get_punto_equilibrio`) crean una fuente de verdad inconsistente.

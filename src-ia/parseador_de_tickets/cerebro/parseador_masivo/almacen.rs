@@ -23,24 +23,6 @@ pub(super) fn garantizar_columna_folio(conn: &Connection) {
     }
 }
 
-/// Asegura la columna `producto_id` en `detalle_ventas` (las DBs viejas
-/// creadas antes de la migración versionada no la tienen). Idempotente.
-pub(super) fn garantizar_columna_producto_id(conn: &Connection) {
-    let ok = match conn.prepare("PRAGMA table_info(detalle_ventas)") {
-        Ok(mut stmt) => stmt
-            .query_map([], |r| r.get::<_, String>(1))
-            .map(|rows| {
-                rows.flatten()
-                    .any(|c| c.eq_ignore_ascii_case("producto_id"))
-            })
-            .unwrap_or(false),
-        Err(_) => false,
-    };
-    if !ok {
-        let _ = conn.execute_batch("ALTER TABLE detalle_ventas ADD COLUMN producto_id INTEGER");
-    }
-}
-
 /// Construye un mapa `nombre_normalizado → producto_id` desde la tabla
 /// `productos`. Si dos o más productos comparten el mismo nombre normalizado,
 /// el valor es `None` (ambiguo: no se vincula automáticamente).
