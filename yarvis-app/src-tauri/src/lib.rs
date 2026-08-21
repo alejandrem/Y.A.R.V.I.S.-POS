@@ -74,7 +74,8 @@ pub fn run() {
             backventanas::backadmin::adminempleados::empleados::get_resumen_empleados,
             backventanas::backadmin::adminempleados::empleados::get_cortes_empleado,
             // Empleados - Modal empleado
-            backventanas::backadmin::adminempleados::modalempleado::update_empleado,
+            backventanas::backadmin::adminempleados::modalempleado::editar_empleado,
+            backventanas::backadmin::adminempleados::modalempleado::set_estado_empleado,
             backventanas::backadmin::adminempleados::modalempleado::delete_empleado,
             // Empleados - Modal metas
             backventanas::backadmin::adminempleados::modalmetas::get_salario_info,
@@ -84,8 +85,6 @@ pub fn run() {
             backventanas::backadmin::adminempleados::modalmetas::save_custom_goal,
             backventanas::backadmin::adminempleados::modalmetas::delete_employee_goal,
             backventanas::backadmin::adminempleados::modalmetas::check_employee_goals,
-            // Empleados - Modal turnos
-            backventanas::backadmin::adminempleados::modalturnos::get_turnos_empleados,
             // Empleado - Nueva Venta
             backventanas::backempleado::emplea_new_venta::new_venta::completar_venta,
             backventanas::backempleado::emplea_new_venta::new_venta::get_next_ticket_number,

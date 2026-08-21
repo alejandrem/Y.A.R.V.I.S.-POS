@@ -6,13 +6,11 @@ import { useState, useEffect, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon, type IconInput } from "morphicons/react";
 import ModalEmpleados from "./modalEmpleados";
-import ModalTurnos from "./modalTurnos";
 import ModalMetas from "./modalMetas";
 import {
   ICONO_USUARIOS,
   ICONO_USUARIO,
   ICONO_MAS,
-  ICONO_RELOJ,
   ICONO_TARGET,
   ICONO_DOLAR,
   ICONO_TRENDING,
@@ -20,11 +18,18 @@ import {
   ICONO_PREMIO,
   ICONO_FLECHA,
   ICONO_CERRAR,
+  ICONO_EDITAR,
   ICONO_CHECK,
   ICONO_ALERTA,
   BotonAnimado,
   IconoMorph,
 } from "../../../components/ui";
+
+interface HorarioBloque {
+  dias: number[]; // Convención L=0 .. D=6
+  hora_inicio: string;
+  hora_fin: string;
+}
 
 interface EmpleadoProfile {
   id: number;
@@ -40,6 +45,7 @@ interface EmpleadoProfile {
   bono: number;
   registrado_en: string | null;
   ultimo_login: string | null;
+  horarios: HorarioBloque[];
 }
 
 interface EmpleadoVentas {
@@ -81,21 +87,39 @@ const detectTurno = (horarioInicio: string) => {
   return "Nocturno";
 };
 
+// Índice de chip del día actual: Lunes=0 .. Domingo=6.
+const hoyChipIdx = () => (new Date().getDay() + 6) % 7;
+
+// Minutos desde medianoche de un horario "HH:MM".
+const minsDe = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+
+// ¿La hora actual cae dentro del rango? Soporta turnos que cruzan medianoche.
+const enRango = (inicio: string, fin: string, ahoraMins: number) => {
+  const start = minsDe(inicio);
+  const end = minsDe(fin);
+  if (start <= end) return ahoraMins >= start && ahoraMins <= end;
+  return ahoraMins >= start || ahoraMins <= end;
+};
+
 const isInShift = (emp: EmpleadoProfile) => {
-  if (!emp.horario_inicio || !emp.horario_fin || emp.horario_inicio === "00:00") return false;
-  const now = new Date();
-  const currentMins = now.getHours() * 60 + now.getMinutes();
-  const [sh, sm] = emp.horario_inicio.split(":").map(Number);
-  const [eh, em] = emp.horario_fin.split(":").map(Number);
-  const startMins = sh * 60 + sm;
-  const endMins = eh * 60 + em;
-  if (startMins <= endMins) {
-    return currentMins >= startMins && currentMins <= endMins;
+  const ahora = new Date();
+  const ahoraMins = ahora.getHours() * 60 + ahora.getMinutes();
+  const hoy = hoyChipIdx();
+
+  // Bloques completos (jornadas partidas).
+  if (emp.horarios?.length) {
+    return emp.horarios.some((b) => b.dias.includes(hoy) && enRango(b.hora_inicio, b.hora_fin, ahoraMins));
   }
-  return currentMins >= startMins || currentMins <= endMins;
+  // Fallback legacy: rango único en columnas planas.
+  if (!emp.horario_inicio || !emp.horario_fin || emp.horario_inicio === "00:00") return false;
+  return enRango(emp.horario_inicio, emp.horario_fin, ahoraMins);
 };
 
 const estadoDot = (emp: EmpleadoProfile) => {
+  if (emp.estado === "inactivo") return "Inactivo";
   if (isInShift(emp)) return "En turno";
   if (emp.estado === "descanso") return "Descanso";
   return "Fuera de turno";
@@ -105,6 +129,7 @@ const estadoVisual: Record<string, { dot: string; texto: string; fondo: string }
   "En turno": { dot: "bg-emerald-500", texto: "text-emerald-600", fondo: "bg-emerald-50" },
   Descanso: { dot: "bg-amber-400", texto: "text-amber-600", fondo: "bg-amber-50" },
   "Fuera de turno": { dot: "bg-neutral-300", texto: "text-neutral-400", fondo: "bg-neutral-50" },
+  Inactivo: { dot: "bg-red-400", texto: "text-red-500", fondo: "bg-red-50" },
 };
 
 const formatMoney = (v: number) =>
@@ -128,12 +153,23 @@ const formatShortDate = (d: string | null) => {
   return `${String(h12).padStart(2, "0")}:${mins} ${ampm}`;
 };
 
-const formatEntrada = (emp: EmpleadoProfile) => {
+const DIAS_CORTOS = ["L", "M", "X", "J", "V", "S", "D"];
+
+const formatBloques = (emp: EmpleadoProfile) => {
+  if (emp.horarios?.length) {
+    return emp.horarios
+      .map((b) => `${b.dias.map((d) => DIAS_CORTOS[d]).join("")} ${formatTime12(b.hora_inicio)}-${formatTime12(b.hora_fin)}`)
+      .join(" · ");
+  }
   const hasHorario = emp.horario_inicio && emp.horario_fin && emp.horario_inicio !== "00:00";
-  const horario = hasHorario ? `${formatTime12(emp.horario_inicio)}-${formatTime12(emp.horario_fin)}` : "";
+  return hasHorario ? `${formatTime12(emp.horario_inicio)}-${formatTime12(emp.horario_fin)}` : "";
+};
+
+const formatEntrada = (emp: EmpleadoProfile) => {
+  const horario = formatBloques(emp);
   const login = emp.ultimo_login ? formatShortDate(emp.ultimo_login) : "";
-  if (hasHorario && login) return `${horario} / ${login}`;
-  if (hasHorario) return horario;
+  if (horario && login) return `${horario} / ${login}`;
+  if (horario) return horario;
   return "Sin horario";
 };
 
@@ -198,7 +234,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   const [ventasDetalle, setVentasDetalle] = useState<EmpleadoVentas | null>(null);
   const [cortes, setCortes] = useState<CorteEmpleado[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [showTurnosModal, setShowTurnosModal] = useState(false);
+  const [empleadoEditando, setEmpleadoEditando] = useState<EmpleadoProfile | null>(null);
   const [showModalMetas, setShowModalMetas] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recargado, setRecargado] = useState(false);
@@ -274,14 +310,6 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
             Registrar
           </BotonAnimado>
           <BotonAnimado
-            icono={ICONO_RELOJ}
-            iconoHover={ICONO_TARGET}
-            onClick={() => setShowTurnosModal(true)}
-            className="bg-white text-neutral-900 border-2 border-neutral-950 hover:bg-neutral-950 hover:text-neutral-50"
-          >
-            Turnos
-          </BotonAnimado>
-          <BotonAnimado
             icono={ICONO_TARGET}
             iconoHover={ICONO_PREMIO}
             onClick={() => setShowModalMetas(true)}
@@ -346,7 +374,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
                 <th className="px-6 py-4 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Estado</th>
                 <th className="px-6 py-4 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Turno</th>
                 <th className="px-6 py-4 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Entrada / Último acceso</th>
-                <th className="px-6 py-4 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-right">Detalle</th>
+                <th className="px-6 py-4 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-right">Detalle y Edición</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-50">
@@ -355,7 +383,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
                 const visual = estadoVisual[estado];
                 const turno = detectTurno(emp.horario_inicio);
                 return (
-                  <tr key={emp.id} className="hover:bg-neutral-50/40 transition-colors">
+                  <tr key={emp.id} className={`hover:bg-neutral-50/40 transition-colors ${emp.estado === "inactivo" ? "opacity-50" : ""}`}>
                     <td className="px-6 sm:px-10 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-neutral-950 text-neutral-50 rounded-xl flex items-center justify-center">
@@ -379,13 +407,22 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
                       <span className="text-[10px] font-bold text-neutral-500">{formatEntrada(emp)}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => (selectedId === emp.id ? cerrarDetalle() : loadDetalle(emp.id))}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-neutral-950 text-neutral-900 text-[9px] font-black uppercase tracking-widest hover:bg-neutral-950 hover:text-neutral-50 transition-all active:scale-[0.97]"
-                      >
-                        <MorphIcon icon={selectedId === emp.id ? ICONO_CERRAR : ICONO_FLECHA} size={13} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
-                        {selectedId === emp.id ? "Cerrar" : "Ver"}
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => setEmpleadoEditando(emp)}
+                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-neutral-300 text-neutral-500 text-[9px] font-black uppercase tracking-widest hover:border-neutral-950 hover:text-neutral-950 transition-all active:scale-[0.97]"
+                        >
+                          <MorphIcon icon={ICONO_EDITAR} size={13} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => (selectedId === emp.id ? cerrarDetalle() : loadDetalle(emp.id))}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-neutral-950 text-neutral-900 text-[9px] font-black uppercase tracking-widest hover:bg-neutral-950 hover:text-neutral-50 transition-all active:scale-[0.97]"
+                        >
+                          <MorphIcon icon={selectedId === emp.id ? ICONO_CERRAR : ICONO_FLECHA} size={13} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
+                          {selectedId === emp.id ? "Cerrar" : "Ver"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -556,11 +593,11 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
       {showModal && (
         <ModalEmpleados onClose={() => setShowModal(false)} onSaved={loadData} />
       )}
-      {showTurnosModal && (
-        <ModalTurnos
-          empleados={empleados}
-          onClose={() => setShowTurnosModal(false)}
-          onSaved={loadData}
+      {empleadoEditando && (
+        <ModalEmpleados
+          empleado={empleadoEditando}
+          onClose={() => setEmpleadoEditando(null)}
+          onSaved={() => { setEmpleadoEditando(null); loadData(); }}
         />
       )}
       {showModalMetas && (

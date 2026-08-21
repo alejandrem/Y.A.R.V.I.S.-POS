@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 // HASHING DE CONTRASEÑAS CON ARGON2ID (OWASP)
 // ============================================================
 
-fn hash_password(pass: &str) -> String {
+pub fn hash_password(pass: &str) -> String {
     let salt = SaltString::generate(&mut thread_rng());
     let hash = Argon2::default()
         .hash_password(pass.as_bytes(), &salt)
@@ -19,7 +19,7 @@ fn hash_password(pass: &str) -> String {
 /// Verifica una contraseña contra su hash PHC de Argon2.
 /// Si el hash no es válido (datos viejos en texto plano), compara directamente
 /// para no bloquear al usuario existente.
-fn verify_password(pass: &str, stored: &str) -> bool {
+pub fn verify_password(pass: &str, stored: &str) -> bool {
     match argon2::password_hash::PasswordHash::new(stored) {
         Ok(parsed) => Argon2::default()
             .verify_password(pass.as_bytes(), &parsed)
@@ -160,12 +160,23 @@ pub async fn update_admin_data(
     Ok("Datos actualizados correctamente".into())
 }
 
+/// Bloque de horario semanal que llega desde el registro unificado.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BloqueHorario {
+    pub dias: Vec<i32>,
+    pub hora_inicio: String,
+    pub hora_fin: String,
+}
+
 #[tauri::command]
 pub async fn guardar_empleado(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
     name: String,
     pass: String,
+    salario_semanal: Option<f64>,
+    horarios: Option<Vec<BloqueHorario>>,
 ) -> Result<String, String> {
     let admins: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM usuarios WHERE rol = 'admin'")
         .fetch_one(&*state)
@@ -174,15 +185,76 @@ pub async fn guardar_empleado(
     if admins.0 > 0 && auth.require_admin().is_err() {
         return Err("Se requiere una sesión de administrador".to_string());
     }
+
+    // El login de empleado es solo por contrasena (sin usuario), por lo que
+    // dos empleados NO pueden compartir la misma clave: seria ambiguo.
+    let hashes: Vec<(String,)> =
+        sqlx::query_as("SELECT password FROM usuarios WHERE rol = 'empleado'")
+            .fetch_all(&*state)
+            .await
+            .map_err(|e| e.to_string())?;
+    for (hash,) in &hashes {
+        if verify_password(&pass, hash) {
+            return Err("Ya existe un empleado con esa contraseña. Debe ser distinta para poder identificarlo en el login.".to_string());
+        }
+    }
+
+    // Registro unificado: alta con bloques de horario y pago SEMANAL en una
+    // sola llamada. Los campos opcionales conservan compatibilidad con el
+    // flujo de primer inicio (que solo envia nombre y contrasena).
+    let bloques = horarios.unwrap_or_default();
+    for b in &bloques {
+        if b.dias.is_empty() {
+            return Err("Cada horario debe tener al menos un día seleccionado".to_string());
+        }
+        if b.hora_inicio.is_empty() || b.hora_fin.is_empty() {
+            return Err("Cada horario debe tener hora de entrada y salida".to_string());
+        }
+    }
+    // Un día no puede pertenecer a dos bloques distintos (sería ambiguo).
+    let mut todos_dias: Vec<i32> = bloques.iter().flat_map(|b| b.dias.iter().copied()).collect();
+    let total_dias = todos_dias.len() as i32;
+    todos_dias.sort_unstable();
+    todos_dias.dedup();
+    if todos_dias.len() as i32 != total_dias {
+        return Err("Un día no puede estar en dos horarios distintos".to_string());
+    }
+
+    let semanal = salario_semanal.unwrap_or(0.0).max(0.0);
+    let diario = if total_dias > 0 { semanal / total_dias as f64 } else { 0.0 };
+    let inicio = bloques.first().map(|b| b.hora_inicio.clone()).unwrap_or_else(|| "00:00".into());
+    let fin = bloques.first().map(|b| b.hora_fin.clone()).unwrap_or_else(|| "00:00".into());
+
     let hashed = hash_password(&pass);
 
-    sqlx::query("INSERT INTO usuarios (nombre, password, rol) VALUES (?, ?, ?)")
-        .bind(&name)
-        .bind(&hashed)
-        .bind("empleado")
-        .execute(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = sqlx::query(
+        "INSERT INTO usuarios (nombre, password, rol, turno, horario_inicio, horario_fin, salario_diario, dias_semana, salario_semanal)
+         VALUES (?, ?, 'empleado', '', ?, ?, ?, ?, ?)",
+    )
+    .bind(&name)
+    .bind(&hashed)
+    .bind(&inicio)
+    .bind(&fin)
+    .bind(diario)
+    .bind(total_dias)
+    .bind(semanal)
+    .execute(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Persistir los bloques completos del empleado.
+    let empleado_id = result.last_insert_rowid();
+    for b in &bloques {
+        let dias_txt: Vec<String> = b.dias.iter().map(|d| d.to_string()).collect();
+        sqlx::query("INSERT INTO empleado_horarios (empleado_id, dias, hora_inicio, hora_fin) VALUES (?, ?, ?, ?)")
+            .bind(empleado_id)
+            .bind(dias_txt.join(","))
+            .bind(&b.hora_inicio)
+            .bind(&b.hora_fin)
+            .execute(&*state)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
 
     Ok("Empleado guardado correctamente".into())
 }

@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use sqlx::SqlitePool;
 
+/// Bloque de horario semanal. `dias` usa la convención L=0..D=6.
+#[derive(Serialize, Deserialize)]
+pub struct HorarioBloque {
+    pub dias: Vec<i32>,
+    pub hora_inicio: String,
+    pub hora_fin: String,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct EmpleadoProfile {
     pub id: i32,
@@ -18,6 +26,9 @@ pub struct EmpleadoProfile {
     pub bono: f64,
     pub registrado_en: Option<String>,
     pub ultimo_login: Option<String>,
+    /// Bloques de horario completos (soporta jornadas partidas).
+    #[serde(default)]
+    pub horarios: Vec<HorarioBloque>,
 }
 
 #[derive(Serialize)]
@@ -70,22 +81,49 @@ pub async fn get_empleados(
     .await
     .map_err(|e| e.to_string())?;
 
+    // Bloques de horario en una sola query, agrupados por empleado.
+    let bloques = sqlx::query(
+        "SELECT empleado_id, dias, hora_inicio, hora_fin FROM empleado_horarios ORDER BY id ASC",
+    )
+    .fetch_all(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut horarios_por_empleado: std::collections::HashMap<i32, Vec<HorarioBloque>> =
+        std::collections::HashMap::new();
+    for b in bloques {
+        let empleado_id: i32 = b.get("empleado_id");
+        let dias_txt: String = b.get("dias");
+        let dias: Vec<i32> = dias_txt
+            .split(',')
+            .filter_map(|d| d.trim().parse::<i32>().ok())
+            .collect();
+        horarios_por_empleado.entry(empleado_id).or_default().push(HorarioBloque {
+            dias,
+            hora_inicio: b.get("hora_inicio"),
+            hora_fin: b.get("hora_fin"),
+        });
+    }
+
     Ok(rows
         .into_iter()
-        .map(|r| EmpleadoProfile {
-            id: r.get("id"),
-            nombre: r.get("nombre"),
-            estado: r.get("estado"),
-            turno: r.get("turno"),
-            horario_inicio: r.get("horario_inicio"),
-            horario_fin: r.get("horario_fin"),
-            salario_semanal: decode_f64(&r, "salario_semanal"),
-            salario_diario: decode_f64(&r, "salario_diario"),
-            dias_semana: r.get("dias_semana"),
-            meta_mensual: decode_f64(&r, "meta_mensual"),
-            bono: decode_f64(&r, "bono"),
-            registrado_en: r.try_get("registrado_en").ok(),
-            ultimo_login: r.try_get("ultimo_login").ok(),
+        .map(|r| {
+            let id: i32 = r.get("id");
+            EmpleadoProfile {
+                id,
+                nombre: r.get("nombre"),
+                estado: r.get("estado"),
+                turno: r.get("turno"),
+                horario_inicio: r.get("horario_inicio"),
+                horario_fin: r.get("horario_fin"),
+                salario_semanal: decode_f64(&r, "salario_semanal"),
+                salario_diario: decode_f64(&r, "salario_diario"),
+                dias_semana: r.get("dias_semana"),
+                meta_mensual: decode_f64(&r, "meta_mensual"),
+                bono: decode_f64(&r, "bono"),
+                registrado_en: r.try_get("registrado_en").ok(),
+                ultimo_login: r.try_get("ultimo_login").ok(),
+                horarios: horarios_por_empleado.remove(&id).unwrap_or_default(),
+            }
         })
         .collect())
 }
