@@ -10,8 +10,8 @@ pub async fn get_tickets(
     auth: tauri::State<'_, AuthState>,
 ) -> Result<Vec<TicketDb>, String> {
     auth.require_admin()?;
-    let rows = sqlx::query_as::<_, (i32, String, f64, String)>(
-        "SELECT id, strftime('%Y-%m-%d %H:%M:%S', fecha) as fecha, total, metodo_pago FROM ventas ORDER BY fecha DESC LIMIT 500"
+    let rows = sqlx::query_as::<_, (i32, Option<String>, String, f64, String)>(
+        "SELECT id, folio_ticket, strftime('%Y-%m-%d %H:%M:%S', fecha) as fecha, total, metodo_pago FROM ventas ORDER BY fecha DESC LIMIT 500"
     )
     .fetch_all(&*state)
     .await
@@ -21,9 +21,10 @@ pub async fn get_tickets(
         .into_iter()
         .map(|row| TicketDb {
             id: row.0,
-            fecha: row.1,
-            total: row.2,
-            metodo_pago: row.3,
+            folio_ticket: row.1,
+            fecha: row.2,
+            total: row.3,
+            metodo_pago: row.4,
         })
         .collect();
 

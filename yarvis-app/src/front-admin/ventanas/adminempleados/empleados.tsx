@@ -55,6 +55,7 @@ interface EmpleadoVentas {
 interface EmpleadoResumen {
   empleados_activos: number;
   ventas_totales: number;
+  tickets_totales: number;
   costo_nomina: number;
   roi_neto: number;
 }
@@ -189,6 +190,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   const [resumen, setResumen] = useState<EmpleadoResumen>({
     empleados_activos: 0,
     ventas_totales: 0,
+    tickets_totales: 0,
     costo_nomina: 0,
     roi_neto: 0,
   });
@@ -293,7 +295,11 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
       {/* RESUMEN GLOBAL */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <TarjetaResumen icono={ICONO_USUARIOS} iconoHover={ICONO_CHECK} label="Activos" valor={String(resumen.empleados_activos)} />
-        <TarjetaResumen icono={ICONO_TRENDING} iconoHover={ICONO_DOLAR} label="Ventas totales" valor={formatMoney(resumen.ventas_totales)} />
+        <TarjetaResumen icono={ICONO_TRENDING} iconoHover={ICONO_DOLAR} label="Ventas acumuladas" valor={formatMoney(resumen.ventas_totales)}>
+          <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest mt-1">
+            {resumen.tickets_totales.toLocaleString("es-MX")} tickets completados
+          </p>
+        </TarjetaResumen>
         <TarjetaResumen icono={ICONO_DOLAR} iconoHover={ICONO_PREMIO} label="Costo nómina" valor={formatMoney(resumen.costo_nomina)} />
         <TarjetaResumen
           icono={ICONO_PREMIO}

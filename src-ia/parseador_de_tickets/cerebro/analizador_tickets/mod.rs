@@ -214,6 +214,29 @@ mod tests {
         assert!(parsear_linea("", &mapeo(0, 1, 2, 3), 4).is_none());
     }
 
+    #[test]
+    fn parsea_ticket_real_con_producto_variable_y_descuento_porcentual() {
+        let m = MapeoColumnas {
+            cantidad: Some(0),
+            producto: Some(vec![1]),
+            precio_unitario: Some(2),
+            total: Some(-1),
+            descuento: None,
+        };
+
+        let item = parsear_linea("2 Rockaleta $6.00 10% $10.80", &m, 5).unwrap();
+        assert_eq!(item.producto, "ROCKALETA");
+        assert_eq!(item.cantidad, 2.0);
+        assert_eq!(item.precio_unitario, 6.0);
+        assert_eq!(item.total, 10.8);
+        assert_eq!(item.descuento, Some(1.2));
+
+        let item = parsear_linea("1 Heineken 473ml $28.00 - $28.00", &m, 6).unwrap();
+        assert_eq!(item.producto, "HEINEKEN 473ML");
+        assert_eq!(item.precio_unitario, 28.0);
+        assert_eq!(item.total, 28.0);
+    }
+
     // ---------- extraer_fecha_hora_regex (verificado contra Python) ----------
 
     #[test]

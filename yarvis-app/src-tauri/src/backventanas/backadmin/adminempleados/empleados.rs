@@ -35,6 +35,7 @@ pub struct EmpleadoVentas {
 pub struct EmpleadoResumen {
     pub empleados_activos: i32,
     pub ventas_totales: f64,
+    pub tickets_totales: i32,
     pub costo_nomina: f64,
     pub roi_neto: f64,
 }
@@ -155,8 +156,8 @@ pub async fn get_resumen_empleados(
     .await
     .map_err(|e| e.to_string())?;
 
-    let ventas = sqlx::query_as::<_, (f64,)>(
-        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE estado = 'completada'",
+    let ventas = sqlx::query_as::<_, (f64, i32)>(
+        "SELECT COALESCE(SUM(total), 0) * 1.0, COUNT(*) FROM ventas WHERE estado = 'completada'",
     )
     .fetch_one(&*state)
     .await
@@ -170,6 +171,7 @@ pub async fn get_resumen_empleados(
     Ok(EmpleadoResumen {
         empleados_activos: activos.0,
         ventas_totales: ventas.0,
+        tickets_totales: ventas.1,
         costo_nomina: nomina.0,
         roi_neto: ventas.0 - nomina.0,
     })

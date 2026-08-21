@@ -4,6 +4,7 @@ import Graficas from "./graficas";
 
 interface TicketDb {
   id: number;
+  folio_ticket?: string | null;
   fecha: string;
   total: number;
   metodo_pago: string;
@@ -169,7 +170,7 @@ const Tickets = ({ active = true }: TicketsProps) => {
                 {filteredTickets.map((t) => (
                   <div key={t.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-neutral-100 shadow-sm">
                     <div className="text-left">
-                      <p className="text-[10px] font-black text-neutral-900 uppercase">TICKET #{t.id}</p>
+                      <p className="text-[10px] font-black text-neutral-900 uppercase">TICKET {t.folio_ticket || `#${t.id}`}</p>
                       <p className="text-[8px] text-neutral-400 font-bold uppercase">{t.fecha}</p>
                     </div>
                     <p className="text-xs font-black text-neutral-900">${t.total.toFixed(2)}</p>

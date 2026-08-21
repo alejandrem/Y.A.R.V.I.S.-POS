@@ -183,6 +183,17 @@ pub fn parsear_linea(linea: &str, mapeo: &MapeoColumnas, _total_cols: usize) -> 
     if cols.len() < 2 {
         return None;
     }
+
+    // Los tickets reales no siempre tienen columnas fijas: "Rockaleta" ocupa
+    // una columna, pero "Heineken 473ml" ocupa dos; además, un descuento como
+    // "10%" no es un número monetario. Cuando la línea trae importes con "$",
+    // las posiciones del mapeo dejan de ser confiables. En ese caso usamos los
+    // límites semánticos del ticket: primer importe = precio, último importe
+    // = total y el texto entre ambos = producto/descuento.
+    if let Some(item) = parsear_linea_monetaria(&cols) {
+        return Some(item);
+    }
+
     let line_cols = cols.len();
 
     let idx_cant = resolver_indice(mapeo.cantidad, line_cols);
@@ -230,5 +241,78 @@ pub fn parsear_linea(linea: &str, mapeo: &MapeoColumnas, _total_cols: usize) -> 
         } else {
             None
         },
+    })
+}
+
+fn es_porcentaje(token: &str) -> Option<f64> {
+    let valor = token.trim().strip_suffix('%')?.replace(',', ".");
+    let porcentaje = valor.parse::<f64>().ok()?;
+    (porcentaje >= 0.0 && porcentaje <= 100.0).then_some(porcentaje)
+}
+
+/// Parsea la forma habitual de un ticket de caja con importes explícitos:
+/// `CANT PRODUCTO [MEDIDA...] $PRECIO [DESC] $TOTAL`.
+/// Devuelve `None` para formatos sin `$`, que siguen usando el mapeo de IA.
+fn parsear_linea_monetaria(cols: &[&str]) -> Option<Item> {
+    let cantidad = limpiar_precio(cols.first()?);
+    if cantidad <= 0.0 {
+        return None;
+    }
+
+    let importes: Vec<usize> = cols
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(_, token)| token.starts_with('$') && es_token_numero(token))
+        .map(|(indice, _)| indice)
+        .collect();
+    if importes.len() < 2 {
+        return None;
+    }
+
+    let precio_idx = importes[0];
+    let total_idx = *importes.last()?;
+    if precio_idx <= 1 || total_idx <= precio_idx {
+        return None;
+    }
+
+    let precio_unitario = limpiar_precio(cols[precio_idx]);
+    let total = limpiar_precio(cols[total_idx]);
+    if precio_unitario <= 0.0 || total <= 0.0 {
+        return None;
+    }
+
+    let producto = limpiar_producto(&cols[1..precio_idx].join(" "));
+    if producto.is_empty() {
+        return None;
+    }
+
+    let descuento = cols[precio_idx + 1..total_idx]
+        .iter()
+        .find_map(|token| es_porcentaje(token))
+        .map(|porcentaje| cantidad * precio_unitario * porcentaje / 100.0)
+        .or_else(|| {
+            // Algunos formatos imprimen el descuento como importe, no como
+            // porcentaje. Solo lo usamos si hay exactamente un monto entre
+            // precio y total, para no confundir columnas auxiliares.
+            let intermedios: Vec<f64> = cols[precio_idx + 1..total_idx]
+                .iter()
+                .filter(|token| es_token_numero(token))
+                .map(|token| limpiar_precio(token))
+                .filter(|valor| *valor > 0.0)
+                .collect();
+            if intermedios.len() == 1 {
+                Some(intermedios[0])
+            } else {
+                None
+            }
+        });
+
+    Some(Item {
+        producto,
+        cantidad,
+        precio_unitario: round(precio_unitario, 2),
+        total: round(total, 2),
+        descuento: descuento.map(|valor| round(valor, 2)),
     })
 }

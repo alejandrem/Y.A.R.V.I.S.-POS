@@ -19,6 +19,7 @@ pub struct TicketItem {
 #[derive(Serialize)]
 pub struct TicketDb {
     pub id: i32,
+    pub folio_ticket: Option<String>,
     pub fecha: String,
     pub total: f64,
     pub metodo_pago: String,

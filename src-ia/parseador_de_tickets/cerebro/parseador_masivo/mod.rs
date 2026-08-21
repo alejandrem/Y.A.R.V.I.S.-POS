@@ -166,6 +166,62 @@ mod tests {
     }
 
     #[test]
+    fn un_archivo_con_dos_tickets_reales_crea_dos_ventas_con_folio_y_fecha() {
+        let dir = tmp_workspace("tickets_concatenados");
+        let db = crear_bd(&dir);
+        let texto = r#"
+ABARROTES "LA ESQUINA FELIZ"
+Ticket: TCK-000001
+Fecha: 14/07/2024       Hora: 14:28:37
+2 Rockaleta                 $6.00    10%     $10.80
+1 Heineken 473ml           $28.00      -     $28.00
+1 Tocino 200g              $48.00      -     $48.00
+1 Spaghetti 500g           $18.00      -     $18.00
+SUBTOTAL:                                      $106.00
+DESCUENTO:                                      -$1.20
+TOTAL:                                         $104.80
+Forma de pago: TARJETA
+Ticket: TCK-000002
+Fecha: 15/07/2024       Hora: 10:00:00
+1 Pan $20.00 $20.00
+SUBTOTAL: $20.00
+TOTAL: $20.00
+Forma de pago: EFECTIVO
+"#;
+        let archivo = escribir(&dir, "lote.txt", texto);
+        let mapeo = MapeoColumnas {
+            cantidad: Some(0),
+            producto: Some(vec![1]),
+            precio_unitario: Some(2),
+            total: Some(-1),
+            descuento: None,
+        };
+
+        let stats = procesar_carpeta_impl(vec![archivo], mapeo, db.clone());
+        assert_eq!(stats.exitosos, 1);
+        assert_eq!(stats.ventas_creadas, 2);
+
+        let conn = Connection::open(&db).unwrap();
+        let ventas: Vec<(String, String, f64)> = conn
+            .prepare("SELECT folio_ticket, fecha, total FROM ventas ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+
+        assert_eq!(ventas.len(), 2);
+        assert_eq!(ventas[0].0, "TCK-000001");
+        assert_eq!(ventas[0].1, "2024-07-14 14:28:00");
+        assert_eq!(ventas[0].2, 104.8);
+        assert_eq!(ventas[1].0, "TCK-000002");
+        assert_eq!(ventas[1].1, "2024-07-15 10:00:00");
+        assert_eq!(ventas[1].2, 20.0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn linea_duplicada_no_se_descuenta_dos_veces() {
         let dir = tmp_workspace("dup");
         let db = crear_bd(&dir);
