@@ -1,8 +1,9 @@
 use rusqlite::{params, Connection};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::items::round2;
 use crate::cerebro::analizador_tickets::Item;
+use crate::cerebro::vinculador_inventario::normalizar;
 
 /// Asegura la columna `folio_ticket` en `ventas` (las DBs viejas creadas con
 /// `CREATE TABLE IF NOT EXISTS` no se migran solas). Idempotente vía PRAGMA.
@@ -20,6 +21,64 @@ pub(super) fn garantizar_columna_folio(conn: &Connection) {
     if !ok {
         let _ = conn.execute_batch("ALTER TABLE ventas ADD COLUMN folio_ticket TEXT");
     }
+}
+
+/// Asegura la columna `producto_id` en `detalle_ventas` (las DBs viejas
+/// creadas antes de la migración versionada no la tienen). Idempotente.
+pub(super) fn garantizar_columna_producto_id(conn: &Connection) {
+    let ok = match conn.prepare("PRAGMA table_info(detalle_ventas)") {
+        Ok(mut stmt) => stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .map(|rows| {
+                rows.flatten()
+                    .any(|c| c.eq_ignore_ascii_case("producto_id"))
+            })
+            .unwrap_or(false),
+        Err(_) => false,
+    };
+    if !ok {
+        let _ = conn.execute_batch("ALTER TABLE detalle_ventas ADD COLUMN producto_id INTEGER");
+    }
+}
+
+/// Construye un mapa `nombre_normalizado → producto_id` desde la tabla
+/// `productos`. Si dos o más productos comparten el mismo nombre normalizado,
+/// el valor es `None` (ambiguo: no se vincula automáticamente).
+///
+/// Esto permite que `insertar_venta` asigne `producto_id` al detalle cuando la
+/// coincidencia por nombre es **exacta y no ambigua**, y que el descuento de
+/// stock se haga por ID (más fiable) en lugar de por nombre.
+pub(super) fn cargar_productos_por_nombre(conn: &Connection) -> HashMap<String, Option<i64>> {
+    let mut acumulador: HashMap<String, Vec<i64>> = HashMap::new();
+    if let Ok(mut stmt) = conn.prepare("SELECT id, nombre FROM productos") {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let nombre: String = row.get(1)?;
+            Ok((id, nombre))
+        }) {
+            for r in rows.flatten() {
+                let (id, nombre) = r;
+                acumulador
+                    .entry(normalizar(&nombre))
+                    .or_default()
+                    .push(id);
+            }
+        }
+    }
+    // Vec<i64> → Option<i64>: Some(id) solo si hay exactamente uno.
+    acumulador
+        .into_iter()
+        .map(|(k, ids)| {
+            (
+                k,
+                if ids.len() == 1 {
+                    Some(ids[0])
+                } else {
+                    None
+                },
+            )
+        })
+        .collect()
 }
 
 /// Precarga el set de claves `NOMBRE|precio` ya existentes en `productos`.
@@ -74,6 +133,11 @@ fn ahora_iso_utc() -> String {
 /// Inserta una venta con sus totales YA resueltos (reales del ticket o
 /// cálculo) y el folio del ticket si se detectó. Requiere que el llamador
 /// haya corrido [`garantizar_columna_folio`] al abrir la conexión.
+///
+/// `productos_por_nombre` asigna `producto_id` al detalle cuando el nombre
+/// normalizado del item coincide **exactamente** con un único producto del
+/// catálogo. Si hay 0 o más de 1 coincidencia, el detalle queda con
+/// `producto_id = NULL` (sin vincular) y el stock se descuenta por nombre.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn insertar_venta(
     conn: &Connection,
@@ -85,6 +149,7 @@ pub(super) fn insertar_venta(
     subtotal: f64,
     iva: f64,
     total: f64,
+    productos_por_nombre: &HashMap<String, Option<i64>>,
 ) -> Result<i64, rusqlite::Error> {
     conn.execute(
         "INSERT INTO ventas (total, subtotal, iva, cajero, metodo_pago, estado, fecha, folio_ticket)
@@ -106,11 +171,15 @@ pub(super) fn insertar_venta(
     for item in items {
         let sub = round2(item.cantidad * item.precio_unitario - item.descuento.unwrap_or(0.0));
 
+        // Resolver producto_id por nombre normalizado exacto y no ambiguo.
+        let producto_id = productos_por_nombre.get(&normalizar(&item.producto)).copied().flatten();
+
         conn.execute(
-            "INSERT INTO detalle_ventas (venta_id, producto_nombre, cantidad, precio_unitario, descuento, subtotal)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, descuento, subtotal)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 venta_id,
+                producto_id,
                 item.producto,
                 item.cantidad,
                 item.precio_unitario,
@@ -119,15 +188,27 @@ pub(super) fn insertar_venta(
             ],
         )?;
 
-        // Actualizar stock y vendido (case-insensitive).
-        conn.execute(
-            "UPDATE productos SET stock = stock - ?1 WHERE LOWER(nombre) = LOWER(?2)",
-            params![item.cantidad, item.producto],
-        )?;
-        conn.execute(
-            "UPDATE productos SET vendido = vendido + ?1 WHERE LOWER(nombre) = LOWER(?2)",
-            params![item.cantidad, item.producto],
-        )?;
+        // Actualizar stock y vendido. Si tenemos producto_id, usarlo (fiable);
+        // si no, caer por nombre (case-insensitive) como antes.
+        if let Some(pid) = producto_id {
+            conn.execute(
+                "UPDATE productos SET stock = stock - ?1 WHERE id = ?2",
+                params![item.cantidad, pid],
+            )?;
+            conn.execute(
+                "UPDATE productos SET vendido = vendido + ?1 WHERE id = ?2",
+                params![item.cantidad, pid],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE productos SET stock = stock - ?1 WHERE LOWER(nombre) = LOWER(?2)",
+                params![item.cantidad, item.producto],
+            )?;
+            conn.execute(
+                "UPDATE productos SET vendido = vendido + ?1 WHERE LOWER(nombre) = LOWER(?2)",
+                params![item.cantidad, item.producto],
+            )?;
+        }
     }
 
     Ok(venta_id)
