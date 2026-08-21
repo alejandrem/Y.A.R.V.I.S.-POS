@@ -1,10 +1,14 @@
-// Definición de salarios, metas y bonos por empleado.
-// Piel reconstruida con ModalShell: selector, salario con proyección en vivo,
-// metas del sistema y metas personalizadas. La lógica se conserva.
+// ═══════════════════════════════════════════════════════════════════════════
+// MODAL METAS — Definición de metas y bonos por empleado.
+// Tarea única: metas del sistema (ventas, puntualidad) y personalizadas.
+// NOTA: el salario y los horarios NO se editan aquí — viven exclusivamente
+// en "Editar Empleado" para evitar dos fuentes de verdad divergentes
+// (los bloques de empleado_horarios son la fuente canónica).
+// ═══════════════════════════════════════════════════════════════════════════
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
-import { ModalShell, Campo, inputCls, ICONO_TARGET, ICONO_CHECK, ICONO_USUARIO, ICONO_DOLAR, ICONO_MAS, ICONO_PREMIO, ICONO_BORRAR, ICONO_TRENDING, ICONO_RELOJ } from "../../../components/ui";
+import { ModalShell, Campo, inputCls, ICONO_TARGET, ICONO_CHECK, ICONO_USUARIO, ICONO_MAS, ICONO_PREMIO, ICONO_BORRAR, ICONO_TRENDING, ICONO_RELOJ } from "../../../components/ui";
 
 interface EmpleadoProfile {
   id: number;
@@ -35,15 +39,6 @@ interface EmployeeGoal {
   created_at: string | null;
 }
 
-interface SalarioInfo {
-  salario_diario: number;
-  horas_por_dia: number;
-  salario_hora: number;
-  salario_semanal: number;
-  salario_mensual: number;
-  dias_semana: number;
-}
-
 interface ModalMetasProps {
   empleados: EmpleadoProfile[];
   onClose: () => void;
@@ -60,9 +55,6 @@ const formatTime12 = (t: string) => {
 
 const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [salarioDiario, setSalarioDiario] = useState(0);
-  const [diasSemana, setDiasSemana] = useState(6);
-  const [horasPorDia, setHorasPorDia] = useState(8);
   const [goals, setGoals] = useState<EmployeeGoal[]>([]);
   const [ventasThreshold, setVentasThreshold] = useState("");
   const [ventasBonusPct, setVentasBonusPct] = useState(3);
@@ -72,23 +64,10 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
 
   useEffect(() => {
     if (selectedId) {
-      loadSalarioInfo();
       loadGoals();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
-
-  const loadSalarioInfo = async () => {
-    if (!selectedId) return;
-    try {
-      const info = await invoke<SalarioInfo>("get_salario_info", { empleadoId: selectedId });
-      setSalarioDiario(info.salario_diario);
-      setDiasSemana(info.dias_semana);
-      setHorasPorDia(info.horas_por_dia);
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   const loadGoals = async () => {
     if (!selectedId) return;
@@ -118,15 +97,6 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
     setSelectedId(emp.id);
   };
 
-  const calcSalarioInfo = (diario: number, dias: number, horasPorDia: number) => {
-    const semanal = diario * dias;
-    const mensual = semanal * 4.33;
-    const hora = horasPorDia > 0 ? diario / horasPorDia : 0;
-    return { semanal, mensual, hora };
-  };
-
-  const { semanal, mensual, hora } = calcSalarioInfo(salarioDiario, diasSemana, horasPorDia);
-
   const ventasGoal = goals.find((g) => g.goal_type === "ventas");
   const ventasCompletada = ventasGoal?.is_completed || false;
   const umbralVenta = parseFloat(ventasThreshold) || 0;
@@ -139,11 +109,6 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
   const handleSaveAll = async () => {
     if (!selectedId) return;
     try {
-      await invoke("save_salario", {
-        empleadoId: selectedId,
-        salarioDiario,
-        diasSemana,
-      });
       await invoke("save_employee_goal", {
         empleadoId: selectedId,
         goalType: "ventas",
@@ -193,17 +158,9 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
     }
   };
 
-  const selectedEmp = empleados.find((e) => e.id === selectedId);
-
-  const proyeccion = [
-    { label: "× Hora", valor: hora },
-    { label: "× Día", valor: salarioDiario },
-    { label: "× Semana", valor: semanal },
-    { label: "× Mes", valor: mensual },
-  ];
 
   return (
-    <ModalShell icono={ICONO_TARGET} titulo="Metas y Sueldos" subtitulo="Salarios, metas del sistema y personalizadas" onClose={onClose} ancho="max-w-2xl">
+    <ModalShell icono={ICONO_TARGET} titulo="Metas y Bonos" subtitulo="Metas del sistema y personalizadas" onClose={onClose} ancho="max-w-2xl">
       {/* SELECTOR DE EMPLEADO */}
       <div>
         <p className="text-[10px] font-black text-neutral-500 uppercase tracking-wider ml-1 mb-2">Selecciona un empleado</p>
@@ -237,54 +194,6 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
 
       {selectedId && (
         <div className="animate-in slide-in-from-top-2 duration-200 space-y-6">
-          {/* SALARIO */}
-          <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-neutral-950">
-                <MorphIcon icon={ICONO_DOLAR} size={15} strokeWidth={2.4} spring="smooth" />
-              </span>
-              <p className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Salario</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Campo label="Pago Diario ($)">
-                <input
-                  type="number"
-                  min={0}
-                  step={10}
-                  value={salarioDiario || ""}
-                  onChange={(e) => setSalarioDiario(Number(e.target.value))}
-                  placeholder="0"
-                  className={inputCls}
-                />
-              </Campo>
-              <Campo label="Días / Semana">
-                <input
-                  type="number"
-                  min={1}
-                  max={7}
-                  value={diasSemana || ""}
-                  onChange={(e) => setDiasSemana(Number(e.target.value))}
-                  placeholder="6"
-                  className={inputCls}
-                />
-              </Campo>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {proyeccion.map((p) => (
-                <div key={p.label} className="bg-white rounded-xl p-3 text-center border border-neutral-100">
-                  <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">{p.label}</p>
-                  <p className="text-sm font-black text-neutral-900 mt-1">${p.valor.toFixed(2)}</p>
-                </div>
-              ))}
-            </div>
-
-            <p className="text-[8px] font-bold text-neutral-400 text-center">
-              Basado en horario: {horasPorDia.toFixed(1)}h/día · {diasSemana} días/semana · {selectedEmp?.horario_inicio && selectedEmp.horario_inicio !== "00:00" ? `${formatTime12(selectedEmp.horario_inicio)} - ${formatTime12(selectedEmp?.horario_fin ?? "")}` : "sin turno"}
-            </p>
-          </div>
-
           {/* METAS DEL SISTEMA */}
           <div className="bg-neutral-50 rounded-2xl p-5 space-y-4">
             <div className="flex items-center gap-2">

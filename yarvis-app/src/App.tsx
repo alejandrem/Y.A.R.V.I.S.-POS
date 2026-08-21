@@ -125,7 +125,7 @@ function App() {
       const isValid = await invoke<boolean>("validar_login_admin", { pass: loginPass });
       if (isValid) {
         // Cargar datos completos del admin
-        const profile = await invoke<any>("get_admin_data");
+        const profile = await invoke<{ nombre: string; tienda: string; ubicacion: string | null; cp: string | null }>("get_admin_data");
         if (profile) {
           setAdminName(profile.nombre);
           setStoreName(profile.tienda);

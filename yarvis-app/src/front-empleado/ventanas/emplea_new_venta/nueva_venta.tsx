@@ -483,7 +483,6 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
         onVentaCompletada={handleVentaCompletada}
         cart={cart}
         cartTotal={cartTotal}
-        cajero="Empleado"
       />
     )}
 

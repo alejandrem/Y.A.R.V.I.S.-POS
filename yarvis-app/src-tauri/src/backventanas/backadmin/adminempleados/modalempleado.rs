@@ -1,8 +1,6 @@
 use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminconfig::auth::{verify_password, hash_password, BloqueHorario};
-use sqlx::SqlitePool;
-
-#[tauri::command]
+use sqlx::SqlitePool;#[tauri::command]
 pub async fn editar_empleado(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
@@ -130,20 +128,4 @@ pub async fn set_estado_empleado(
     } else {
         "Empleado desactivado".into()
     })
-}
-
-#[tauri::command]
-pub async fn delete_empleado(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-    empleado_id: i32,
-) -> Result<String, String> {
-    auth.require_admin()?;
-    sqlx::query("DELETE FROM usuarios WHERE id = ? AND rol = 'empleado'")
-        .bind(empleado_id)
-        .execute(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok("Empleado eliminado".into())
 }

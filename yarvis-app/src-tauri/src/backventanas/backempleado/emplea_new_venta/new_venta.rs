@@ -37,20 +37,21 @@ pub async fn completar_venta(
         "efectivo"
     };
 
-    let cajero = if session.role == crate::backventanas::auth::Role::Employee {
-        session.name
-    } else {
-        venta.cajero.clone()
-    };
+    // Vinculación canónica por ID: la sesión ya sabe quién cobra. El nombre
+    // se guarda solo como etiqueta de display; el ID nunca queda huérfano
+    // aunque el empleado sea renombrado después.
+    let cajero = session.name.clone();
+    let cajero_id = session.user_id;
 
     let result = sqlx::query(
-        "INSERT INTO ventas (total, subtotal, descuento, metodo_pago, cajero, cliente_id, monto_efectivo, monto_tarjeta, monto_transferencia) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO ventas (total, subtotal, descuento, metodo_pago, cajero, cajero_id, cliente_id, monto_efectivo, monto_tarjeta, monto_transferencia) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(venta.total)
     .bind(venta.subtotal)
     .bind(venta.descuento)
     .bind(metodo_pago)
     .bind(cajero)
+    .bind(cajero_id)
     .bind(venta.cliente_id)
     .bind(venta.monto_efectivo)
     .bind(venta.monto_tarjeta)

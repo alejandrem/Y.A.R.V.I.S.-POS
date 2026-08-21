@@ -76,10 +76,7 @@ pub fn run() {
             // Empleados - Modal empleado
             backventanas::backadmin::adminempleados::modalempleado::editar_empleado,
             backventanas::backadmin::adminempleados::modalempleado::set_estado_empleado,
-            backventanas::backadmin::adminempleados::modalempleado::delete_empleado,
             // Empleados - Modal metas
-            backventanas::backadmin::adminempleados::modalmetas::get_salario_info,
-            backventanas::backadmin::adminempleados::modalmetas::save_salario,
             backventanas::backadmin::adminempleados::modalmetas::get_employee_goals,
             backventanas::backadmin::adminempleados::modalmetas::save_employee_goal,
             backventanas::backadmin::adminempleados::modalmetas::save_custom_goal,

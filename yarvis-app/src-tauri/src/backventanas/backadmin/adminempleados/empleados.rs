@@ -147,25 +147,25 @@ pub async fn get_empleado_ventas(
     };
 
     let ventas_row = sqlx::query_as::<_, (f64, i32)>(
-        "SELECT COALESCE(SUM(total), 0) * 1.0, COUNT(*) FROM ventas WHERE cajero = ? AND estado = 'completada'"
+        "SELECT COALESCE(SUM(total), 0) * 1.0, COUNT(*) FROM ventas WHERE cajero_id = ? AND estado = 'completada'"
     )
-    .bind(&nombre)
+    .bind(empleado_id)
     .fetch_one(&*state)
     .await
     .map_err(|e| e.to_string())?;
 
     let canceladas_row = sqlx::query_as::<_, (f64, i32)>(
-        "SELECT COALESCE(SUM(total), 0) * 1.0, COUNT(*) FROM ventas WHERE cajero = ? AND estado = 'cancelada'"
+        "SELECT COALESCE(SUM(total), 0) * 1.0, COUNT(*) FROM ventas WHERE cajero_id = ? AND estado = 'cancelada'"
     )
-    .bind(&nombre)
+    .bind(empleado_id)
     .fetch_one(&*state)
     .await
     .map_err(|e| e.to_string())?;
 
     let descuento_row = sqlx::query_as::<_, (f64,)>(
-        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE cajero = ? AND estado = 'completada' AND descuento > 0"
+        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE cajero_id = ? AND estado = 'completada' AND descuento > 0"
     )
-    .bind(&nombre)
+    .bind(empleado_id)
     .fetch_one(&*state)
     .await
     .map_err(|e| e.to_string())?;

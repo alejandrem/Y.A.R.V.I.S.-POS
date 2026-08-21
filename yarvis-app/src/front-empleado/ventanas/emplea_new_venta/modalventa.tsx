@@ -14,10 +14,9 @@ interface ModalVentaProps {
   onVentaCompletada: (ventaId: number, ticketNumber: number, efectivo: number, tarjeta: number, transferencia: number) => void;
   cart: CartItem[];
   cartTotal: number;
-  cajero: string;
 }
 
-export default function ModalVenta({ onClose, onVentaCompletada, cart, cartTotal, cajero }: ModalVentaProps) {
+export default function ModalVenta({ onClose, onVentaCompletada, cart, cartTotal }: ModalVentaProps) {
   const [efectivo, setEfectivo] = useState("");
   const [tarjeta, setTarjeta] = useState("");
   const [transferencia, setTransferencia] = useState("");
@@ -62,7 +61,6 @@ export default function ModalVenta({ onClose, onVentaCompletada, cart, cartTotal
         monto_efectivo: montoEfectivo,
         monto_tarjeta: montoTarjeta,
         monto_transferencia: montoTransferencia,
-        cajero,
         cliente_id: null,
       };
 

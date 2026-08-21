@@ -102,7 +102,6 @@ pub struct VentaRequest {
     pub monto_efectivo: f64,
     pub monto_tarjeta: f64,
     pub monto_transferencia: f64,
-    pub cajero: String,
     pub cliente_id: Option<i32>,
 }
 
@@ -118,14 +117,4 @@ pub struct TiendaInfo {
     pub nombre: Option<String>,
     pub ubicacion: Option<String>,
     pub cp: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct SalarioInfo {
-    pub salario_diario: f64,
-    pub horas_por_dia: f64,
-    pub salario_hora: f64,
-    pub salario_semanal: f64,
-    pub salario_mensual: f64,
-    pub dias_semana: i32,
 }

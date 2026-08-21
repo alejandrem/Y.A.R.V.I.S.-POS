@@ -1,5 +1,5 @@
 use crate::backventanas::auth::AuthState;
-use crate::models::{EmployeeGoal, SalarioInfo};
+use crate::models::EmployeeGoal;
 use sqlx::Row;
 use sqlx::SqlitePool;
 
@@ -7,90 +7,6 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
         .or_else(|_| row.try_get::<i64, _>(col).map(|v| v as f64))
         .unwrap_or(0.0)
-}
-
-#[tauri::command]
-pub async fn get_salario_info(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-    empleado_id: i32,
-) -> Result<SalarioInfo, String> {
-    auth.require_admin()?;
-    let row = sqlx::query(
-        "SELECT salario_diario, salario_semanal, horario_inicio, horario_fin, dias_semana FROM usuarios WHERE id = ?"
-    )
-    .bind(empleado_id)
-    .fetch_optional(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    match row {
-        Some(r) => {
-            let salario_diario = decode_f64(&r, "salario_diario");
-            let horario_inicio: String = r.get("horario_inicio");
-            let horario_fin: String = r.get("horario_fin");
-            let dias_semana: i32 = r.get("dias_semana");
-
-            let horas_por_dia = calcular_horas(&horario_inicio, &horario_fin);
-            let salario_hora = if horas_por_dia > 0.0 {
-                salario_diario / horas_por_dia
-            } else {
-                0.0
-            };
-            let salario_semanal = salario_diario * dias_semana as f64;
-            let salario_mensual = salario_semanal * 4.33;
-
-            Ok(SalarioInfo {
-                salario_diario,
-                horas_por_dia,
-                salario_hora,
-                salario_semanal,
-                salario_mensual,
-                dias_semana,
-            })
-        }
-        None => Err("Empleado no encontrado".into()),
-    }
-}
-
-#[tauri::command]
-pub async fn save_salario(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-    empleado_id: i32,
-    salario_diario: f64,
-    dias_semana: i32,
-) -> Result<String, String> {
-    auth.require_admin()?;
-    let row = sqlx::query_as::<_, (String, String)>(
-        "SELECT horario_inicio, horario_fin FROM usuarios WHERE id = ?",
-    )
-    .bind(empleado_id)
-    .fetch_optional(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    match row {
-        Some(r) => {
-            calcular_horas(&r.0, &r.1);
-        }
-        None => return Err("Empleado no encontrado".into()),
-    };
-
-    let salario_semanal = salario_diario * dias_semana as f64;
-
-    sqlx::query(
-        "UPDATE usuarios SET salario_diario = ?, salario_semanal = ?, dias_semana = ? WHERE id = ?",
-    )
-    .bind(salario_diario)
-    .bind(salario_semanal)
-    .bind(dias_semana)
-    .bind(empleado_id)
-    .execute(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    Ok("Salario actualizado".into())
 }
 
 #[tauri::command]
@@ -222,16 +138,6 @@ pub async fn check_employee_goals(
     empleado_id: i32,
 ) -> Result<Vec<EmployeeGoal>, String> {
     auth.require_admin()?;
-    let nombre_row = sqlx::query_as::<_, (String,)>("SELECT nombre FROM usuarios WHERE id = ?")
-        .bind(empleado_id)
-        .fetch_optional(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let nombre = match nombre_row {
-        Some(r) => r.0,
-        None => return Err("Empleado no encontrado".into()),
-    };
 
     let horario_row =
         sqlx::query_as::<_, (String,)>("SELECT horario_inicio FROM usuarios WHERE id = ?")
@@ -264,10 +170,10 @@ pub async fn check_employee_goals(
             match g_type.as_str() {
                 "ventas" => {
                     let ventas_row = sqlx::query_as::<_, (f64,)>(
-                        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE cajero = ? AND estado = 'completada'
+                        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE cajero_id = ? AND estado = 'completada'
                          AND fecha >= date('now', 'start of week') AND fecha < date('now', '+1 day', 'start of week', '+7 days')"
                     )
-                    .bind(&nombre)
+                    .bind(empleado_id)
                     .fetch_one(&*state)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -329,28 +235,6 @@ pub async fn check_employee_goals(
     }
 
     Ok(result)
-}
-
-fn calcular_horas(inicio: &str, fin: &str) -> f64 {
-    let parse_h = |t: &str| -> f64 {
-        let parts: Vec<&str> = t.split(':').collect();
-        if parts.len() >= 2 {
-            let h: f64 = parts[0].parse().unwrap_or(0.0);
-            let m: f64 = parts[1].parse().unwrap_or(0.0);
-            h + m / 60.0
-        } else {
-            0.0
-        }
-    };
-    let h_inicio = parse_h(inicio);
-    let h_fin = parse_h(fin);
-    if h_fin > h_inicio {
-        h_fin - h_inicio
-    } else if h_fin < h_inicio {
-        (24.0 - h_inicio) + h_fin
-    } else {
-        0.0
-    }
 }
 
 fn es_puntual(login_str: &str, horario_inicio: &str) -> bool {

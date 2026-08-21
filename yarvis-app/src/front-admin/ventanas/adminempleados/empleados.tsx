@@ -2,7 +2,7 @@
 // Piel reconstruida con el ancho de inventario general (max-w-6xl),
 // botones gorditos, minimalista blanco/negro con rojo/verde discretos y
 // morphicons animados. La lógica (estado, cargas, handlers) se conserva.
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon, type IconInput } from "morphicons/react";
 import ModalEmpleados from "./modalEmpleados";
@@ -260,11 +260,15 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
     }
   };
 
+  const recargarTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (recargarTimer.current) window.clearTimeout(recargarTimer.current); }, []);
+
   const recargar = async () => {
     setRecargado(false);
     await loadData();
     setRecargado(true);
-    window.setTimeout(() => setRecargado(false), 1600);
+    if (recargarTimer.current) window.clearTimeout(recargarTimer.current);
+    recargarTimer.current = window.setTimeout(() => setRecargado(false), 1600);
   };
 
   const loadDetalle = async (id: number) => {
