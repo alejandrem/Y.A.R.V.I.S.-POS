@@ -11,7 +11,18 @@ pub async fn editar_empleado(
     nueva_password: Option<String>,
 ) -> Result<String, String> {
     auth.require_admin()?;
+    editar_empleado_impl(&*state, empleado_id, nombre, salario_semanal, horarios, nueva_password).await
+}
 
+/// Núcleo de edición de empleado, testeable sin runtime de Tauri.
+pub async fn editar_empleado_impl(
+    pool: &SqlitePool,
+    empleado_id: i32,
+    nombre: String,
+    salario_semanal: Option<f64>,
+    horarios: Option<Vec<BloqueHorario>>,
+    nueva_password: Option<String>,
+) -> Result<String, String> {
     // Mismas validaciones que el alta: bloques completos y sin días repetidos.
     let bloques = horarios.unwrap_or_default();
     for b in &bloques {
@@ -37,7 +48,7 @@ pub async fn editar_empleado(
             let hashes: Vec<(String,)> =
                 sqlx::query_as("SELECT password FROM usuarios WHERE rol = 'empleado' AND id != ?")
                     .bind(empleado_id)
-                    .fetch_all(&*state)
+                    .fetch_all(pool)
                     .await
                     .map_err(|e| e.to_string())?;
             for (hash,) in &hashes {
@@ -66,7 +77,7 @@ pub async fn editar_empleado(
     .bind(&inicio)
     .bind(&fin)
     .bind(empleado_id)
-    .execute(&*state)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -74,7 +85,7 @@ pub async fn editar_empleado(
         sqlx::query("UPDATE usuarios SET password = ? WHERE id = ?")
             .bind(&hashed)
             .bind(empleado_id)
-            .execute(&*state)
+            .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -82,7 +93,7 @@ pub async fn editar_empleado(
     // Reemplazo completo de bloques de horario.
     sqlx::query("DELETE FROM empleado_horarios WHERE empleado_id = ?")
         .bind(empleado_id)
-        .execute(&*state)
+        .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
     for b in &bloques {
@@ -92,7 +103,7 @@ pub async fn editar_empleado(
             .bind(dias_txt.join(","))
             .bind(&b.hora_inicio)
             .bind(&b.hora_fin)
-            .execute(&*state)
+            .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -111,13 +122,22 @@ pub async fn set_estado_empleado(
     estado: String,
 ) -> Result<String, String> {
     auth.require_admin()?;
+    set_estado_empleado_impl(&*state, empleado_id, estado).await
+}
+
+/// Núcleo de activación/desactivación, testeable sin runtime de Tauri.
+pub async fn set_estado_empleado_impl(
+    pool: &SqlitePool,
+    empleado_id: i32,
+    estado: String,
+) -> Result<String, String> {
     if estado != "activo" && estado != "inactivo" {
         return Err("Estado inválido".to_string());
     }
     let result = sqlx::query("UPDATE usuarios SET estado = ? WHERE id = ? AND rol = 'empleado'")
         .bind(&estado)
         .bind(empleado_id)
-        .execute(&*state)
+        .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {

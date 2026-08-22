@@ -388,7 +388,7 @@ fn crear_bd(dir: &Path) -> String {
          );
          CREATE TABLE detalle_ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            venta_id INTEGER, producto_nombre TEXT,
+            venta_id INTEGER, producto_id INTEGER, producto_nombre TEXT,
             cantidad REAL, precio_unitario REAL,
             descuento REAL, subtotal REAL
          );",
@@ -440,8 +440,10 @@ fn ticket_gigante_20mil_items_entra_completo() {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })
         .unwrap();
+    // Dinero (regla D actual): los precios YA incluyen IVA → iva almacenado
+    // es 0 y total = subtotal (o el real declarado por el ticket si existe).
     assert_eq!(subtotal, 2_400_000.0);
-    assert_eq!(iva, 384_000.0);
+    assert_eq!(iva, 0.0);
     assert_eq!(total, 2_400_000.0);
 
     let _ = std::fs::remove_dir_all(&dir);

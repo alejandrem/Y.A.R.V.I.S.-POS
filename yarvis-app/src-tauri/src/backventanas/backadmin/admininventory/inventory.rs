@@ -95,12 +95,8 @@ pub async fn get_inventory(
 }
 
 #[tauri::command]
-pub async fn add_inventory_item(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-    item: InventoryItem,
-) -> Result<i32, String> {
-    auth.require_admin()?;
+/// Núcleo de alta de producto, testeable sin runtime de Tauri.
+pub async fn add_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem) -> Result<i32, String> {
     let result = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .bind(&item.nombre)
         .bind(&item.descripcion)
@@ -111,21 +107,26 @@ pub async fn add_inventory_item(
         .bind(item.vendido)
         .bind(&item.codigo_barras)
         .bind(&item.categoria)
-        .execute(&*state)
+        .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
 
-    let producto_id = result.last_insert_rowid() as i32;
-    Ok(producto_id)
+    Ok(result.last_insert_rowid() as i32)
 }
 
 #[tauri::command]
-pub async fn update_inventory_item(
+pub async fn add_inventory_item(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
     item: InventoryItem,
-) -> Result<(), String> {
+) -> Result<i32, String> {
     auth.require_admin()?;
+    add_inventory_item_impl(&*state, &item).await
+}
+
+#[tauri::command]
+/// Núcleo de edición de producto, testeable sin runtime de Tauri.
+pub async fn update_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem) -> Result<(), String> {
     if let Some(id) = item.id {
         sqlx::query("UPDATE productos SET nombre = ?, descripcion = ?, precio_costo = ?, precio_venta = ?, stock = ?, stock_minimo = ?, vendido = ?, codigo_barras = ?, categoria = ? WHERE id = ?")
             .bind(&item.nombre)
@@ -138,7 +139,7 @@ pub async fn update_inventory_item(
             .bind(&item.codigo_barras)
             .bind(&item.categoria)
             .bind(id)
-            .execute(&*state)
+            .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -146,6 +147,16 @@ pub async fn update_inventory_item(
     } else {
         Err("ID de producto no proporcionado".into())
     }
+}
+
+#[tauri::command]
+pub async fn update_inventory_item(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    item: InventoryItem,
+) -> Result<(), String> {
+    auth.require_admin()?;
+    update_inventory_item_impl(&*state, &item).await
 }
 
 #[tauri::command]

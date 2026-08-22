@@ -3,8 +3,8 @@
 // Inicializa SQLite. Todo corre 100% nativo en Rust.
 // ============================================================
 
-mod backventanas;
-mod models;
+pub mod backventanas;
+pub mod models;
 
 use tauri::Manager;
 

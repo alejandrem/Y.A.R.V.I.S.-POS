@@ -41,3 +41,35 @@ url = "2"
 reqwest = { version = "0.12", features = ["json"] }
 # Núcleo de IA migrado a Rust (strangler fig): parseador, catálogos y vinculador
 src-ia = { path = "../../src-ia", features = ["llm-local"] }
+
+# ═══════════════════════════════════════════════════════════════════
+# Tests de backend — 1 binario por módulo (carpetas: funcionamiento/ y estres/)
+# Correr con: cargo test --test func_ventas ... o todos con `cargo test`
+# ═══════════════════════════════════════════════════════════════════
+[[test]]
+name = "func_ventas"
+path = "test/funcionamiento/ventas.rs"
+
+[[test]]
+name = "func_gastos"
+path = "test/funcionamiento/gastos.rs"
+
+[[test]]
+name = "func_inventario"
+path = "test/funcionamiento/inventario.rs"
+
+[[test]]
+name = "func_empleados"
+path = "test/funcionamiento/empleados.rs"
+
+[[test]]
+name = "func_auth"
+path = "test/funcionamiento/auth.rs"
+
+[[test]]
+name = "estres_ventas"
+path = "test/estres/estres_ventas.rs"
+
+[[test]]
+name = "estres_consultas"
+path = "test/estres/estres_consultas.rs"

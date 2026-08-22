@@ -58,13 +58,8 @@ pub async fn get_gastos_recurrentes(
     Ok(rows.into_iter().map(map_row_to_gasto).collect())
 }
 
-#[tauri::command]
-pub async fn crear_gasto(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-    gasto: CrearGastoRequest,
-) -> Result<i64, String> {
-    auth.require_admin()?;
+/// Núcleo de alta de gasto, testeable sin runtime de Tauri.
+pub async fn crear_gasto_impl(pool: &SqlitePool, gasto: &CrearGastoRequest) -> Result<i64, String> {
     let result = sqlx::query(
         r#"INSERT INTO gastos_recurrentes (nombre, tipo, categoria, monto_proyectado, frecuencia, dia_pago, intervalo_dias, fecha_inicio, fecha_fin, folio_comprobante, notas)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
@@ -80,11 +75,21 @@ pub async fn crear_gasto(
     .bind(&gasto.fecha_fin)
     .bind(&gasto.folio_comprobante)
     .bind(&gasto.notas)
-    .execute(&*state)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
     Ok(result.last_insert_rowid())
+}
+
+#[tauri::command]
+pub async fn crear_gasto(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    gasto: CrearGastoRequest,
+) -> Result<i64, String> {
+    auth.require_admin()?;
+    crear_gasto_impl(&*state, &gasto).await
 }
 
 #[tauri::command]
@@ -137,12 +142,11 @@ pub async fn eliminar_gasto(
 }
 
 #[tauri::command]
-pub async fn registrar_pago_gasto(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-    pago: RegistrarPagoRequest,
+/// Núcleo de registro de pago, testeable sin runtime de Tauri.
+pub async fn registrar_pago_gasto_impl(
+    pool: &SqlitePool,
+    pago: &RegistrarPagoRequest,
 ) -> Result<i64, String> {
-    auth.require_admin()?;
     let result = sqlx::query(
         r#"INSERT INTO pagos_gastos (gasto_id, fecha_pago, monto_pagado, metodo_pago, folio_comprobante, notas)
            VALUES (?, ?, ?, ?, ?, ?)"#
@@ -153,7 +157,7 @@ pub async fn registrar_pago_gasto(
     .bind(&pago.metodo_pago)
     .bind(&pago.folio_comprobante)
     .bind(&pago.notas)
-    .execute(&*state)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -161,7 +165,7 @@ pub async fn registrar_pago_gasto(
     let gasto_row =
         sqlx::query("SELECT monto_proyectado, monto_real FROM gastos_recurrentes WHERE id = ?")
             .bind(pago.gasto_id)
-            .fetch_optional(&*state)
+            .fetch_optional(pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -180,12 +184,22 @@ pub async fn registrar_pago_gasto(
             .bind(nuevo_monto_real)
             .bind(nuevo_estado)
             .bind(pago.gasto_id)
-            .execute(&*state)
+            .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
     }
 
     Ok(result.last_insert_rowid())
+}
+
+#[tauri::command]
+pub async fn registrar_pago_gasto(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    pago: RegistrarPagoRequest,
+) -> Result<i64, String> {
+    auth.require_admin()?;
+    registrar_pago_gasto_impl(&*state, &pago).await
 }
 
 #[tauri::command]

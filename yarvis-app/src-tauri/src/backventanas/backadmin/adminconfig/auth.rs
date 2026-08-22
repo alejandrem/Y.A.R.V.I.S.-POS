@@ -185,12 +185,22 @@ pub async fn guardar_empleado(
     if admins.0 > 0 && auth.require_admin().is_err() {
         return Err("Se requiere una sesión de administrador".to_string());
     }
+    guardar_empleado_impl(&*state, name, pass, salario_semanal, horarios).await
+}
 
+/// Núcleo de alta de empleado, testeable sin runtime de Tauri.
+pub async fn guardar_empleado_impl(
+    pool: &SqlitePool,
+    name: String,
+    pass: String,
+    salario_semanal: Option<f64>,
+    horarios: Option<Vec<BloqueHorario>>,
+) -> Result<String, String> {
     // El login de empleado es solo por contrasena (sin usuario), por lo que
     // dos empleados NO pueden compartir la misma clave: seria ambiguo.
     let hashes: Vec<(String,)> =
         sqlx::query_as("SELECT password FROM usuarios WHERE rol = 'empleado'")
-            .fetch_all(&*state)
+            .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?;
     for (hash,) in &hashes {
@@ -238,7 +248,7 @@ pub async fn guardar_empleado(
     .bind(diario)
     .bind(total_dias)
     .bind(semanal)
-    .execute(&*state)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -251,7 +261,7 @@ pub async fn guardar_empleado(
             .bind(dias_txt.join(","))
             .bind(&b.hora_inicio)
             .bind(&b.hora_fin)
-            .execute(&*state)
+            .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
     }
