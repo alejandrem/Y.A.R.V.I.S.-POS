@@ -34,7 +34,7 @@ const ponerMonto = (label: RegExp, valor: string) => {
   fireEvent.change(input, { target: { value: valor } });
 };
 
-const btnConfirmar = () => screen.getByText(/Confirmar Venta/i) as HTMLButtonElement;
+const btnConfirmar = () => screen.getByText(/Cobrar \$/i) as HTMLButtonElement;
 
 beforeEach(() => {
   mockInvoke.mockReset();

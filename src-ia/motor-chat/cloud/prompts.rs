@@ -23,26 +23,62 @@ impl Mensaje {
     }
 }
 
-/// System prompt de los modelos API (espejo de `construir_system_prompt_api`).
-pub fn construir_system_prompt_api() -> String {
+/// System prompt del ADMIN dueño de la tienda.
+pub fn construir_system_prompt_admin() -> String {
     "Eres Y.A.R.V.I.S un asistente de una tienda mexicana, responde siempre en español \
       Actualmente estas en produccion y estas siendo TESTEADO. \
+      La persona que te escribe es el ADMINISTRADOR/DUENO de la tienda: puedes hablarle \
+      de finanzas, ganancias, nomina, empleados y decisiones de negocio con total confianza. \
       Si no tienes informacion se claro, si no sabes como hacerlo di por que. \
       Eres libre de dar opiniones sobre lo que deseas mejorar aunque solo vas a consultar xd. \
       Eres libre de decirme que tools te puedo dar para que puedas hacer mejores consultas"
         .to_string()
 }
 
-/// Arma [system (corto) + historial] para los modelos de API/nube.
+/// System prompt del EMPLEADO de mostrador.
 ///
-/// Espejo de `construir_mensajes_api`: prepende el system prompt y conserva
-/// el historial tal cual viene del frontend.
-pub fn construir_mensajes_api(messages: &[Mensaje]) -> Vec<Mensaje> {
-    let mut chat = vec![Mensaje::new("system", construir_system_prompt_api())];
+/// Mismo asistente, pero el que escribe es un empleado: no ve ni se le habla
+/// de ganancias, nomina ni decisiones del dueno; su terreno es inventario,
+/// stock, productos, precios de venta y movimientos de su turno.
+pub fn construir_system_prompt_empleado() -> String {
+    "Eres Y.A.R.V.I.S el asistente de una tienda mexicana, responde siempre en español \
+      Actualmente estas en produccion y estas siendo TESTEADO. \
+      La persona que te escribe es un EMPLEADO de mostrador, NO el dueno: \
+      dirigete a el como companero de trabajo. \
+      Ayudale con lo suyo: inventario, stock, productos, precios de venta, \
+      ubicacion de cosas en la tienda y dudas de como usar el punto de venta. \
+      NO compartas informacion de dueno: ganancias netas, costos de proveedores, \
+      salarios, nomina ni decisiones administrativas; si pregunta eso, \
+      explica amablemente que esa informacion solo la maneja el administrador. \
+      Si no tienes informacion se claro, si no sabes como hacerlo di por que."
+        .to_string()
+}
+
+/// Compatibilidad: el prompt histórico era el del admin.
+pub fn construir_system_prompt_api() -> String {
+    construir_system_prompt_admin()
+}
+
+/// Arma [system (según rol) + historial] para los modelos de API/nube.
+///
+/// `es_empleado` selecciona el system prompt correspondiente para que el
+/// modelo sepa quién le escribe (admin vs empleado de mostrador).
+pub fn construir_mensajes_api_rol(messages: &[Mensaje], es_empleado: bool) -> Vec<Mensaje> {
+    let system = if es_empleado {
+        construir_system_prompt_empleado()
+    } else {
+        construir_system_prompt_admin()
+    };
+    let mut chat = vec![Mensaje::new("system", system)];
     for m in messages {
         chat.push(m.clone());
     }
     chat
+}
+
+/// Compatibilidad: historial con prompt de admin.
+pub fn construir_mensajes_api(messages: &[Mensaje]) -> Vec<Mensaje> {
+    construir_mensajes_api_rol(messages, false)
 }
 
 #[cfg(test)]

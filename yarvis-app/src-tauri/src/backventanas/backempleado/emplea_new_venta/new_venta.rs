@@ -42,6 +42,13 @@ pub async fn completar_venta_impl(
     // Vinculación canónica por ID: la sesión ya resolvió quién cobra. El
     // nombre es etiqueta de display; el ID nunca queda huérfano aunque el
     // empleado sea renombrado después.
+    //
+    // TRANSACCIÓN todo-o-nada: venta + items + descuentos de stock se
+    // escriben como una sola unidad. Si CUALQUIER paso falla (crash, luz,
+    // producto fantasma), SQLite revierte TODO y no quedan datos a medias
+    // (antes un fallo a mitad dejaba venta sin items o stock descuadrado).
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
     let result = sqlx::query(
         "INSERT INTO ventas (total, subtotal, descuento, metodo_pago, cajero, cajero_id, cliente_id, monto_efectivo, monto_tarjeta, monto_transferencia) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
@@ -55,7 +62,7 @@ pub async fn completar_venta_impl(
     .bind(venta.monto_efectivo)
     .bind(venta.monto_tarjeta)
     .bind(venta.monto_transferencia)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -71,21 +78,24 @@ pub async fn completar_venta_impl(
         .bind(item.cantidad)
         .bind(item.precio_venta)
         .bind(item.precio_venta * item.cantidad)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
         if let Some(producto_id) = item.id {
-            let _ = sqlx::query(
+            sqlx::query(
                 "UPDATE productos SET stock = stock - ?, vendido = vendido + ? WHERE id = ?",
             )
             .bind(item.cantidad)
             .bind(item.cantidad)
             .bind(producto_id)
-            .execute(pool)
-            .await;
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
         }
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(VentaResponse {
         venta_id,

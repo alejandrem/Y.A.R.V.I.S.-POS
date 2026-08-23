@@ -109,3 +109,38 @@ async fn metodo_pago_mixto_detectado() {
         .fetch_one(&pool).await.unwrap();
     assert_eq!(metodo, "efectivo/tarjeta");
 }
+
+#[tokio::test]
+async fn fallo_a_mitad_de_venta_revierte_todo_transaccion() {
+    let pool = db().await;
+    let p_real = seed_producto(&pool, "Producto bueno", 10.0, 18.0).await;
+
+    // El 2º item apunta a un producto inexistente: detalle_ventas.producto_id
+    // tiene FK → productos(id), así que la inserción falla A MITAD de la venta.
+    let v = VentaRequest {
+        items: vec![
+            CartItemRequest { id: Some(p_real as i32), nombre: "Bueno".into(), precio_venta: 18.0, cantidad: 2.0 },
+            CartItemRequest { id: Some(999_999), nombre: "Fantasma".into(), precio_venta: 50.0, cantidad: 1.0 },
+        ],
+        total: 86.0,
+        subtotal: 86.0,
+        descuento: 0.0,
+        monto_efectivo: 100.0,
+        monto_tarjeta: 0.0,
+        monto_transferencia: 0.0,
+        cliente_id: None,
+    };
+
+    let r = completar_venta_impl(&pool, &v, "Peter".into(), 1).await;
+    assert!(r.is_err(), "la venta con producto fantasma debe fallar");
+
+    // ATOMICIDAD: no quedó NADA — ni venta, ni items, ni stock tocado.
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await, 0);
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM detalle_ventas").await, 0);
+    let fila = sqlx::query("SELECT stock, vendido FROM productos WHERE id = ?")
+        .bind(p_real).fetch_one(&pool).await.unwrap();
+    let stock: f64 = Row::get(&fila, "stock");
+    let vendido: f64 = Row::get(&fila, "vendido");
+    assert_eq!(stock, 10.0, "el stock del producto bueno quedó intacto");
+    assert_eq!(vendido, 0.0);
+}

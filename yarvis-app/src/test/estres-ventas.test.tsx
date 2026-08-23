@@ -32,7 +32,7 @@ describe("estres ventas · ráfaga de cobros", () => {
       );
       const label = screen.getByText(/Efectivo/i);
       fireEvent.change(label.parentElement!.querySelector("input")!, { target: { value: "10" } });
-      fireEvent.click(screen.getByText(/Confirmar Venta/i));
+      fireEvent.click(screen.getByText(/Cobrar \$/i));
       await waitFor(() => expect(onDone).toHaveBeenCalled());
       expect(mockInvoke).toHaveBeenCalledTimes(i + 1);
       exitosas++;
@@ -47,7 +47,7 @@ describe("estres ventas · ráfaga de cobros", () => {
     render(<ModalVenta onClose={() => {}} onVentaCompletada={onDone} cart={cart} cartTotal={2000} />);
     const label = screen.getByText(/Efectivo/i);
     fireEvent.change(label.parentElement!.querySelector("input")!, { target: { value: "2000" } });
-    fireEvent.click(screen.getByText(/Confirmar Venta/i));
+    fireEvent.click(screen.getByText(/Cobrar \$/i));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     const [, args] = mockInvoke.mock.calls[0];
     expect(args.venta.items).toHaveLength(200);

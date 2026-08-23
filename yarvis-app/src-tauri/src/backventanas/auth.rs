@@ -41,6 +41,16 @@ impl AuthState {
         }
     }
 
+    /// ¿La sesión activa es de empleado (no admin)? Para personalizar
+    /// el system prompt del chat según quién le escribe a Y.A.R.V.I.S.
+    pub fn es_empleado(&self) -> bool {
+        self.session
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|ses| matches!(ses.role, Role::Employee)))
+            .unwrap_or(false)
+    }
+
     pub fn logout(&self) {
         if let Ok(mut session) = self.session.lock() {
             *session = None;

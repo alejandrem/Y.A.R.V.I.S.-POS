@@ -1,3 +1,10 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// EMPLOYEE DASHBOARD — Shell del punto de venta del operador.
+// Tarea única: sidebar de navegación + topbar (atajos F5-F8, progreso del
+// turno y operador) + enrutado del contenido por pestaña activa.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { MorphIcon } from "morphicons/react";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
 import { ticketsNav } from "./ventanas/empleaticket/ticket";
@@ -5,10 +12,15 @@ import { clientesNav } from "./ventanas/empleaclientes/clientes";
 import { perfilNav } from "./ventanas/empleaperfil/perfil";
 import { yarvisNav } from "./ventanas/empleayarvis/yarvis";
 import { ajustesNav } from "./ventanas/empleaajustes/ajustes";
+import {
+  ICONO_BILLETE, ICONO_CAJA, ICONO_BUSCAR, ICONO_AYUDA,
+  ICONO_RELOJ, ICONO_USUARIO, ICONO_CERRAR,
+} from "../components/ui";
 
 import NuevaVenta from "./ventanas/emplea_new_venta/nueva_venta";
 import Inventario from "./ventanas/empleainventario/inventario";
 import Perfil from "./ventanas/empleaperfil/perfil";
+import YarvisEmpleado from "./ventanas/empleayarvis/yarvis";
 
 interface EmployeeDashboardProps {
   activeTab: string;
@@ -19,6 +31,14 @@ interface EmployeeDashboardProps {
   shiftProgress?: number;
   operatorName?: string;
 }
+
+// Atajos de teclado de la topbar (F5 cobra, el resto en camino).
+const ATAJOS = [
+  { tecla: "F5", label: "Cobrar", icono: ICONO_BILLETE },
+  { tecla: "F6", label: "Caja", icono: ICONO_CAJA },
+  { tecla: "F7", label: "Buscar", icono: ICONO_BUSCAR },
+  { tecla: "F8", label: "Atajos", icono: ICONO_AYUDA },
+];
 
 const EmployeeDashboard = ({
   activeTab,
@@ -47,13 +67,17 @@ const EmployeeDashboard = ({
         return <Perfil activeTab={activeTab} operatorName={operatorName} />;
       case "nueva_venta":
         return <NuevaVenta activeTab={activeTab} />;
+      case "yarvis":
+        return <YarvisEmpleado active={true} />;
       default:
         return (
-          <div className="flex-1 flex items-center justify-center bg-white rounded-2xl border border-dashed border-neutral-200">
-            <div className="text-center">
-              <div className="w-14 h-14 bg-neutral-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-xl">⚙️</div>
-              <h3 className="text-sm font-black text-neutral-900 uppercase mb-1">{employeeMenuItems.find(i => i.id === activeTab)?.label}</h3>
-              <p className="text-neutral-400 text-[10px] font-medium max-w-[180px] mx-auto leading-relaxed italic">Boceto pendiente de implementación</p>
+          <div className="flex-1 flex items-center justify-center bg-white rounded-[2.5rem] border border-dashed border-neutral-200">
+            <div className="text-center py-16">
+              <div className="w-16 h-16 bg-neutral-950 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-lg">
+                <MorphIcon icon={employeeMenuItems.find((i) => i.id === activeTab)?.id === "yarvis" ? ICONO_AYUDA : ICONO_CAJA} size={24} strokeWidth={2} spring="smooth" className="text-white" />
+              </div>
+              <h3 className="text-base font-black text-neutral-900 uppercase tracking-tight">{employeeMenuItems.find(i => i.id === activeTab)?.label}</h3>
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-300 mt-2">Boceto pendiente de implementación</p>
             </div>
           </div>
         );
@@ -62,61 +86,85 @@ const EmployeeDashboard = ({
 
   return (
     <main className="h-screen w-full flex bg-white font-sans text-neutral-800 animate-in fade-in duration-500 overflow-hidden">
-      <aside className="w-64 bg-white border-r border-neutral-100 flex flex-col p-6">
+      {/* ═══ SIDEBAR ═════════════════════════════════════════════════ */}
+      <aside className="w-64 bg-white border-r border-neutral-100 flex flex-col p-5">
         <div className="mb-10 px-2 flex items-center gap-3">
-          <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white font-black text-xl">Y</div>
+          <div className="w-10 h-10 bg-neutral-950 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg">Y</div>
           <div>
             <h1 className="text-sm font-black tracking-tighter leading-none">Y.A.R.V.I.S.</h1>
-            <p className="text-[9px] font-bold text-neutral-400 tracking-widest uppercase">POS System</p>
+            <p className="text-[9px] font-black text-neutral-400 tracking-[0.25em] uppercase mt-0.5">POS System</p>
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1.5">
           {employeeMenuItems.map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all duration-300 ${activeTab === item.id ? "bg-neutral-900 text-white shadow-xl shadow-neutral-300 scale-[1.05]" : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 hover:scale-[1.02]"}`}>
-              <span className={activeTab === item.id ? "text-white" : "text-neutral-300 transition-colors group-hover:text-neutral-900"}>{item.icon}</span>
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all duration-300 ${
+                activeTab === item.id
+                  ? "bg-neutral-950 text-white shadow-xl shadow-neutral-300 scale-[1.03]"
+                  : "text-neutral-400 hover:bg-neutral-50 hover:text-neutral-950"
+              }`}
+            >
+              <span className={activeTab === item.id ? "text-white" : ""}>{item.icon}</span>
               {item.label}
             </button>
           ))}
         </nav>
 
-        <div className="mt-auto pt-6 border-t border-neutral-50">
-          <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-neutral-400 hover:bg-neutral-50 hover:text-neutral-500 transition-all uppercase tracking-wider">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+        <div className="mt-auto pt-5 border-t border-neutral-100">
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[11px] font-black text-neutral-400 hover:bg-red-50 hover:text-red-500 transition-all uppercase tracking-widest"
+          >
+            <MorphIcon icon={ICONO_CERRAR} size={15} strokeWidth={2.2} spring="snappy" reducedMotion="user" />
             Cerrar Turno
           </button>
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col bg-neutral-50/50">
-        <header className="h-20 bg-white border-b border-neutral-100 px-6 flex flex-col justify-center">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex gap-2">
-              {["F5 COBRAR", "F6 CAJA", "F7 BUSCAR", "F8 ATAJOS"].map((txt, i) => (
-                <button key={i} className="px-2 py-1 bg-white rounded border border-neutral-200 text-[9px] font-bold text-neutral-500 hover:border-neutral-900 hover:text-neutral-900 hover:scale-105 hover:shadow-sm transition-all duration-200 uppercase">
-                  <span className="text-neutral-900 mr-1">[{txt.split(' ')[0]}]</span> {txt.split(' ')[1]}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-right">
-                <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest leading-none mb-0.5">Operador</p>
-                <p className="text-[10px] font-bold text-neutral-900 leading-none">{operatorName}</p>
-              </div>
-              <div className="w-7 h-7 bg-neutral-100 rounded-full flex items-center justify-center text-neutral-600 text-[10px] font-bold border border-neutral-200 uppercase">
-                {operatorName.charAt(0)}
-              </div>
-            </div>
+      {/* ═══ CONTENIDO ═══════════════════════════════════════════════ */}
+      <div className="flex-1 flex flex-col bg-neutral-50/50 overflow-hidden">
+        {/* ── TOPBAR ──────────────────────────────────────────────── */}
+        <header className="bg-white border-b border-neutral-100 px-6 py-3.5 flex items-center gap-5">
+          {/* ATAJOS GORDITOS */}
+          <div className="flex gap-2">
+            {ATAJOS.map((a) => (
+              <button
+                key={a.tecla}
+                title={`Atajo ${a.tecla}`}
+                className="group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 bg-neutral-50 rounded-2xl border border-transparent hover:border-neutral-950 hover:bg-white hover:shadow-lg hover:shadow-neutral-200 transition-all duration-200 active:scale-95"
+              >
+                <span className="px-1.5 py-0.5 bg-neutral-950 text-white text-[8px] font-black rounded-lg">{a.tecla}</span>
+                <MorphIcon icon={a.icono} size={13} strokeWidth={2.4} spring="snappy" reducedMotion="user" className="text-neutral-400 group-hover:text-neutral-950 transition-colors" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400 group-hover:text-neutral-950 transition-colors">{a.label}</span>
+              </button>
+            ))}
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[8px] font-black text-neutral-900 uppercase tracking-widest whitespace-nowrap">Turno: {shiftStart}</span>
-            <div className="flex-1 h-1.5 bg-neutral-100 rounded-full overflow-hidden flex border border-neutral-200/50">
+
+          {/* TURNO */}
+          <div className="flex-1 flex items-center gap-3 min-w-0">
+            <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.2} spring="smooth" className="text-neutral-300 shrink-0" />
+            <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest whitespace-nowrap">{shiftStart}</span>
+            <div className="flex-1 h-2.5 bg-neutral-100 rounded-full overflow-hidden">
               <div
-                className="bg-neutral-900 h-full rounded-full transition-all duration-1000 ease-in-out"
+                className="bg-neutral-950 h-full rounded-full transition-all duration-1000 ease-in-out"
                 style={{ width: `${shiftProgress}%` }}
               />
             </div>
-            <span className="text-[8px] font-black text-neutral-900 uppercase tracking-widest whitespace-nowrap">{shiftEnd}</span>
+            <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest whitespace-nowrap">{shiftEnd}</span>
+          </div>
+
+          {/* OPERADOR */}
+          <div className="flex items-center gap-3 bg-neutral-50 rounded-2xl pl-2 pr-4 py-1.5 border border-neutral-100">
+            <div className="w-9 h-9 bg-neutral-950 rounded-xl flex items-center justify-center shadow-md">
+              <MorphIcon icon={ICONO_USUARIO} size={15} strokeWidth={2.2} spring="smooth" className="text-white" />
+            </div>
+            <div>
+              <p className="text-[8px] font-black text-neutral-400 uppercase tracking-[0.2em] leading-none mb-0.5">Operador</p>
+              <p className="text-[11px] font-black text-neutral-900 leading-none truncate max-w-[140px]">{operatorName}</p>
+            </div>
           </div>
         </header>
 

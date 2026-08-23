@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use src_ia::motor_chat::cloud::apis_cloud::{
     generar_completo, generar_stream, nombre_proveedor, Evento,
 };
-use src_ia::motor_chat::cloud::prompts::{construir_mensajes_api, Mensaje};
+use src_ia::motor_chat::cloud::prompts::{construir_mensajes_api_rol, Mensaje};
 use src_ia::motor_chat::cloud::think::{SeparadorThink, TipoFragmento};
 use src_ia::motor_chat::llm::{
     cargar_modelo_1_7, chat_1_7, descargar_modelo_1_7, modelo_1_7_cargado, nombre_modelo_local,
@@ -174,7 +174,8 @@ pub async fn send_chat_message(
     // Si falla, cae al modelo local.
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
-        let chat = construir_mensajes_api(&mensajes_serde_a_rust(&messages));
+        let es_empleado = auth.es_empleado();
+        let chat = construir_mensajes_api_rol(&mensajes_serde_a_rust(&messages), es_empleado);
         match generar_completo(&provider, &api_key, &model, chat).await {
             Ok((respuesta, modelo_real)) => {
                 let usado = if modelo_real.is_empty() {
@@ -219,7 +220,8 @@ pub async fn send_chat_stream(
     // ---- Modo cloud: streaming en Rust. ----
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
-        let chat = construir_mensajes_api(&mensajes_serde_a_rust(&messages));
+        let es_empleado = auth.es_empleado();
+        let chat = construir_mensajes_api_rol(&mensajes_serde_a_rust(&messages), es_empleado);
         match _stream_cloud(&app, &provider, &api_key, &model, chat).await {
             Ok(respuesta) => return Ok(respuesta),
             Err(e) => {

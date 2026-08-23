@@ -1,7 +1,21 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// NUEVA VENTA — Punto de venta del operador.
+// Tarea única: búsqueda de productos (local + IA por similitud), carrito y
+// cobro. La lógica no cambia: el carrito vive solo en memoria y el inventario
+// se descuenta ÚNICAMENTE al confirmar el cobro (F5 → modal → Confirmar).
+// ═══════════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MorphIcon } from "morphicons/react";
 import ModalVenta from "./modalventa";
 import ModalTicket from "./modalticket";
+import {
+  BotonAnimado,
+  ICONO_BUSCAR, ICONO_EQUIS, ICONO_MAS, ICONO_RESTA,
+  ICONO_CARRITO, ICONO_BILLETE, ICONO_ESTRELLA, ICONO_ESCANER,
+  ICONO_CODIGO_BARRAS, ICONO_BOLSA,
+} from "../../../components/ui";
 
 const nuevaVentaNav = {
   id: "nueva_venta",
@@ -244,22 +258,22 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
     }
   };
 
+  // ── RENDER ──────────────────────────────────────────────────────────────
+
   return (
     <>
-    <div className="flex-1 flex flex-col gap-4 animate-in fade-in duration-500 max-w-5xl mx-auto w-full">
-      {/* SEARCH BAR */}
+    <div className="flex-1 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-5xl mx-auto w-full">
+
+      {/* ═══ BÚSQUEDA ═════════════════════════════════════════════════ */}
       <div ref={searchRef} className="relative group">
-        <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
+        <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none z-10">
           {isSearching ? (
-            <svg className="animate-spin h-4 w-4 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin h-5 w-5 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-300 group-focus-within:text-neutral-900 transition-colors duration-200">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
+            <MorphIcon icon={ICONO_BUSCAR} size={20} strokeWidth={2.5} spring="smooth" className="text-neutral-300 group-focus-within:text-neutral-900 transition-colors duration-200" />
           )}
         </div>
         <input
@@ -269,19 +283,20 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => searchQuery && searchResults.length > 0 && setShowDropdown(true)}
-          placeholder="Buscar producto por nombre, código o categoría..."
-          className="w-full pl-12 pr-28 py-3.5 bg-white border border-neutral-200 rounded-2xl shadow-sm text-sm font-medium text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-4 focus:ring-neutral-900/5 focus:border-neutral-300 focus:shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all duration-300"
+          placeholder="Escanea o busca por nombre, código o categoría..."
+          className="w-full pl-14 pr-32 py-5 bg-white border-2 border-neutral-100 rounded-[1.75rem] shadow-xl shadow-neutral-100/60 text-base font-black text-neutral-900 placeholder:text-neutral-300 placeholder:font-bold placeholder:text-sm focus:outline-none focus:border-neutral-900 focus:ring-8 focus:ring-neutral-900/5 transition-all duration-300"
         />
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
           {searchQuery && (
             <button
               onClick={() => { setSearchQuery(""); setSearchResults([]); setShowDropdown(false); inputRef.current?.focus(); }}
-              className="p-1 rounded-lg hover:bg-neutral-100 text-neutral-300 hover:text-neutral-600 transition-all"
+              className="p-2 rounded-xl hover:bg-neutral-100 text-neutral-300 hover:text-neutral-900 transition-all"
+              title="Limpiar búsqueda"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              <MorphIcon icon={ICONO_EQUIS} size={16} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
             </button>
           )}
-          <span className={`px-2 py-1 text-[9px] font-black rounded-lg border uppercase tracking-wider transition-all duration-300 ${
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[9px] font-black rounded-xl border uppercase tracking-widest transition-all duration-300 ${
             iaStatus === "loading"
               ? "bg-amber-50 text-amber-600 border-amber-200"
               : iaStatus === "ready"
@@ -290,54 +305,55 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
               ? "bg-neutral-50 text-neutral-400 border-neutral-200"
               : "bg-neutral-50 text-neutral-400 border-neutral-200 group-focus-within:border-neutral-900 group-focus-within:text-neutral-900"
           }`}>
-            {iaStatus === "loading" ? "BUSCANDO..." : iaStatus === "ready" ? "IA OK" : "IA"}
+            <MorphIcon icon={ICONO_ESTRELLA} size={11} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
+            {iaStatus === "loading" ? "BUSCANDO" : iaStatus === "ready" ? "IA OK" : "IA"}
           </span>
         </div>
 
-        {/* DROPDOWN */}
+        {/* ── DROPDOWN DE RESULTADOS ──────────────────────────────── */}
         {showDropdown && searchResults.length > 0 && (
           <div
             ref={dropdownRef}
-            className="absolute top-full left-0 right-0 mt-2 bg-white border border-neutral-200 rounded-2xl shadow-2xl shadow-neutral-200/50 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
+            className="absolute top-full left-0 right-0 mt-3 bg-white border border-neutral-200 rounded-[2rem] shadow-2xl shadow-neutral-300/40 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
           >
-            <div className="p-2 max-h-80 overflow-y-auto">
+            <div className="p-2.5 max-h-96 overflow-y-auto custom-scrollbar">
               {searchResults.map((item, idx) => {
                 const inCart = cart.find((c) => c.id === item.id);
                 return (
                   <button
                     key={item.id || idx}
                     onClick={() => addToCart(item)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all duration-150 ${
+                    className={`w-full flex items-center gap-4 p-3.5 rounded-2xl text-left transition-all duration-150 ${
                       idx === selectedIndex
-                        ? "bg-neutral-900 text-white"
+                        ? "bg-neutral-950 text-white scale-[1.01]"
                         : "hover:bg-neutral-50 text-neutral-900"
                     }`}
                   >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0 ${
-                      idx === selectedIndex ? "bg-white/20 text-white" : "bg-neutral-100 text-neutral-400"
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+                      idx === selectedIndex ? "bg-white/15" : "bg-neutral-100"
                     }`}>
-                      {item.categoria?.charAt(0)?.toUpperCase() || "P"}
+                      <MorphIcon icon={item.codigo_barras ? ICONO_CODIGO_BARRAS : ICONO_BOLSA} size={17} strokeWidth={2.2} spring="smooth" className={idx === selectedIndex ? "text-white" : "text-neutral-400"} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-bold truncate ${idx === selectedIndex ? "text-white" : "text-neutral-900"}`}>
+                      <p className={`text-sm font-black truncate ${idx === selectedIndex ? "text-white" : "text-neutral-900"}`}>
                         {item.nombre}
                       </p>
-                      <p className={`text-[10px] font-medium truncate ${idx === selectedIndex ? "text-white/60" : "text-neutral-400"}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-wider truncate mt-0.5 ${idx === selectedIndex ? "text-white/50" : "text-neutral-400"}`}>
                         {item.categoria || "Sin categoría"} · Stock: {item.stock}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className={`text-xs font-black ${idx === selectedIndex ? "text-white" : "text-neutral-900"}`}>
+                      <p className={`text-sm font-black ${idx === selectedIndex ? "text-white" : "text-neutral-900"}`}>
                         ${item.precio_venta.toFixed(2)}
                       </p>
                       {inCart && (
-                        <p className={`text-[9px] font-bold ${idx === selectedIndex ? "text-white/60" : "text-emerald-600"}`}>
-                          En carrito: {inCart.cantidad}
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${idx === selectedIndex ? "text-emerald-300" : "text-emerald-600"}`}>
+                          ×{inCart.cantidad} en carrito
                         </p>
                       )}
                     </div>
                     {item.stock <= 0 && (
-                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full ${idx === selectedIndex ? "bg-white/20 text-white" : "bg-red-50 text-red-500"}`}>
+                      <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${idx === selectedIndex ? "bg-red-500/30 text-red-200" : "bg-red-50 text-red-500"}`}>
                         SIN STOCK
                       </span>
                     )}
@@ -346,42 +362,44 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
               })}
             </div>
             {iaStatus === "ready" && (
-              <div className="px-4 py-2.5 bg-emerald-50 border-t border-emerald-100 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-                <span className="text-[10px] font-bold text-emerald-700">{iaSuggestion}</span>
+              <div className="px-5 py-3 bg-emerald-50 border-t border-emerald-100 flex items-center gap-2.5">
+                <MorphIcon icon={ICONO_ESTRELLA} size={13} strokeWidth={2.5} spring="smooth" className="text-emerald-500" />
+                <span className="text-[11px] font-black text-emerald-700">{iaSuggestion}</span>
               </div>
             )}
           </div>
         )}
 
         {showDropdown && searchQuery && searchResults.length === 0 && !isSearching && (
-          <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-neutral-200 rounded-2xl shadow-2xl shadow-neutral-200/50 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="p-8 text-center">
-              <div className="w-12 h-12 bg-neutral-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-300"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-neutral-200 rounded-[2rem] shadow-2xl shadow-neutral-300/40 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="py-10 text-center">
+              <div className="w-14 h-14 bg-neutral-950 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                <MorphIcon icon={ICONO_BUSCAR} size={22} strokeWidth={2} spring="smooth" className="text-white" />
               </div>
-              <p className="text-xs font-bold text-neutral-400">Sin resultados para "{searchQuery}"</p>
-              <p className="text-[10px] text-neutral-300 mt-1">Intenta con otro nombre o código</p>
+              <p className="text-xs font-black uppercase tracking-widest text-neutral-400">Sin resultados para "{searchQuery}"</p>
+              <p className="text-[10px] font-bold text-neutral-300 mt-1.5">Intenta con otro nombre o código</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* CART TABLE */}
-      <div className="flex-1 bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col">
-        <div className="px-6 py-4 border-b border-neutral-100 bg-neutral-50/50 flex justify-between items-center">
-          <h3 className="text-[10px] font-black text-neutral-900 uppercase tracking-widest flex items-center gap-2">
-            <div className="w-1 h-4 bg-neutral-900 rounded-full"></div>
+      {/* ═══ CARRITO ══════════════════════════════════════════════════ */}
+      <div className="flex-1 bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="px-8 py-5 flex justify-between items-center">
+          <h3 className="text-sm font-black text-neutral-950 uppercase tracking-tight flex items-center gap-3">
+            <div className="w-10 h-10 bg-neutral-950 rounded-2xl flex items-center justify-center shadow-md">
+              <MorphIcon icon={ICONO_CARRITO} size={16} strokeWidth={2.2} spring="smooth" className="text-white" />
+            </div>
             Detalle de Venta
           </h3>
-          <div className="flex items-center gap-3">
-            <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-tighter">
+          <div className="flex items-center gap-4">
+            <span className="px-3 py-1.5 bg-neutral-950 text-white text-[9px] font-black rounded-lg uppercase tracking-widest">
               {cart.reduce((acc, item) => acc + item.cantidad, 0)} ARTÍCULOS
             </span>
             {cart.length > 0 && (
               <button
                 onClick={() => setCart([])}
-                className="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-wider transition-colors"
+                className="text-[9px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors"
               >
                 LIMPIAR
               </button>
@@ -389,90 +407,92 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6">
-          <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 bg-white z-10">
-              <tr className="text-[9px] font-black text-neutral-400 uppercase tracking-widest border-b border-neutral-100">
-                <th className="py-3 px-2">Cant.</th>
-                <th className="py-3 px-2">Producto</th>
-                <th className="py-3 px-2">P. Unitario</th>
-                <th className="py-3 px-2 text-right">Subtotal</th>
-                <th className="py-3 px-2 w-10"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-50">
-              {cart.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-24 text-center">
-                    <div className="flex flex-col items-center gap-3 opacity-10">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" /><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.56-7.43H5.12" /></svg>
-                      <p className="text-[10px] font-black uppercase tracking-[0.3em]">Esperando productos...</p>
-                    </div>
-                  </td>
+        <div className="flex-1 overflow-y-auto px-8 pb-4 custom-scrollbar">
+          {cart.length === 0 ? (
+            <div className="py-20 text-center">
+              <div className="w-16 h-16 mx-auto bg-neutral-100 rounded-3xl flex items-center justify-center mb-5">
+                <MorphIcon icon={ICONO_CARRITO} size={26} strokeWidth={1.8} spring="smooth" className="text-neutral-300" />
+              </div>
+              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-neutral-300">Esperando productos...</p>
+              <p className="text-[10px] font-bold text-neutral-200 mt-2">Escanea un código o busca arriba para empezar</p>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="text-[9px] font-black text-neutral-400 uppercase tracking-widest border-b-2 border-neutral-100">
+                  <th className="pb-3 px-2">Cantidad</th>
+                  <th className="pb-3 px-2">Producto</th>
+                  <th className="pb-3 px-2">P. Unitario</th>
+                  <th className="pb-3 px-2 text-right">Subtotal</th>
+                  <th className="pb-3 px-2 w-12"></th>
                 </tr>
-              ) : (
-                cart.map((item) => (
-                  <tr key={item.id} className="group hover:bg-neutral-50/50 transition-colors">
-                    <td className="py-3 px-2">
-                      <div className="flex items-center gap-1">
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {cart.map((item) => (
+                  <tr key={item.id} className="group hover:bg-neutral-50/60 transition-colors">
+                    <td className="py-3.5 px-2">
+                      <div className="flex items-center gap-2 bg-neutral-50 rounded-2xl p-1 w-fit border border-neutral-100">
                         <button
                           onClick={() => updateQuantity(item.id, -1)}
-                          className="w-6 h-6 rounded-lg bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-500 hover:text-neutral-900 transition-all text-[10px] font-black"
+                          className="w-8 h-8 rounded-xl bg-white hover:bg-neutral-950 hover:text-white flex items-center justify-center shadow-sm transition-all active:scale-90"
+                          title="Quitar uno"
                         >
-                          -
+                          <MorphIcon icon={ICONO_RESTA} size={13} strokeWidth={3} spring="snappy" reducedMotion="user" />
                         </button>
-                        <span className="w-8 text-center text-xs font-black text-neutral-900">{item.cantidad}</span>
+                        <span className="w-8 text-center text-sm font-black text-neutral-900">{item.cantidad}</span>
                         <button
                           onClick={() => updateQuantity(item.id, 1)}
                           disabled={item.cantidad >= item.stock}
-                          className="w-6 h-6 rounded-lg bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-500 hover:text-neutral-900 transition-all text-[10px] font-black disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="w-8 h-8 rounded-xl bg-white hover:bg-neutral-950 hover:text-white flex items-center justify-center shadow-sm transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"
+                          title="Agregar uno"
                         >
-                          +
+                          <MorphIcon icon={ICONO_MAS} size={13} strokeWidth={3} spring="snappy" reducedMotion="user" />
                         </button>
                       </div>
                     </td>
-                    <td className="py-3 px-2 font-bold text-neutral-700 text-xs">{item.nombre}</td>
-                    <td className="py-3 px-2 font-medium text-neutral-400 text-xs">${item.precio_venta.toFixed(2)}</td>
-                    <td className="py-3 px-2 text-right font-black text-neutral-900 text-sm">
+                    <td className="py-3.5 px-2 font-black text-neutral-800 text-xs uppercase">{item.nombre}</td>
+                    <td className="py-3.5 px-2 font-bold text-neutral-400 text-xs">${item.precio_venta.toFixed(2)}</td>
+                    <td className="py-3.5 px-2 text-right font-black text-neutral-950 text-base">
                       ${(item.precio_venta * item.cantidad).toFixed(2)}
                     </td>
-                    <td className="py-3 px-2 text-right">
+                    <td className="py-3.5 px-2 text-right">
                       <button
                         onClick={() => removeFromCart(item.id)}
-                        className="p-1 rounded-lg text-neutral-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                        className="p-2 rounded-xl bg-neutral-100 text-neutral-400 hover:bg-red-50 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100 active:scale-90"
+                        title="Eliminar del carrito"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        <MorphIcon icon={ICONO_EQUIS} size={13} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
                       </button>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
-        {/* FOOTER */}
-        <div className="p-4 bg-neutral-900 text-white flex items-center gap-4">
-          <div className="flex-1 flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/10">
-            <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-sm">✨</div>
-            <div>
-              <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest mb-0.5">Sugerencia IA</p>
-              <p className="text-[11px] font-medium text-neutral-200 leading-tight">
+        {/* ── FOOTER OSCURO: IA + TOTAL ───────────────────────────── */}
+        <div className="p-5 sm:p-6 bg-neutral-950 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+          <div className="flex-1 flex items-center gap-4 bg-white/5 p-4 rounded-3xl border border-white/10">
+            <div className="w-10 h-10 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
+              <MorphIcon icon={ICONO_ESTRELLA} size={17} strokeWidth={2} spring="smooth" className="text-amber-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[8px] font-black text-neutral-500 uppercase tracking-[0.2em] mb-1">Sugerencia IA</p>
+              <p className="text-[11px] font-bold text-neutral-200 leading-tight truncate">
                 {iaSuggestion || <span className="opacity-30 italic">Sin recomendaciones...</span>}
               </p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <p className="text-[8px] font-black text-neutral-500 uppercase tracking-widest leading-none">Total a cobrar</p>
-            <button
-              disabled={cart.length === 0}
-              onClick={handleAbrirCobro}
-              className="px-8 py-3.5 bg-white hover:bg-neutral-50 text-black rounded-xl font-black text-base shadow-lg hover:shadow-white/5 transition-all hover:scale-[1.05] active:scale-95 flex items-center gap-2 leading-none border border-transparent hover:border-white/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100"
-            >
-              ${cartTotal.toFixed(2)}
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-            </button>
-          </div>
+          <BotonAnimado
+            icono={ICONO_BILLETE}
+            iconoHover={ICONO_ESCANER}
+            onClick={handleAbrirCobro}
+            disabled={cart.length === 0}
+            className="bg-white hover:bg-neutral-50 text-neutral-950 shadow-xl shadow-black/30 sm:min-w-[220px] justify-center !rounded-3xl !py-5 !text-lg"
+          >
+            Cobrar ${cartTotal.toFixed(2)}
+          </BotonAnimado>
         </div>
       </div>
     </div>
