@@ -88,6 +88,10 @@ pub fn run() {
             backventanas::backempleado::emplea_new_venta::new_venta::get_tienda_info,
             // Empleado - Perfil
             backventanas::backempleado::empleaperfil::perfil::get_employee_profile,
+            backventanas::backempleado::empleaperfil::asistencia::get_mi_turno,
+            backventanas::backempleado::empleaperfil::asistencia::get_asistencia_empleado,
+            backventanas::backempleado::empleaperfil::asistencia::get_mis_horas_extra,
+            backventanas::backempleado::empleaperfil::asistencia::get_horas_extra_empleado,
             // Finanzas - Gastos
             backventanas::backadmin::adminfinanzas::gastos::get_gastos_recurrentes,
             backventanas::backadmin::adminfinanzas::gastos::crear_gasto,

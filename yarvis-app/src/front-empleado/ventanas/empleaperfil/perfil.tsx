@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MorphIcon } from "morphicons/react";
+import { ICONO_RELOJ } from "../../../components/ui";
+import {
+  geometriaBarra, fmtHM, MiniBarraDia,
+  type MiTurno, type DiaExtra,
+} from "../../../components/turno";
 
 const perfilNav = {
   id: "perfil",
@@ -51,12 +57,40 @@ interface PerfilProps {
 
 const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
   const [data, setData] = useState<EmployeeProfileFull | null>(null);
+  const [turno, setTurno] = useState<MiTurno | null>(null);
+  const [extras, setExtras] = useState<DiaExtra[] | null>(null);
+  const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
+  const [ahora, setAhora] = useState(() => new Date());
 
   useEffect(() => {
     if (activeTab === "perfil" && operatorName) {
       loadProfile();
     }
   }, [activeTab, operatorName]);
+
+  // Reloj vivo: la barra avanza sola cada 30 segundos.
+  useEffect(() => {
+    const t = window.setInterval(() => setAhora(new Date()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "perfil") {
+      invoke<MiTurno>("get_mi_turno").then(setTurno).catch((e) => console.error("Error al cargar turno:", e));
+      invoke<DiaExtra[]>("get_mis_horas_extra").then(setExtras).catch((e) => console.error("Error al cargar extras:", e));
+    }
+  }, [activeTab]);
+
+  const toggleExtra = (fecha: string) => {
+    setExpandidas((prev) => {
+      const next = new Set(prev);
+      if (next.has(fecha)) next.delete(fecha); else next.add(fecha);
+      return next;
+    });
+  };
+
+  const fmtMin = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
+
 
   const loadProfile = async () => {
     try {
@@ -67,6 +101,9 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
     }
   };
 
+  // Geometría de la barra de asistencia para HOY.
+  const barra = geometriaBarra(turno, ahora);
+
   if (!data) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -76,22 +113,6 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
   }
 
   const { profile, goals } = data;
-
-  const calcShiftProgress = () => {
-    if (!profile.ultimo_login) return 0;
-    const parseH = (t: string) => {
-      const parts = t.split(":").map(Number);
-      return parts[0] + parts[1] / 60;
-    };
-    const inicio = parseH(profile.horario_inicio);
-    const fin = parseH(profile.horario_fin);
-    const total = fin > inicio ? fin - inicio : (24 - inicio) + fin;
-
-    const loginDate = new Date(profile.ultimo_login);
-    const loginHours = loginDate.getHours() + loginDate.getMinutes() / 60;
-    const elapsed = loginHours - inicio;
-    return Math.min(100, Math.max(0, (elapsed / total) * 100));
-  };
 
   const ventasGoal = goals.find(g => g.goal_type === "ventas");
   const puntualidadGoal = goals.find(g => g.goal_type === "puntualidad");
@@ -117,47 +138,130 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
         </div>
       </div>
 
-      {/* TURNO - BARRA LINEAL */}
+      {/* TURNO - BARRA DE ASISTENCIA CON PUNTOS Y EXTRAS */}
       <div className="bg-white rounded-[2rem] border border-neutral-200 p-8 shadow-sm">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center text-lg">🕐</div>
+          <div className="w-10 h-10 bg-neutral-950 rounded-2xl flex items-center justify-center shadow-md">
+            <MorphIcon icon={ICONO_RELOJ} size={17} strokeWidth={2.2} spring="smooth" className="text-white" />
+          </div>
           <div>
             <h3 className="text-xs font-black text-neutral-900 uppercase tracking-widest">Mi Turno</h3>
             <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-tighter">Horario de trabajo</p>
           </div>
+          {barra?.enExtra && (
+            <span className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-600 animate-pulse">
+              Extra: +{Math.floor(barra.extraMinutos / 60)}h {barra.extraMinutos % 60}m
+            </span>
+          )}
+          {!barra?.enExtra && barra?.llegoPuntual && (
+            <span className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 border border-sky-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-sky-600">
+              ¡Felicidades, llegaste temprano!
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-4 mb-4">
-          <div className="text-center">
-            <p className="text-3xl font-black text-neutral-900">{profile.horario_inicio}</p>
-            <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mt-1">Entrada</p>
+        {!barra ? (
+          /* Día de descanso o sin horario hoy */
+          <div className="py-10 text-center bg-neutral-50 rounded-2xl border border-dashed border-neutral-200">
+            <p className="text-sm font-black uppercase tracking-widest text-neutral-400">Hoy no tienes turno asignado</p>
+            <p className="text-[10px] font-bold text-neutral-300 mt-1.5">Día de descanso · disfruta uwu</p>
           </div>
-          <div className="flex-1">
-            <div className="h-4 bg-neutral-100 rounded-full overflow-hidden border border-neutral-200">
-              <div
-                className="h-full bg-neutral-900 rounded-full transition-all duration-1000 ease-out"
-                style={{ width: `${calcShiftProgress()}%` }}
-              />
+        ) : (
+          <>
+            <div className="flex items-center gap-4 mb-4">
+              <div className="text-center shrink-0">
+                <p className="text-3xl font-black text-neutral-900">{fmtHM(barra.inicio)}</p>
+                <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mt-1">Entrada</p>
+              </div>
+
+              {/* PISTA DE LA BARRA */}
+              <div className="flex-1">
+                <div className="relative h-4 bg-neutral-100 rounded-full border border-neutral-200 overflow-visible">
+                  {/* EXTRA tempranero (verde antes de la entrada oficial) */}
+                  {barra.preExtraActivo && (
+                    <div
+                      className="absolute inset-y-0 bg-emerald-400 transition-all duration-700 ease-out"
+                      style={{ left: `${barra.loginPct}%`, width: `${Math.max(0, barra.preExtraPct)}%`, borderRadius: "999px 0 0 999px" }}
+                    />
+                  )}
+                  {/* Trabajo dentro del horario (negro) */}
+                  <div
+                    className="absolute inset-y-0 bg-neutral-900 rounded-full transition-all duration-700 ease-out"
+                    style={{ left: `${barra.inicioPct}%`, width: `${Math.max(0, barra.trabajoPct)}%` }}
+                  />
+                  {/* Extra post-turno (verde después de la salida) */}
+                  {barra.enExtraPost && (
+                    <div
+                      className="absolute inset-y-0 bg-emerald-500 transition-all duration-700 ease-out"
+                      style={{ left: `${barra.finPct}%`, width: `${Math.max(0, barra.postExtraPct)}%`, borderRadius: "0 999px 999px 0" }}
+                    />
+                  )}
+                  {/* ● Bolita en la ENTRADA OFICIAL cuando hubo extra tempranero */}
+                  {barra.preExtraActivo && (
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-neutral-900 rounded-full shadow-md z-10"
+                      style={{ left: `${barra.inicioPct}%` }}
+                      title="Entrada oficial — lo trabajado antes cuenta como extra"
+                    />
+                  )}
+                  {/* ● Bolita: PRIMER LOGIN del día (llegada real) */}
+                  {barra.loginPct !== null && (
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-neutral-900 rounded-full shadow-md z-10"
+                      style={{ left: `${barra.loginPct}%` }}
+                      title={`Primer login: ${turno?.primer_login ?? ""}`}
+                    />
+                  )}
+                  {/* ● Bolita blanca en la frontera del extra post-turno */}
+                  {barra.enExtraPost && (
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-emerald-500 rounded-full shadow-md z-10"
+                      style={{ left: `${barra.finPct}%` }}
+                      title="Fin de tu horario — desde aquí cuenta como extra"
+                    />
+                  )}
+                </div>
+
+                <div className="flex justify-between mt-2">
+                  <span className="text-[8px] font-black text-neutral-300 uppercase">
+                    {turno?.primer_login
+                      ? `Llegaste ${turno.primer_login}${
+                          barra.minutosTarde > 0
+                            ? ` · ${barra.minutosTarde} min tarde`
+                            : barra.llegoPuntual
+                              ? " · ¡Felicidades, llegaste puntual!"
+                              : ` · ${barra.minutosTemprano} min temprano (extra)`
+                        }`
+                      : "Sin registro de entrada"}
+                  </span>
+                  <span className={`text-[8px] font-black uppercase ${barra.enExtra ? "text-emerald-500" : "text-neutral-300"}`}>
+                    {barra.enExtra ? `Progreso: ${Math.round(barra.trabajoPct)}% + extra` : `Progreso: ${Math.round(barra.trabajoPct)}%`}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-center shrink-0">
+                <p className={`text-3xl font-black ${barra.enExtra ? "text-emerald-600" : "text-neutral-900"}`}>{fmtHM(barra.fin)}</p>
+                <p className={`text-[9px] font-black uppercase tracking-widest mt-1 ${barra.enExtra ? "text-emerald-500" : "text-neutral-400"}`}>Salida</p>
+              </div>
             </div>
-            <div className="flex justify-between mt-2">
-              <span className="text-[8px] font-black text-neutral-300 uppercase">{profile.ultimo_login ? new Date(profile.ultimo_login).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : 'Sin registro'}</span>
-              <span className="text-[8px] font-black text-neutral-300 uppercase">Progreso: {calcShiftProgress().toFixed(0)}%</span>
-            </div>
-          </div>
-          <div className="text-center">
-            <p className="text-3xl font-black text-neutral-900">{profile.horario_fin}</p>
-            <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mt-1">Salida</p>
-          </div>
-        </div>
+
+            {turno && turno.primer_login === null && (
+              <p className="text-[10px] font-bold text-amber-500 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mt-4">
+                Aún no registras tu primer login de hoy — este marca tu hora de entrada real.
+              </p>
+            )}
+          </>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6">
           <div className="bg-neutral-50 rounded-xl p-4 text-center border border-neutral-100">
             <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">Horas/Día</p>
-            <p className="text-xl font-black text-neutral-900 mt-1">{profile.horas_por_dia.toFixed(1)}h</p>
+            <p className="text-xl font-black text-neutral-900 mt-1">{(turno?.horas_por_dia ?? profile.horas_por_dia).toFixed(1)}h</p>
           </div>
           <div className="bg-neutral-50 rounded-xl p-4 text-center border border-neutral-100">
             <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">Días/Semana</p>
-            <p className="text-xl font-black text-neutral-900 mt-1">{profile.dias_semana}</p>
+            <p className="text-xl font-black text-neutral-900 mt-1">{turno?.dias_semana ?? profile.dias_semana}</p>
           </div>
           <div className="bg-neutral-50 rounded-xl p-4 text-center border border-neutral-100">
             <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest">Último Login</p>
@@ -166,7 +270,7 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
         </div>
       </div>
 
-      {/* SALARIO - CUADROS GRANDES */}
+            {/* SALARIO - CUADROS GRANDES */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-neutral-900 rounded-[2rem] p-6 text-center text-white shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-20 h-20 bg-white/5 rounded-full -translate-y-8 translate-x-8"></div>
@@ -312,6 +416,77 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
           </div>
         </div>
       </div>
+
+      {/* HORAS EXTRAS INDEFINIDAS — historial completo (oculto si no hay) */}
+      {extras && extras.length > 0 && (
+        <div className="bg-white rounded-[2rem] border border-neutral-200 p-8 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center">
+              <MorphIcon icon={ICONO_RELOJ} size={17} strokeWidth={2.2} spring="smooth" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-neutral-900 uppercase tracking-widest">Horas Extras Indefinidas</h3>
+              <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-tighter">Cada día que trabajaste fuera de tu horario</p>
+            </div>
+            <span className="ml-auto px-3 py-1 bg-neutral-950 text-white text-[9px] font-black rounded-lg uppercase tracking-widest">
+              {extras.length} {extras.length === 1 ? "DÍA" : "DÍAS"}
+            </span>
+          </div>
+
+          <div className={`space-y-2 pr-1 custom-scrollbar ${extras.length > 8 ? "max-h-[420px] overflow-y-auto" : ""}`}>
+            {extras.map((d) => {
+              const totalExtra = d.extra_pre_min + d.extra_post_min;
+              const abierta = expandidas.has(d.fecha);
+              return (
+                <div key={d.fecha} className={`rounded-2xl border transition-all ${abierta ? "border-neutral-300 bg-neutral-50/60" : "border-neutral-100 hover:border-neutral-200"}`}>
+                  {/* FILA RESUMEN */}
+                  <button
+                    onClick={() => toggleExtra(d.fecha)}
+                    className="w-full flex items-center gap-3 p-3.5 text-left"
+                  >
+                    <div className="shrink-0 w-24">
+                      <p className="text-[11px] font-black text-neutral-900 uppercase leading-none">{d.dia_label}</p>
+                      <p className="text-[9px] font-bold text-neutral-400 mt-1">{d.fecha.slice(5).split("-").reverse().join("/")}</p>
+                    </div>
+
+                    {/* Mini barra histórica */}
+                    <div className="flex-1 flex items-center gap-3 min-w-0" title={`Entrada oficial ${d.entrada_oficial} · Salida ${d.salida_oficial}`}>
+                      <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-neutral-500">{d.primer_login}</span>
+                      <MiniBarraDia d={d} />
+                      <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-emerald-600">{d.ultimo_login}</span>
+                    </div>
+
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-600 rounded-lg text-[8px] font-black uppercase tracking-widest whitespace-nowrap shrink-0">
+                      +{fmtMin(totalExtra)}
+                    </span>
+
+                    <MorphIcon
+                      icon={ICONO_RELOJ}
+                      size={13}
+                      strokeWidth={2.4}
+                      spring="snappy"
+                      reducedMotion="user"
+                      className={`shrink-0 text-neutral-300 transition-transform duration-200 ${abierta ? "rotate-180" : ""}`}
+                    />
+                  </button>
+
+                  {/* DESGLOSE AL PICARLE A VER */}
+                  {abierta && (
+                    <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div className="bg-white rounded-xl border border-neutral-200 p-4 space-y-2 text-[10px] font-bold text-neutral-500 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                        <p><span className="font-black text-neutral-400 uppercase tracking-wider">Llegó:</span> <span className="text-neutral-900 font-black">{d.primer_login}</span>{d.extra_pre_min > 0 && <> · <span className="text-emerald-600 font-black">{fmtMin(d.extra_pre_min)} antes de su entrada</span></>}</p>
+                        <p><span className="font-black text-neutral-400 uppercase tracking-wider">Se fue:</span> <span className="text-neutral-900 font-black">{d.ultimo_login}</span>{d.extra_post_min > 0 && <> · <span className="text-emerald-600 font-black">{fmtMin(d.extra_post_min)} después de su salida</span></>}</p>
+                        <p><span className="font-black text-neutral-400 uppercase tracking-wider">Horario ese día:</span> <span className="text-neutral-900 font-black">{d.entrada_oficial} — {d.salida_oficial}</span></p>
+                        <p><span className="font-black text-neutral-400 uppercase tracking-wider">Total trabajado:</span> <span className="text-neutral-900 font-black">{fmtMin(d.trabajo_min)}</span> · <span className="text-emerald-600 font-black">Extra total: {fmtMin(totalExtra)}</span></p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -136,3 +136,92 @@ async fn estado_invalido_e_inexistente_rechazados() {
     assert!(set_estado_empleado_impl(&pool, 1, "volador".into()).await.is_err());
     assert!(set_estado_empleado_impl(&pool, 424242, "activo".into()).await.is_err());
 }
+
+// ── ASISTENCIA ────────────────────────────────────────────────────────────
+
+use yarvis_app_lib::backventanas::backempleado::empleaperfil::asistencia::registrar_asistencia;
+
+#[tokio::test]
+async fn primer_login_del_dia_se_conserva_ante_relogins() {
+    let pool = db().await;
+    let id = seed_empleado(&pool, "Pepito", "clave123").await;
+
+    // Primer login del día: crea el registro de entrada real.
+    registrar_asistencia(&pool, id).await.unwrap();
+    let fila = sqlx::query("SELECT primer_login, ultimo_login FROM asistencias WHERE empleado_id = ?")
+        .bind(id).fetch_one(&pool).await.unwrap();
+    let primer_login: String = Row::get(&fila, "primer_login");
+
+    // Segundo login el MISMO día: NO cambia la entrada, solo refresca último.
+    std::thread::sleep(std::time::Duration::from_millis(1100)); // asegurar timestamp distinto
+    registrar_asistencia(&pool, id).await.unwrap();
+
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM asistencias").fetch_one(&pool).await.unwrap();
+    assert_eq!(total, 1, "no debe duplicar renglones por día");
+
+    let fila = sqlx::query("SELECT primer_login, ultimo_login FROM asistencias WHERE empleado_id = ?")
+        .bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(Row::get::<String, _>(&fila, "primer_login"), primer_login,
+        "el primer login del día es inmutable");
+}
+
+#[tokio::test]
+async fn asistencias_de_dias_distintos_se_separan() {
+    let pool = db().await;
+    let id = seed_empleado(&pool, "Lupita", "clave456").await;
+
+    // Simular registro de ayer insertando directamente con fecha distinta.
+    sqlx::query("INSERT INTO asistencias (empleado_id, fecha, primer_login) VALUES (?, date('now','localtime','-1 day'), '2026-01-01 07:00:00')")
+        .bind(id).execute(&pool).await.unwrap();
+
+    // Login de hoy crea renglón aparte sin tocar el de ayer.
+    registrar_asistencia(&pool, id).await.unwrap();
+
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM asistencias WHERE empleado_id = ?")
+        .bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(total, 2);
+}
+
+// ── HISTORIAL DE HORAS EXTRA ──────────────────────────────────────────────
+
+use yarvis_app_lib::backventanas::backempleado::empleaperfil::asistencia::historial_horas_extra_impl;
+
+#[tokio::test]
+async fn historial_calcula_extras_pre_y_post_y_descarta_sin_extra() {
+    let pool = db().await;
+    let id = seed_empleado(&pool, "Pepito Extra", "clave123").await;
+
+    // Bloque de los LUNES (día chip 0): 08:00 — 16:00
+    sqlx::query("INSERT INTO empleado_horarios (empleado_id, dias, hora_inicio, hora_fin) VALUES (?, '0', '08:00', '16:00')")
+        .bind(id).execute(&pool).await.unwrap();
+
+    // 2026-01-05 es LUNES: llegó 90 min antes y se quedó 90 después.
+    sqlx::query(
+        "INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login)
+         VALUES (?, '2026-01-05', '2026-01-05 06:30', '2026-01-05 17:30')",
+    ).bind(id).execute(&pool).await.unwrap();
+
+    // Martes 2026-01-06 sin turno asignado → nunca cuenta.
+    sqlx::query(
+        "INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login)
+         VALUES (?, '2026-01-06', '2026-01-06 07:50', '2026-01-06 18:00')",
+    ).bind(id).execute(&pool).await.unwrap();
+
+    // Lunes 2026-01-12: llegó solo 10 min antes (< umbral 15) y salió puntual → SIN extras.
+    sqlx::query(
+        "INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login)
+         VALUES (?, '2026-01-12', '2026-01-12 07:50', '2026-01-12 16:00')",
+    ).bind(id).execute(&pool).await.unwrap();
+
+    let hist = historial_horas_extra_impl(&pool, id).await.unwrap();
+
+    assert_eq!(hist.len(), 1, "solo el lunes con extras reales aparece");
+    let d = &hist[0];
+    assert_eq!(d.fecha, "2026-01-05");
+    assert_eq!(d.dia_label, "Lunes");
+    assert_eq!(d.extra_pre_min, 90);   // 06:30 → 08:00
+    assert_eq!(d.extra_post_min, 90);  // 16:00 → 17:30
+    assert_eq!(d.trabajo_min, 660);    // 06:30 → 17:30
+    assert_eq!(d.entrada_oficial, "08:00");
+    assert_eq!(d.salida_oficial, "16:00");
+}

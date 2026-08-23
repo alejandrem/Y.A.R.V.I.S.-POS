@@ -291,6 +291,13 @@ pub async fn validar_login_empleado(
             .bind(id)
             .execute(&*state)
             .await;
+            // Asistencia: el PRIMER login del día queda como entrada real;
+            // los siguientes solo refrescan ultimo_login de la asistencia.
+            if let Err(e) =
+                crate::backventanas::backempleado::empleaperfil::asistencia::registrar_asistencia(&state, id).await
+            {
+                eprintln!("[ASISTENCIA] no se pudo registrar el login del empleado {id}: {e}");
+            }
             auth.login(id, Role::Employee, nombre.clone());
             return Ok(Some(nombre));
         }

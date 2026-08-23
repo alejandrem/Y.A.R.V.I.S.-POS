@@ -3,6 +3,7 @@
 // botones gorditos, minimalista blanco/negro con rojo/verde discretos y
 // morphicons animados. La lógica (estado, cargas, handlers) se conserva.
 import { useState, useEffect, useRef, type ReactNode } from "react";
+import { geometriaBarra, fmtHM, MiniBarraDia, type MiTurno, type DiaExtra } from "../../../components/turno";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon, type IconInput } from "morphicons/react";
 import ModalEmpleados from "./modalEmpleados";
@@ -19,6 +20,7 @@ import {
   ICONO_FLECHA,
   ICONO_CERRAR,
   ICONO_EDITAR,
+  ICONO_RELOJ,
   ICONO_CHECK,
   ICONO_ALERTA,
   BotonAnimado,
@@ -233,6 +235,16 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [ventasDetalle, setVentasDetalle] = useState<EmpleadoVentas | null>(null);
   const [cortes, setCortes] = useState<CorteEmpleado[]>([]);
+  const [asistenciaDetalle, setAsistenciaDetalle] = useState<MiTurno | null>(null);
+  const [extrasDetalle, setExtrasDetalle] = useState<DiaExtra[] | null>(null);
+  const [expandidasAdmin, setExpandidasAdmin] = useState<Set<string>>(new Set());
+  const [ahora, setAhora] = useState(() => new Date());
+
+  // Reloj vivo para la barra de asistencia del detalle.
+  useEffect(() => {
+    const t = window.setInterval(() => setAhora(new Date()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
   const [showModal, setShowModal] = useState(false);
   const [empleadoEditando, setEmpleadoEditando] = useState<EmpleadoProfile | null>(null);
   const [showModalMetas, setShowModalMetas] = useState(false);
@@ -283,7 +295,24 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
     } catch (error) {
       console.error("Error al cargar detalle:", error);
     }
+    // Asistencia de hoy (independiente: si falla no rompe el resto)
+    invoke<MiTurno>("get_asistencia_empleado", { empleadoId: id })
+      .then(setAsistenciaDetalle)
+      .catch(() => setAsistenciaDetalle(null));
+    invoke<DiaExtra[]>("get_horas_extra_empleado", { empleadoId: id })
+      .then(setExtrasDetalle)
+      .catch(() => setExtrasDetalle(null));
   };
+
+  const toggleExtraAdmin = (fecha: string) => {
+    setExpandidasAdmin((prev) => {
+      const next = new Set(prev);
+      if (next.has(fecha)) next.delete(fecha); else next.add(fecha);
+      return next;
+    });
+  };
+
+  const fmtMinExtra = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
 
   const selectedEmp = empleados.find((e) => e.id === selectedId) || null;
 
@@ -291,6 +320,9 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
     setSelectedId(null);
     setVentasDetalle(null);
     setCortes([]);
+    setAsistenciaDetalle(null);
+    setExtrasDetalle(null);
+    setExpandidasAdmin(new Set());
   };
 
   return (
@@ -443,7 +475,9 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
       </div>
 
       {/* DETALLE DE EMPLEADO */}
-      {selectedEmp && ventasDetalle && (
+      {selectedEmp && ventasDetalle && (() => {
+        const barraDetalle = geometriaBarra(asistenciaDetalle, ahora);
+        return (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-8">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
@@ -457,6 +491,109 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
               <MorphIcon icon={ICONO_CERRAR} size={14} strokeWidth={2.5} spring="snappy" />
               Cerrar
             </button>
+          </div>
+
+          {/* ASISTENCIA DE HOY — misma barra que ve el empleado */}
+          <div className="bg-white rounded-[2.5rem] border border-neutral-200 p-6 sm:p-8 shadow-sm">
+            <div className="flex items-center gap-3 mb-6 flex-wrap">
+              <div className="w-10 h-10 bg-neutral-950 rounded-2xl flex items-center justify-center shadow-md shrink-0">
+                <MorphIcon icon={ICONO_RELOJ} size={16} strokeWidth={2.2} spring="smooth" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-neutral-900 uppercase tracking-widest">Asistencia de hoy</h4>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">La misma barra que ve el empleado</p>
+              </div>
+              {barraDetalle?.enExtra && (
+                <span className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-600 animate-pulse">
+                  Extra: +{Math.floor(barraDetalle.extraMinutos / 60)}h {barraDetalle.extraMinutos % 60}m
+                </span>
+              )}
+              {barraDetalle?.llegoPuntual && (
+                <span className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 border border-sky-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-sky-600">
+                  Llegó temprano
+                </span>
+              )}
+            </div>
+
+            {!barraDetalle ? (
+              <div className="py-8 text-center bg-neutral-50 rounded-2xl border border-dashed border-neutral-200">
+                <p className="text-sm font-black uppercase tracking-widest text-neutral-400">Hoy no tiene turno asignado</p>
+                <p className="text-[10px] font-bold text-neutral-300 mt-1.5">Día de descanso o sin horario configurado</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="text-center shrink-0">
+                    <p className="text-2xl font-black text-neutral-900">{fmtHM(barraDetalle.inicio)}</p>
+                    <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mt-1">Entrada</p>
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="relative h-4 bg-neutral-100 rounded-full border border-neutral-200 overflow-visible">
+                      {barraDetalle.preExtraActivo && (
+                        <div
+                          className="absolute inset-y-0 bg-emerald-400 transition-all duration-700 ease-out"
+                          style={{ left: `${barraDetalle.loginPct}%`, width: `${Math.max(0, barraDetalle.preExtraPct)}%`, borderRadius: "999px 0 0 999px" }}
+                        />
+                      )}
+                      <div
+                        className="absolute inset-y-0 bg-neutral-900 rounded-full transition-all duration-700 ease-out"
+                        style={{ left: `${barraDetalle.inicioPct}%`, width: `${Math.max(0, barraDetalle.trabajoPct)}%` }}
+                      />
+                      {barraDetalle.enExtraPost && (
+                        <div
+                          className="absolute inset-y-0 bg-emerald-500 transition-all duration-700 ease-out"
+                          style={{ left: `${barraDetalle.finPct}%`, width: `${Math.max(0, barraDetalle.postExtraPct)}%`, borderRadius: "0 999px 999px 0" }}
+                        />
+                      )}
+                      {barraDetalle.loginPct !== null && (
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-neutral-900 rounded-full shadow-md z-10"
+                          style={{ left: `${barraDetalle.loginPct}%` }}
+                          title={`Primer login: ${asistenciaDetalle?.primer_login ?? ""}`}
+                        />
+                      )}
+                      {barraDetalle.preExtraActivo && (
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-neutral-900 rounded-full shadow-md z-10"
+                          style={{ left: `${barraDetalle.inicioPct}%` }}
+                          title="Entrada oficial"
+                        />
+                      )}
+                      {barraDetalle.enExtraPost && (
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-emerald-500 rounded-full shadow-md z-10"
+                          style={{ left: `${barraDetalle.finPct}%` }}
+                          title="Fin de horario — extra en curso"
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex justify-between mt-2">
+                      <span className="text-[8px] font-black text-neutral-300 uppercase">
+                        {asistenciaDetalle?.primer_login
+                          ? `Primer login ${asistenciaDetalle.primer_login}${
+                              barraDetalle.minutosTarde > 0
+                                ? ` · ${barraDetalle.minutosTarde} min tarde`
+                                : barraDetalle.llegoPuntual
+                                  ? " · puntual"
+                                  : ` · ${barraDetalle.minutosTemprano} min temprano (extra)`
+                            }`
+                          : "Sin registro de entrada hoy"}
+                      </span>
+                      <span className={`text-[8px] font-black uppercase ${barraDetalle.enExtra ? "text-emerald-500" : "text-neutral-300"}`}>
+                        {barraDetalle.enExtra ? `Progreso: ${Math.round(barraDetalle.trabajoPct)}% + extra` : `Progreso: ${Math.round(barraDetalle.trabajoPct)}%`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-center shrink-0">
+                    <p className={`text-2xl font-black ${barraDetalle.enExtra ? "text-emerald-600" : "text-neutral-900"}`}>{fmtHM(barraDetalle.fin)}</p>
+                    <p className={`text-[9px] font-black uppercase tracking-widest mt-1 ${barraDetalle.enExtra ? "text-emerald-500" : "text-neutral-400"}`}>Salida</p>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
@@ -591,8 +728,77 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
               </div>
             </div>
           </div>
+
+          {/* HORAS EXTRAS INDEFINIDAS — historial completo del empleado */}
+          {extrasDetalle && extrasDetalle.length > 0 && (
+            <div className="bg-white rounded-[2.5rem] border border-neutral-200 p-6 sm:p-8 shadow-sm">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-neutral-950 rounded-2xl flex items-center justify-center shadow-md shrink-0">
+                  <MorphIcon icon={ICONO_RELOJ} size={16} strokeWidth={2.2} spring="smooth" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-neutral-900 uppercase tracking-widest">Horas Extras Indefinidas</h4>
+                  <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">Cada día que trabajó fuera de su horario</p>
+                </div>
+                <span className="ml-auto px-3 py-1 bg-neutral-950 text-white text-[9px] font-black rounded-lg uppercase tracking-widest">
+                  {extrasDetalle.length} {extrasDetalle.length === 1 ? "DÍA" : "DÍAS"}
+                </span>
+              </div>
+
+              <div className={`space-y-2 pr-1 custom-scrollbar ${extrasDetalle.length > 8 ? "max-h-[420px] overflow-y-auto" : ""}`}>
+                {extrasDetalle.map((d) => {
+                  const totalExtra = d.extra_pre_min + d.extra_post_min;
+                  const abierta = expandidasAdmin.has(d.fecha);
+                  return (
+                    <div key={d.fecha} className={`rounded-2xl border transition-all ${abierta ? "border-neutral-300 bg-neutral-50/60" : "border-neutral-100 hover:border-neutral-200"}`}>
+                      <button
+                        onClick={() => toggleExtraAdmin(d.fecha)}
+                        className="w-full flex items-center gap-3 p-3.5 text-left"
+                      >
+                        <div className="shrink-0 w-24">
+                          <p className="text-[11px] font-black text-neutral-900 uppercase leading-none">{d.dia_label}</p>
+                          <p className="text-[9px] font-bold text-neutral-400 mt-1">{d.fecha.slice(5).split("-").reverse().join("/")}</p>
+                        </div>
+
+                        <div className="flex-1 flex items-center gap-3 min-w-0" title={`Entrada oficial ${d.entrada_oficial} · Salida ${d.salida_oficial}`}>
+                          <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-neutral-500">{d.primer_login}</span>
+                          <MiniBarraDia d={d} />
+                          <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-emerald-600">{d.ultimo_login}</span>
+                        </div>
+
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-600 rounded-lg text-[8px] font-black uppercase tracking-widest whitespace-nowrap shrink-0">
+                          +{fmtMinExtra(totalExtra)}
+                        </span>
+
+                        <MorphIcon
+                          icon={ICONO_RELOJ}
+                          size={13}
+                          strokeWidth={2.4}
+                          spring="snappy"
+                          reducedMotion="user"
+                          className={`shrink-0 text-neutral-300 transition-transform duration-200 ${abierta ? "rotate-180" : ""}`}
+                        />
+                      </button>
+
+                      {abierta && (
+                        <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="bg-white rounded-xl border border-neutral-200 p-4 text-[10px] font-bold text-neutral-500 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                            <p><span className="font-black text-neutral-400 uppercase tracking-wider">Llegó:</span> <span className="text-neutral-900 font-black">{d.primer_login}</span>{d.extra_pre_min > 0 && <> · <span className="text-emerald-600 font-black">{fmtMinExtra(d.extra_pre_min)} antes de su entrada</span></>}</p>
+                            <p><span className="font-black text-neutral-400 uppercase tracking-wider">Se fue:</span> <span className="text-neutral-900 font-black">{d.ultimo_login}</span>{d.extra_post_min > 0 && <> · <span className="text-emerald-600 font-black">{fmtMinExtra(d.extra_post_min)} después de su salida</span></>}</p>
+                            <p><span className="font-black text-neutral-400 uppercase tracking-wider">Horario ese día:</span> <span className="text-neutral-900 font-black">{d.entrada_oficial} — {d.salida_oficial}</span></p>
+                            <p><span className="font-black text-neutral-400 uppercase tracking-wider">Total trabajado:</span> <span className="text-neutral-900 font-black">{fmtMinExtra(d.trabajo_min)}</span> · <span className="text-emerald-600 font-black">Extra total: {fmtMinExtra(totalExtra)}</span></p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {showModal && (
         <ModalEmpleados onClose={() => setShowModal(false)} onSaved={loadData} />

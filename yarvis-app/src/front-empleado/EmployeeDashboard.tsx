@@ -4,7 +4,12 @@
 // turno y operador) + enrutado del contenido por pestaña activa.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
+import {
+  geometriaBarra, fmtHM, type MiTurno,
+} from "../components/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
 import { ticketsNav } from "./ventanas/empleaticket/ticket";
@@ -58,6 +63,16 @@ const EmployeeDashboard = ({
     yarvisNav,
     ajustesNav,
   ];
+
+  // Turno real (misma fuente que el perfil): asistencia de hoy + horarios.
+  const [turno, setTurno] = useState<MiTurno | null>(null);
+  const [ahora, setAhora] = useState(() => new Date());
+
+  useEffect(() => {
+    invoke<MiTurno>("get_mi_turno").then(setTurno).catch(() => {});
+    const t = window.setInterval(() => setAhora(new Date()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -143,18 +158,82 @@ const EmployeeDashboard = ({
             ))}
           </div>
 
-          {/* TURNO */}
-          <div className="flex-1 flex items-center gap-3 min-w-0">
-            <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.2} spring="smooth" className="text-neutral-300 shrink-0" />
-            <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest whitespace-nowrap">{shiftStart}</span>
-            <div className="flex-1 h-2.5 bg-neutral-100 rounded-full overflow-hidden">
-              <div
-                className="bg-neutral-950 h-full rounded-full transition-all duration-1000 ease-in-out"
-                style={{ width: `${shiftProgress}%` }}
-              />
-            </div>
-            <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest whitespace-nowrap">{shiftEnd}</span>
-          </div>
+          {/* TURNO — misma geometría que "Mi Turno", versión resumida */}
+          {(() => {
+            const barra = geometriaBarra(turno, ahora);
+            if (!barra) {
+              return (
+                <div className="flex-1 flex items-center gap-3 min-w-0">
+                  <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.2} spring="smooth" className="text-neutral-300 shrink-0" />
+                  <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest whitespace-nowrap">{shiftStart}</span>
+                  <div className="flex-1 h-2.5 bg-neutral-100 rounded-full overflow-hidden">
+                    <div className="bg-neutral-950 h-full rounded-full transition-all duration-1000 ease-in-out" style={{ width: `${shiftProgress}%` }} />
+                  </div>
+                  <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest whitespace-nowrap">{shiftEnd}</span>
+                </div>
+              );
+            }
+            return (
+              <div className="flex-1 flex items-center gap-3 min-w-0" title={`Entrada oficial ${fmtHM(barra.inicio)} · Salida ${fmtHM(barra.fin)}`}>
+                <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.2} spring="smooth" className={barra.enExtra ? "text-emerald-500 shrink-0" : "text-neutral-300 shrink-0"} />
+                {/* Hora de entrada real si llegó extra-temprano; si no, la oficial */}
+                <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-neutral-500">
+                  {turno?.primer_login ?? fmtHM(barra.inicio)}
+                </span>
+                <div className="relative flex-1 h-2.5 bg-neutral-100 rounded-full overflow-visible min-w-[80px]">
+                  {/* Extra tempranero (verde claro) */}
+                  {barra.preExtraActivo && (
+                    <div
+                      className="absolute inset-y-0 bg-emerald-400"
+                      style={{ left: `${barra.loginPct}%`, width: `${Math.max(0, barra.preExtraPct)}%`, borderRadius: "999px 0 0 999px" }}
+                    />
+                  )}
+                  {/* Trabajo normal (negro) */}
+                  <div
+                    className="absolute inset-y-0 bg-neutral-950 rounded-full transition-all duration-700 ease-out"
+                    style={{ left: `${barra.inicioPct}%`, width: `${Math.max(0, barra.trabajoPct)}%` }}
+                  />
+                  {/* Extra post-turno (verde) */}
+                  {barra.enExtraPost && (
+                    <div
+                      className="absolute inset-y-0 bg-emerald-500"
+                      style={{ left: `${barra.finPct}%`, width: `${Math.max(0, barra.postExtraPct)}%`, borderRadius: "0 999px 999px 0" }}
+                    />
+                  )}
+                  {/* Bolita: primer login */}
+                  {barra.loginPct !== null && (
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 bg-white border-2 border-neutral-900 rounded-full shadow-sm z-10"
+                      style={{ left: `${barra.loginPct}%` }}
+                      title={`Primer login: ${turno?.primer_login ?? ""}`}
+                    />
+                  )}
+                  {/* Bolita: frontera entrada oficial con extra tempranero */}
+                  {barra.preExtraActivo && (
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 bg-white border-2 border-neutral-900 rounded-full shadow-sm z-10"
+                      style={{ left: `${barra.inicioPct}%` }}
+                    />
+                  )}
+                  {/* Bolita: frontera salida con extra post */}
+                  {barra.enExtraPost && (
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 bg-white border-2 border-emerald-500 rounded-full shadow-sm z-10"
+                      style={{ left: `${barra.finPct}%` }}
+                    />
+                  )}
+                </div>
+                <span className={`text-[9px] font-black uppercase tracking-widest whitespace-nowrap ${barra.enExtra ? "text-emerald-600" : "text-neutral-400"}`}>
+                  {fmtHM(barra.fin)}
+                </span>
+                {barra.enExtra && (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-600 rounded-lg text-[8px] font-black uppercase tracking-widest whitespace-nowrap animate-pulse">
+                    +{Math.floor(barra.extraMinutos / 60)}h {barra.extraMinutos % 60}m
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* OPERADOR */}
           <div className="flex items-center gap-3 bg-neutral-50 rounded-2xl pl-2 pr-4 py-1.5 border border-neutral-100">
