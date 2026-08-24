@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 
-use super::items::round2;
+use super::items::{a_centavos, round2};
 use crate::cerebro::analizador_tickets::Item;
 use crate::cerebro::vinculador_inventario::normalizar;
 
@@ -63,19 +63,23 @@ pub(super) fn cargar_productos_por_nombre(conn: &Connection) -> HashMap<String, 
         .collect()
 }
 
-/// Precarga el set de claves `NOMBRE|precio` ya existentes en `productos`.
+/// Precarga el set de claves `NOMBRE|precio_en_centavos` ya existentes en
+/// `productos`. La clave usa el precio en CENTAVOS enteros (no `{:.2}` de un
+/// f64) para que sea estable: debe construirse igual que `dup_key` en
+/// `procesador.rs`, con [`a_centavos`] sobre el precio del item.
 pub(super) fn cargar_estado(db_path: &str) -> HashSet<String> {
     let mut vistos = HashSet::new();
     if let Ok(conn) = Connection::open(db_path) {
         if let Ok(mut stmt) = conn.prepare("SELECT nombre, precio_venta FROM productos") {
             if let Ok(rows) = stmt.query_map([], |row| {
                 let nombre: String = row.get(0)?;
-                let precio: f64 = row.get(1)?;
-                Ok((nombre, precio))
+                // Columna INTEGER en centavos desde la migración.
+                let precio_centavos: i64 = row.get(1)?;
+                Ok((nombre, precio_centavos))
             }) {
                 for row in rows.flatten() {
-                    let (nombre, precio) = row;
-                    vistos.insert(format!("{}|{:.2}", nombre.trim().to_uppercase(), precio));
+                    let (nombre, precio_centavos) = row;
+                    vistos.insert(format!("{}|{}", nombre.trim().to_uppercase(), precio_centavos));
                 }
             }
         }
@@ -116,6 +120,11 @@ fn ahora_iso_utc() -> String {
 /// cálculo) y el folio del ticket si se detectó. Requiere que el llamador
 /// haya corrido [`garantizar_columna_folio`] al abrir la conexión.
 ///
+/// Los parámetros monetarios llegan en PESOS f64 (dominio del parser) y se
+/// escriben en CENTAVOS enteros vía [`a_centavos`]: la DB migrada guarda
+/// `ventas.total/subtotal/iva` y `detalle_ventas.precio_unitario/descuento/
+/// subtotal` como INTEGER.
+///
 /// `productos_por_nombre` asigna `producto_id` al detalle cuando el nombre
 /// normalizado del item coincide **exactamente** con un único producto del
 /// catálogo. Si hay 0 o más de 1 coincidencia, el detalle queda con
@@ -137,9 +146,9 @@ pub(super) fn insertar_venta(
         "INSERT INTO ventas (total, subtotal, iva, cajero, metodo_pago, estado, fecha, folio_ticket)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
-            total,
-            subtotal,
-            iva,
+            a_centavos(total),
+            a_centavos(subtotal),
+            a_centavos(iva),
             cajero,
             metodo_pago,
             "completada",
@@ -164,9 +173,9 @@ pub(super) fn insertar_venta(
                 producto_id,
                 item.producto,
                 item.cantidad,
-                item.precio_unitario,
-                item.descuento.unwrap_or(0.0),
-                sub
+                a_centavos(item.precio_unitario),
+                a_centavos(item.descuento.unwrap_or(0.0)),
+                a_centavos(sub)
             ],
         )?;
 

@@ -11,39 +11,55 @@ fn calcular_hash_catalogo(contenido: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Verifica si un catálogo ya fue importado (por hash)
-async fn catalogo_ya_importado(pool: &SqlitePool, hash: &str) -> Result<bool, sqlx::Error> {
+/// Verifica si un catálogo ya fue importado (por hash).
+/// Acepta pool o transacción para poder participar de escrituras atómicas.
+async fn catalogo_ya_importado<'a, E>(
+    executor: E,
+    hash: &str,
+) -> Result<bool, sqlx::Error>
+where
+    E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+{
     let result =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM catalogos_importados WHERE hash = ?")
             .bind(hash)
-            .fetch_one(pool)
+            .fetch_one(executor)
             .await?;
     Ok(result > 0)
 }
 
-/// Registra un catálogo como importado
-async fn registrar_catalogo_importado(
-    pool: &SqlitePool,
+/// Registra un catálogo como importado (dentro de la transacción de importación).
+async fn registrar_catalogo_importado<'a, E>(
+    executor: E,
     hash: &str,
     ruta: &str,
     total_productos: i32,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), sqlx::Error>
+where
+    E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+{
     sqlx::query(
         "INSERT INTO catalogos_importados (hash, ruta_archivo, total_productos) VALUES (?, ?, ?)",
     )
     .bind(hash)
     .bind(ruta)
     .bind(total_productos)
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }
 
 /// Cuenta cuántos productos con el mismo nombre ya existen en la DB
-async fn contar_productos_por_nombre(pool: &SqlitePool, nombre: &str) -> Result<i64, sqlx::Error> {
+async fn contar_productos_por_nombre<'a, E>(
+    executor: E,
+    nombre: &str,
+) -> Result<i64, sqlx::Error>
+where
+    E: sqlx::Executor<'a, Database = sqlx::Sqlite>,
+{
     let result = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM productos WHERE nombre = ?")
         .bind(nombre)
-        .fetch_one(pool)
+        .fetch_one(executor)
         .await?;
     Ok(result)
 }
@@ -68,7 +84,7 @@ pub async fn get_inventory(
     auth: tauri::State<'_, AuthState>,
 ) -> Result<Vec<InventoryItem>, String> {
     auth.require_operator()?;
-    let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, f64, f64, f64, f64, f64, Option<String>, Option<String>)>(
+    let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
         "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos"
     )
     .fetch_all(&*state)
@@ -81,8 +97,8 @@ pub async fn get_inventory(
             id: row.0,
             nombre: row.1,
             descripcion: row.2,
-            precio_costo: row.3,
-            precio_venta: row.4,
+            precio_costo: crate::dinero::a_pesos(row.3),
+            precio_venta: crate::dinero::a_pesos(row.4),
             stock: row.5,
             stock_minimo: row.6,
             vendido: row.7,
@@ -100,8 +116,8 @@ pub async fn add_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem) ->
     let result = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .bind(&item.nombre)
         .bind(&item.descripcion)
-        .bind(item.precio_costo)
-        .bind(item.precio_venta)
+        .bind(crate::dinero::a_centavos(item.precio_costo))
+        .bind(crate::dinero::a_centavos(item.precio_venta))
         .bind(item.stock)
         .bind(item.stock_minimo)
         .bind(item.vendido)
@@ -131,8 +147,8 @@ pub async fn update_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem)
         sqlx::query("UPDATE productos SET nombre = ?, descripcion = ?, precio_costo = ?, precio_venta = ?, stock = ?, stock_minimo = ?, vendido = ?, codigo_barras = ?, categoria = ? WHERE id = ?")
             .bind(&item.nombre)
             .bind(&item.descripcion)
-            .bind(item.precio_costo)
-            .bind(item.precio_venta)
+            .bind(crate::dinero::a_centavos(item.precio_costo))
+            .bind(crate::dinero::a_centavos(item.precio_venta))
             .bind(item.stock)
             .bind(item.stock_minimo)
             .bind(item.vendido)
@@ -197,48 +213,57 @@ pub async fn importar_catalogo(
         }
     }
 
-    // 2. Importar productos con deduplicación (máximo 2 con mismo nombre)
+    // 2. Importar productos con deduplicación (máximo 2 con mismo nombre).
+    // TRANSACCIÓN todo-o-nada: si CUALQUIER INSERT falla, se revierte la
+    // importación completa. Antes los errores de INSERT se tragaban con
+    // `if let Ok(_r)` y podían quedar catálogos a medias sin aviso alguno.
+    let mut tx = state.begin().await.map_err(|e| e.to_string())?;
+
     let mut count = 0;
     let mut omitidos = 0;
 
     for item in items {
         // Verificar cuántos productos con este nombre ya existen
-        let existentes = contar_productos_por_nombre(&*state, &item.nombre)
+        let existentes = contar_productos_por_nombre(&mut *tx, &item.nombre)
             .await
             .map_err(|e| e.to_string())?;
 
         if existentes >= 2 {
-            // Ya hay 2 o más productos con este nombre → omitir
+            // Ya hay 2 o más productos con este nombre → omitir (regla de
+            // negocio consciente, se reporta en el mensaje final)
             omitidos += 1;
             continue;
         }
 
-        // Insertar producto
-        let result = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        // Insertar producto — un fallo aquí aborta y revierte TODO
+        sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(&item.nombre)
             .bind(&item.descripcion)
-            .bind(item.precio_costo)
-            .bind(item.precio_venta)
+            .bind(crate::dinero::a_centavos(item.precio_costo))
+            .bind(crate::dinero::a_centavos(item.precio_venta))
             .bind(item.stock)
             .bind(item.stock_minimo)
             .bind(&item.codigo_barras)
             .bind(&item.categoria)
-            .execute(&*state)
-            .await;
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Error insertando '{}': {}", item.nombre, e))?;
 
-        if let Ok(_r) = result {
-            count += 1;
-        }
+        count += 1;
     }
 
-    // 3. Registrar el catálogo como importado
+    // 3. Registrar el catálogo como importado DENTRO de la misma transacción:
+    // si el registro del hash fallara, los productos ya insertados también
+    // se revierten (evita re-importaciones duplicadas ante un fallo a medias).
     if let Some(ref contenido) = contenido_archivo {
         let hash = calcular_hash_catalogo(contenido);
         let ruta = ruta_archivo.unwrap_or_default();
-        if let Err(e) = registrar_catalogo_importado(&*state, &hash, &ruta, count).await {
-            println!("[YARVIS-INVENTORY] Error registrando catálogo: {}", e);
-        }
+        registrar_catalogo_importado(&mut *tx, &hash, &ruta, count)
+            .await
+            .map_err(|e| e.to_string())?;
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     // 4. Retornar resultado con estadísticas
     let mensaje = if omitidos > 0 {
@@ -323,7 +348,7 @@ pub async fn get_productos_por_catalogo(
 ) -> Result<Vec<InventoryItem>, String> {
     auth.require_admin()?;
     // Por ahora retornamos todos los productos recientes
-    let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, f64, f64, f64, f64, f64, Option<String>, Option<String>)>(
+    let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
         "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos ORDER BY creado_en DESC LIMIT 100"
     )
     .fetch_all(&*state)
@@ -336,8 +361,8 @@ pub async fn get_productos_por_catalogo(
             id: row.0,
             nombre: row.1,
             descripcion: row.2,
-            precio_costo: row.3,
-            precio_venta: row.4,
+            precio_costo: crate::dinero::a_pesos(row.3),
+            precio_venta: crate::dinero::a_pesos(row.4),
             stock: row.5,
             stock_minimo: row.6,
             vendido: row.7,

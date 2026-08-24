@@ -42,9 +42,9 @@ async fn alta_calcula_salario_semanal_y_guarda_bloques() {
     )
     .fetch_one(&pool).await.unwrap();
     assert_eq!(fila.get::<String,_>("rol"), "empleado");
-    assert_eq!(fila.get::<f64,_>("salario_semanal"), 2000.0);
+    assert_eq!(fila.get::<i64,_>("salario_semanal"), 200_000);
     assert_eq!(fila.get::<i32,_>("dias_semana"), 2);
-    assert_eq!(fila.get::<f64,_>("salario_diario"), 1000.0);
+    assert_eq!(fila.get::<i64,_>("salario_diario"), 100_000);
 
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM empleado_horarios").fetch_one(&pool).await.unwrap();
     assert_eq!(n, 1);

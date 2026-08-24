@@ -64,7 +64,10 @@ pub fn predecir_desde_conn(
     let filas: Vec<(NaiveDate, f64)> = stmt
         .query_map([], |row| {
             let dia: String = row.get("dia")?;
-            let total: f64 = row.get("total")?;
+            // `total` es INTEGER en CENTAVOS desde la migración f64→centavos.
+            // La serie (y por tanto el pronóstico) sigue en PESOS: ÷100 aquí,
+            // porque el backend consume estos números tal cual.
+            let total_centavos: f64 = row.get("total")?;
             let fecha = NaiveDate::parse_from_str(&dia, "%Y-%m-%d").map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
                     0,
@@ -72,7 +75,7 @@ pub fn predecir_desde_conn(
                     Box::new(e),
                 )
             })?;
-            Ok((fecha, total))
+            Ok((fecha, total_centavos / 100.0))
         })
         .map_err(|e| format!("No se pudieron leer las ventas: {e}"))?
         .collect::<Result<Vec<_>, _>>()
@@ -131,15 +134,18 @@ mod tests {
             r#"CREATE TABLE ventas (
                 id INTEGER PRIMARY KEY,
                 fecha TEXT NOT NULL,
-                total REAL NOT NULL,
+                total INTEGER NOT NULL,
                 estado TEXT NOT NULL DEFAULT 'completada'
             );"#,
         )
         .unwrap();
-        for (fecha, total) in dias {
+        for (fecha, total_pesos) in dias {
+            // La API del helper recibe PESOS (dominio de la serie) y escribe
+            // CENTAVOS (dominio de la DB), como la app migrada.
+            let centavos = (*total_pesos * 100.0).round() as i64;
             conn.execute(
                 "INSERT INTO ventas (fecha, total, estado) VALUES (?1, ?2, 'completada')",
-                rusqlite::params![fecha, total],
+                rusqlite::params![fecha, centavos],
             )
             .unwrap();
         }
@@ -166,7 +172,8 @@ mod tests {
                 "SELECT date(fecha), SUM(total) FROM ventas WHERE estado = 'completada' GROUP BY date(fecha) ORDER BY date(fecha)",
             )
             .unwrap();
-        let resumen: Vec<(String, f64)> = stmt
+        // La DB guarda centavos: 100+250 → 35000, 400 → 40000, 500 → 50000.
+        let resumen: Vec<(String, i64)> = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .collect::<Result<_, _>>()
@@ -174,9 +181,9 @@ mod tests {
         assert_eq!(
             resumen,
             vec![
-                ("2026-07-01".to_string(), 350.0),
-                ("2026-07-02".to_string(), 400.0),
-                ("2026-07-04".to_string(), 500.0),
+                ("2026-07-01".to_string(), 35_000),
+                ("2026-07-02".to_string(), 40_000),
+                ("2026-07-04".to_string(), 50_000),
             ]
         );
 
@@ -248,7 +255,7 @@ mod tests {
             r#"CREATE TABLE ventas (
                 id INTEGER PRIMARY KEY,
                 fecha TEXT NOT NULL,
-                total REAL NOT NULL,
+                total INTEGER NOT NULL,
                 estado TEXT NOT NULL DEFAULT 'completada'
             );"#,
         )

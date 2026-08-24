@@ -1,15 +1,15 @@
 use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
 use crate::backventanas::db::db::DbPath;
+use crate::dinero::a_pesos;
 use chrono::Duration;
 use sqlx::Row;
 use sqlx::SqlitePool;
 use std::path::PathBuf;
 
-fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
-    row.try_get::<f64, _>(col)
-        .or_else(|_| row.try_get::<i64, _>(col).map(|v| v as f64))
-        .unwrap_or(0.0)
+/// Lee una columna monetaria (INTEGER en centavos) y la devuelve en pesos.
+fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+    row.try_get::<i64, _>(col).map(a_pesos).unwrap_or(0.0)
 }
 
 #[tauri::command]
@@ -51,8 +51,8 @@ pub async fn get_datos_grafica_pl(
 
     let mut datos: Vec<DatoGraficaPL> = Vec::new();
     for row in rows {
-        let ingresos = decode_f64(&row, "ingresos");
-        let gastos = decode_f64(&row, "gastos");
+        let ingresos = decode_dinero(&row, "ingresos");
+        let gastos = decode_dinero(&row, "gastos");
         datos.push(DatoGraficaPL {
             fecha: row.get("periodo"),
             ingresos,
@@ -86,12 +86,12 @@ pub async fn get_gastos_por_categoria(
     .await
     .map_err(|e| e.to_string())?;
 
-    let total_general: f64 = rows.iter().map(|r| decode_f64(r, "total")).sum();
+    let total_general: f64 = rows.iter().map(|r| decode_dinero(r, "total")).sum();
 
     Ok(rows
         .into_iter()
         .map(|row| {
-            let monto = decode_f64(&row, "total");
+            let monto = decode_dinero(&row, "total");
             DatoGraficaGastosCategoria {
                 categoria: row.get("categoria"),
                 monto,
@@ -137,8 +137,8 @@ pub async fn get_tendencia_cortes_z(
         .map(|row| DatoGraficaCortesZ {
             fecha: row.get("fecha"),
             turno: row.try_get("turno").unwrap_or_default(),
-            total_ventas: decode_f64(&row, "total_ventas"),
-            diferencia: decode_f64(&row, "diferencia"),
+            total_ventas: decode_dinero(&row, "total_ventas"),
+            diferencia: decode_dinero(&row, "diferencia"),
             cajero: row.get("cajero"),
         })
         .collect())
@@ -184,9 +184,9 @@ pub async fn get_ventas_vs_gastos_mensual(
         .into_iter()
         .map(|row| DatoGraficaPL {
             fecha: row.get("mes"),
-            ingresos: decode_f64(&row, "ingresos"),
-            gastos: decode_f64(&row, "gastos"),
-            utilidad_neta: decode_f64(&row, "ingresos") - decode_f64(&row, "gastos"),
+            ingresos: decode_dinero(&row, "ingresos"),
+            gastos: decode_dinero(&row, "gastos"),
+            utilidad_neta: decode_dinero(&row, "ingresos") - decode_dinero(&row, "gastos"),
         })
         .collect())
 }

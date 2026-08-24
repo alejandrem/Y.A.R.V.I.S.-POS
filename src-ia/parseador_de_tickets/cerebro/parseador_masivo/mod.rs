@@ -60,23 +60,24 @@ mod tests {
         let path = dir.join("test.db");
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(
+            // Espejo del esquema migrado: dinero en INTEGER CENTAVOS.
             "CREATE TABLE productos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
-                precio_venta REAL DEFAULT 0,
+                precio_venta INTEGER DEFAULT 0,
                 stock REAL DEFAULT 0,
                 vendido REAL DEFAULT 0
              );
              CREATE TABLE ventas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                total REAL, subtotal REAL, iva REAL,
+                total INTEGER, subtotal INTEGER, iva INTEGER,
                 cajero TEXT, metodo_pago TEXT, estado TEXT, fecha TEXT
              );
              CREATE TABLE detalle_ventas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                venta_id INTEGER, producto_nombre TEXT,
-                cantidad REAL, precio_unitario REAL,
-                descuento REAL, subtotal REAL
+                venta_id INTEGER, producto_id INTEGER, producto_nombre TEXT,
+                cantidad REAL, precio_unitario INTEGER,
+                descuento INTEGER, subtotal INTEGER
              );",
         )
         .unwrap();
@@ -90,14 +91,16 @@ mod tests {
         p.to_string_lossy().to_string()
     }
 
-    /// Siembra un producto del catálogo con su precio EXACTO: `insertar_venta`
-    /// (regla C) matchea `detalle_ventas`/stock por `nombre + precio_venta`.
+    /// Siembra un producto del catálogo con su precio EXACTO (en PESOS; se
+    /// escribe en CENTAVOS como la DB migrada): `insertar_venta` matchea
+    /// `detalle_ventas`/stock por `nombre + precio_venta` vía la clave de
+    /// dedupe en centavos.
     fn sembrar_producto(db: &str, nombre: &str, precio: f64, stock: f64) {
         let conn = Connection::open(db).unwrap();
         conn.execute(
             "INSERT INTO productos (nombre, precio_venta, stock, vendido)
              VALUES (?1, ?2, ?3, 0)",
-            params![nombre, precio, stock],
+            params![nombre, (precio * 100.0).round() as i64, stock],
         )
         .unwrap();
         drop(conn);
@@ -202,7 +205,8 @@ Forma de pago: EFECTIVO
         assert_eq!(stats.ventas_creadas, 2);
 
         let conn = Connection::open(&db).unwrap();
-        let ventas: Vec<(String, String, f64)> = conn
+        // La DB guarda CENTAVOS: $104.80 → 10480, $20.00 → 2000.
+        let ventas: Vec<(String, String, i64)> = conn
             .prepare("SELECT folio_ticket, fecha, total FROM ventas ORDER BY id")
             .unwrap()
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
@@ -213,10 +217,10 @@ Forma de pago: EFECTIVO
         assert_eq!(ventas.len(), 2);
         assert_eq!(ventas[0].0, "TCK-000001");
         assert_eq!(ventas[0].1, "2024-07-14 14:28:00");
-        assert_eq!(ventas[0].2, 104.8);
+        assert_eq!(ventas[0].2, 10_480);
         assert_eq!(ventas[1].0, "TCK-000002");
         assert_eq!(ventas[1].1, "2024-07-15 10:00:00");
-        assert_eq!(ventas[1].2, 20.0);
+        assert_eq!(ventas[1].2, 2_000);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -1,5 +1,6 @@
 use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminconfig::auth::{verify_password, hash_password, BloqueHorario};
+use crate::dinero::a_centavos;
 use sqlx::SqlitePool;#[tauri::command]
 pub async fn editar_empleado(
     state: tauri::State<'_, SqlitePool>,
@@ -61,8 +62,13 @@ pub async fn editar_empleado_impl(
         _ => None,
     };
 
-    let semanal = salario_semanal.unwrap_or(0.0).max(0.0);
-    let diario = if total_dias > 0 { semanal / total_dias as f64 } else { 0.0 };
+    let semanal_c = a_centavos(salario_semanal.unwrap_or(0.0).max(0.0));
+    // División entera redondeada: salario diario derivado en centavos.
+    let diario_c = if total_dias > 0 {
+        (semanal_c as f64 / total_dias as f64).round() as i64
+    } else {
+        0
+    };
     let inicio = bloques.first().map(|b| b.hora_inicio.clone()).unwrap_or_else(|| "00:00".into());
     let fin = bloques.first().map(|b| b.hora_fin.clone()).unwrap_or_else(|| "00:00".into());
 
@@ -71,8 +77,8 @@ pub async fn editar_empleado_impl(
          horario_inicio = ?, horario_fin = ? WHERE id = ? AND rol = 'empleado'",
     )
     .bind(&nombre)
-    .bind(semanal)
-    .bind(diario)
+    .bind(semanal_c)
+    .bind(diario_c)
     .bind(total_dias)
     .bind(&inicio)
     .bind(&fin)

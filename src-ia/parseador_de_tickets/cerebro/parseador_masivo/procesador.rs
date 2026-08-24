@@ -4,7 +4,7 @@ use std::sync::mpsc::Sender;
 
 use super::almacen::{cargar_estado, cargar_productos_por_nombre, garantizar_columna_folio, insertar_venta};
 use super::archivos::{leer_archivo_tolerante, nombre_de_archivo};
-use super::items::resolver_totales_venta;
+use super::items::{a_centavos, resolver_totales_venta};
 use super::resumen::{
     ArchivoResultado, EstadisticasCarpeta, ProductoNuevo, ResumenVenta, TicketFallido,
 };
@@ -118,7 +118,10 @@ pub fn procesar_archivos(
                     continue;
                 };
 
-                let dup_key = format!("{}|{:.2}", item.producto, item.precio_unitario);
+                // Clave estable en CENTAVOS enteros (mismo formato que
+                // `cargar_estado` en almacen.rs); el f64 `{:.2}` viejo podía
+                // divergir por ruido de redondeo.
+                let dup_key = format!("{}|{}", item.producto, a_centavos(item.precio_unitario));
                 if seen.contains(&dup_key) {
                     duplicados += 1;
                     continue;

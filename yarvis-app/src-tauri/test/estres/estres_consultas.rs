@@ -33,8 +33,9 @@ async fn diez_mil_ventas_agregadas_rapidas() {
             if i > 0 {
                 q.push(',');
             }
+            // Montos en CENTAVOS: $100.00 → 10000
             q.push_str(&format!(
-                "(100.0, 100.0, 'efectivo', 'Cajero{}', {}, 'completada')",
+                "(10000, 10000, 'efectivo', 'Cajero{}', {}, 'completada')",
                 idx % 5,
                 cajeros[idx % 5]
             ));
@@ -43,11 +44,12 @@ async fn diez_mil_ventas_agregadas_rapidas() {
     }
     println!("[estres] seed 10k ventas en {} ms", t_seed.elapsed().as_millis());
 
-    // Detalles: 3 por venta vía INSERT...SELECT
+    // Detalles: 1 renglón por venta (cantidad 3.0, subtotal $99.99 → 9999c)
+    // vía INSERT...SELECT
     let t0 = std::time::Instant::now();
     sqlx::query(
         "INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal)
-         SELECT id, NULL, 'Item', 3.0, 33.33, 99.99 FROM ventas",
+         SELECT id, NULL, 'Item', 3.0, 3333, 9999 FROM ventas",
     )
     .execute(&pool)
     .await
@@ -57,11 +59,11 @@ async fn diez_mil_ventas_agregadas_rapidas() {
     // Query típica 1: resumen por rango de fechas
     let t1 = std::time::Instant::now();
     let fila = sqlx::query(
-        "SELECT COUNT(*) AS n, COALESCE(SUM(total),0)*1.0 AS total FROM ventas WHERE estado = 'completada'",
+        "SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS total_centavos FROM ventas WHERE estado = 'completada'",
     ).fetch_one(&pool).await.unwrap();
     let ms1 = t1.elapsed().as_millis();
     assert_eq!(fila.get::<i64,_>("n"), 10_000);
-    assert_eq!(fila.get::<f64,_>("total"), 1_000_000.0);
+    assert_eq!(fila.get::<i64,_>("total_centavos"), 100_000_000);
 
     // Query típica 2: agrupado por cajero_id (usa el índice nuevo)
     let t2 = std::time::Instant::now();
@@ -73,7 +75,7 @@ async fn diez_mil_ventas_agregadas_rapidas() {
 
     // Query típica 3: join ventas-detalles con agregación
     let t3 = std::time::Instant::now();
-    let total_items: f64 = sqlx::query_scalar(
+    let total_items: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(subtotal),0) FROM detalle_ventas",
     ).fetch_one(&pool).await.unwrap();
     let ms3 = t3.elapsed().as_millis();
@@ -83,7 +85,7 @@ async fn diez_mil_ventas_agregadas_rapidas() {
         ms1, ms2, ms3
     );
 
-    assert_eq!(total_items, 999_900.0);
+    assert_eq!(total_items, 99_990_000);
     // Umbrales holgados para CI; si se disparan hay un escaneo O(n²) escondido
     assert!(ms1 < 2000, "resumen tardó {}ms", ms1);
     assert!(ms2 < 2000, "group_by tardó {}ms", ms2);

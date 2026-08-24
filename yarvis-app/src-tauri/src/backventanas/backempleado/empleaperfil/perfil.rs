@@ -1,4 +1,5 @@
 use crate::backventanas::auth::{AuthState, Role};
+use crate::dinero::a_pesos;
 use serde::Serialize;
 use sqlx::Row;
 use sqlx::SqlitePool;
@@ -44,6 +45,11 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// Columna monetaria INTEGER en centavos → pesos para structs IPC.
+fn decode_cents(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+    a_pesos(row.try_get::<i64, _>(col).unwrap_or(0))
+}
+
 #[tauri::command]
 pub async fn get_employee_profile(
     state: tauri::State<'_, SqlitePool>,
@@ -78,7 +84,7 @@ pub async fn get_employee_profile(
         None => return Err("Empleado no encontrado".into()),
     };
 
-    let salario_diario = decode_f64(&r, "salario_diario");
+    let salario_diario = decode_cents(&r, "salario_diario");
     let dias_semana: i32 = r.get("dias_semana");
     let horario_inicio: String = r.get("horario_inicio");
     let horario_fin: String = r.get("horario_fin");
@@ -104,8 +110,8 @@ pub async fn get_employee_profile(
         salario_hora,
         horas_por_dia,
         dias_semana,
-        meta_mensual: decode_f64(&r, "meta_mensual"),
-        bono: decode_f64(&r, "bono"),
+        meta_mensual: decode_cents(&r, "meta_mensual"),
+        bono: decode_cents(&r, "bono"),
         ultimo_login: r.try_get("ultimo_login").ok(),
         estado: r.get("estado"),
     };
@@ -124,7 +130,7 @@ pub async fn get_employee_profile(
         .map(|gr| EmployeeGoalSummary {
             goal_type: gr.get("goal_type"),
             goal_name: gr.try_get("goal_name").ok(),
-            bonus_amount: decode_f64(&gr, "bonus_amount"),
+            bonus_amount: decode_cents(&gr, "bonus_amount"),
             bonus_percentage: decode_f64(&gr, "bonus_percentage"),
             ventas_threshold: gr.get("ventas_threshold"),
             is_completed: gr.get::<i32, _>("is_completed") != 0,

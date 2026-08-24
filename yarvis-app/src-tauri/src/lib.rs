@@ -4,6 +4,7 @@
 // ============================================================
 
 pub mod backventanas;
+pub mod dinero;
 pub mod models;
 
 use tauri::Manager;

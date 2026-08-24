@@ -49,7 +49,11 @@ pub fn cargar_inventario(db_path: &str) -> Vec<ProductoInventario> {
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             let nombre: String = row.get(1)?;
-            let precio_venta: f64 = row.get(2)?;
+            // La DB guarda centavos enteros desde la migración f64→centavos;
+            // aquí se expone en PESOS porque los precios de los items del
+            // ticket (y el resto del vinculador) viven en pesos.
+            let precio_centavos: f64 = row.get(2)?;
+            let precio_venta = precio_centavos / 100.0;
             Ok((id, nombre, precio_venta))
         });
         if let Ok(rows) = rows {

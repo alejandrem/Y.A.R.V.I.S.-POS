@@ -111,6 +111,64 @@ async fn metodo_pago_mixto_detectado() {
 }
 
 #[tokio::test]
+async fn stock_insuficiente_rechazado_sin_stock_negativo() {
+    let pool = db().await;
+    // Quedan 2 unidades; se intenta vender 5.
+    let p = seed_producto(&pool, "Último refresco", 2.0, 18.0).await;
+    let v = venta(
+        vec![CartItemRequest { id: Some(p as i32), nombre: "Último refresco".into(), precio_venta: 18.0, cantidad: 5.0 }],
+        90.0,
+        90.0,
+    );
+
+    let r = completar_venta_impl(&pool, &v, "Peter".into(), 1).await;
+    assert!(r.is_err(), "vender más que el stock debe fallar");
+
+    // ATOMICIDAD: nada quedó escrito — ni venta, ni items, ni stock negativo.
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await, 0);
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM detalle_ventas").await, 0);
+    let fila = sqlx::query("SELECT stock, vendido FROM productos WHERE id = ?")
+        .bind(p).fetch_one(&pool).await.unwrap();
+    let stock: f64 = Row::get(&fila, "stock");
+    let vendido: f64 = Row::get(&fila, "vendido");
+    assert_eq!(stock, 2.0, "el stock NO debe quedar negativo");
+    assert_eq!(vendido, 0.0);
+}
+
+#[tokio::test]
+async fn venta_multi_item_aborta_completa_si_un_item_no_alcanza() {
+    let pool = db().await;
+    let p_ok = seed_producto(&pool, "Alcanza", 10.0, 20.0).await;
+    let p_no = seed_producto(&pool, "No alcanza", 1.0, 30.0).await;
+
+    // El primer item SÍ tiene stock; el segundo NO. La venta entera debe
+    // revertirse incluyendo el descuento del primero.
+    let v = VentaRequest {
+        items: vec![
+            CartItemRequest { id: Some(p_ok as i32), nombre: "Alcanza".into(), precio_venta: 20.0, cantidad: 3.0 },
+            CartItemRequest { id: Some(p_no as i32), nombre: "No alcanza".into(), precio_venta: 30.0, cantidad: 2.0 },
+        ],
+        total: 120.0,
+        subtotal: 120.0,
+        descuento: 0.0,
+        monto_efectivo: 120.0,
+        monto_tarjeta: 0.0,
+        monto_transferencia: 0.0,
+        cliente_id: None,
+    };
+
+    let r = completar_venta_impl(&pool, &v, "Peter".into(), 1).await;
+    assert!(r.is_err());
+
+    let stock_ok: f64 = sqlx::query_scalar("SELECT stock FROM productos WHERE id = ?")
+        .bind(p_ok).fetch_one(&pool).await.unwrap();
+    let stock_no: f64 = sqlx::query_scalar("SELECT stock FROM productos WHERE id = ?")
+        .bind(p_no).fetch_one(&pool).await.unwrap();
+    assert_eq!(stock_ok, 10.0, "el rollback debe restaurar también los items que sí alcanzaban");
+    assert_eq!(stock_no, 1.0);
+}
+
+#[tokio::test]
 async fn fallo_a_mitad_de_venta_revierte_todo_transaccion() {
     let pool = db().await;
     let p_real = seed_producto(&pool, "Producto bueno", 10.0, 18.0).await;

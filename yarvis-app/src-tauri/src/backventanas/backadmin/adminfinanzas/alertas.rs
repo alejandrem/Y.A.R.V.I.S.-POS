@@ -8,9 +8,12 @@ use chrono::{Datelike, Duration};
 use sqlx::Row;
 use sqlx::SqlitePool;
 
-fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
-    row.try_get::<f64, _>(col)
-        .or_else(|_| row.try_get::<i64, _>(col).map(|v| v as f64))
+/// Lee una columna monetaria (INTEGER en centavos) y la devuelve en pesos.
+/// Nota: el ratio ABS(diferencia)/total_ventas del WHERE es insensible a
+/// la escala (ambos lados quedan en centavos), por eso no se toca.
+fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+    row.try_get::<i64, _>(col)
+        .map(crate::dinero::a_pesos)
         .unwrap_or(0.0)
 }
 
@@ -109,7 +112,7 @@ pub async fn generar_alertas_automaticas_impl(
     for gasto in gastos_por_vencer {
         let gasto_id: i64 = gasto.get("id");
         let nombre: String = gasto.get("nombre");
-        let monto_proyectado: f64 = decode_f64(&gasto, "monto_proyectado");
+        let monto_proyectado: f64 = decode_dinero(&gasto, "monto_proyectado");
         let fecha_inicio: String = gasto.get("fecha_inicio");
         let frecuencia: String = gasto.get("frecuencia");
         let dia_pago: Option<i32> = gasto.try_get("dia_pago").ok();
@@ -249,8 +252,8 @@ pub async fn generar_alertas_automaticas_impl(
     for corte in diferencias_altas {
         let corte_id: i64 = corte.get("id");
         let cajero: String = corte.get("nombre");
-        let total_ventas: f64 = decode_f64(&corte, "total_ventas");
-        let diferencia: f64 = decode_f64(&corte, "diferencia");
+        let total_ventas: f64 = decode_dinero(&corte, "total_ventas");
+        let diferencia: f64 = decode_dinero(&corte, "diferencia");
         let fecha_cierre: String = corte.get("fecha_cierre");
         let pct = (diferencia.abs() / total_ventas) * 100.0;
 

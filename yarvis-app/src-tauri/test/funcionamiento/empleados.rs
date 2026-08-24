@@ -44,9 +44,9 @@ async fn edicion_recalcula_salarios_y_espeja_primer_bloque() {
     let fila = sqlx::query("SELECT nombre, salario_semanal, salario_diario, dias_semana, horario_inicio FROM usuarios WHERE id = ?")
         .bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(fila.get::<String,_>("nombre"), "Peter Parker");
-    assert_eq!(fila.get::<f64,_>("salario_semanal"), 1500.0);
+    assert_eq!(fila.get::<i64,_>("salario_semanal"), 150_000);
     // 5 días laborables → 1500/5 = 300
-    assert_eq!(fila.get::<f64,_>("salario_diario"), 300.0);
+    assert_eq!(fila.get::<i64,_>("salario_diario"), 30_000);
     assert_eq!(fila.get::<i32,_>("dias_semana"), 5);
     // Columnas legacy espejan el primer bloque
     assert_eq!(fila.get::<String,_>("horario_inicio"), "08:00");

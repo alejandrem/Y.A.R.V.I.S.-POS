@@ -9,6 +9,7 @@
 //     empleado_horarios del día de hoy (convención L=0..D=6).
 // ============================================================
 use crate::backventanas::auth::AuthState;
+use crate::dinero::a_pesos;
 use chrono::Datelike;
 use sqlx::Row;
 use sqlx::SqlitePool;
@@ -114,7 +115,8 @@ pub async fn mi_turno_impl(pool: &SqlitePool, empleado_id: i64) -> Result<MiTurn
     .await
     .map_err(|e| e.to_string())?;
 
-    let perfil = sqlx::query_as::<_, (f64, i32)>(
+    // salario_diario vive en centavos (INTEGER); se decodifica y convierte.
+    let perfil = sqlx::query_as::<_, (i64, i32)>(
         "SELECT salario_diario, dias_semana FROM usuarios WHERE id = ?",
     )
     .bind(empleado_id)
@@ -122,7 +124,7 @@ pub async fn mi_turno_impl(pool: &SqlitePool, empleado_id: i64) -> Result<MiTurn
     .await
     .map_err(|e| e.to_string())?;
 
-    let _salario_diario: f64 = perfil.0;
+    let _salario_diario: f64 = a_pesos(perfil.0);
     // Horas/día derivadas de los bloques de HOY (más preciso que el promedio).
     let horas_dia = bloques_hoy
         .iter()

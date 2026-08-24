@@ -51,7 +51,7 @@ mod tests {
             "CREATE TABLE productos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
-                precio_venta REAL DEFAULT 0
+                precio_venta INTEGER DEFAULT 0
              );
              CREATE TABLE knowledge_base (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +129,7 @@ mod tests {
         let db = crear_bd(&dir);
         let conn = Connection::open(&db).unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 60.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 6000)",
             [],
         )
         .unwrap();
@@ -156,7 +156,7 @@ mod tests {
         let db = crear_bd(&dir);
         let conn = Connection::open(&db).unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('Coca-Cola Classic', 25.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('Coca-Cola Classic', 2500)",
             [],
         )
         .unwrap();
@@ -178,17 +178,17 @@ mod tests {
         let db = crear_bd(&dir);
         let conn = Connection::open(&db).unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 60.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 6000)",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('Coca-Cola Classic', 25.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('Coca-Cola Classic', 2500)",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 30.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 3000)",
             [],
         )
         .unwrap();
@@ -223,7 +223,7 @@ mod tests {
         let db = crear_bd(&dir);
         let conn = Connection::open(&db).unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 60.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS', 6000)",
             [],
         )
         .unwrap();
@@ -245,7 +245,7 @@ mod tests {
         let db = crear_bd(&dir);
         let conn = Connection::open(&db).unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS ROJAS', 60.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS ROJAS', 6000)",
             [],
         )
         .unwrap();
@@ -281,7 +281,7 @@ mod tests {
         let db = crear_bd(&dir);
         let conn = Connection::open(&db).unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS ROJAS', 60.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS ROJAS', 6000)",
             [],
         )
         .unwrap();
@@ -313,7 +313,7 @@ mod tests {
         let db = crear_bd(&dir);
         let conn = Connection::open(&db).unwrap();
         conn.execute(
-            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS ROJAS', 60.0)",
+            "INSERT INTO productos (nombre, precio_venta) VALUES ('TAZAS ROJAS', 6000)",
             [],
         )
         .unwrap();

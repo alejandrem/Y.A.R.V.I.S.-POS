@@ -4,6 +4,15 @@ pub(super) fn round2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
 }
 
+/// Frontera pesos → centavos: la DB almacena el dinero en INTEGER centavos
+/// desde la migración f64→centavos, pero TODO este módulo opera en pesos
+/// (dominio del texto del ticket). Solo [`super::almacen`] debe llamar esto,
+/// justo antes de parametrizar los INSERT. `.round()` absorbe el ruido de
+/// punto flotante del parseo (ej. 10.80 * 100 = 1079.9999… → 1080).
+pub(super) fn a_centavos(pesos: f64) -> i64 {
+    (pesos * 100.0).round() as i64
+}
+
 /// Suma de totales de línea. Espejo de `sum(i.get("total",0) or cant*precio)`.
 pub(super) fn calcular_subtotal(items: &[Item]) -> f64 {
     items
@@ -34,6 +43,11 @@ pub(super) fn calcular_subtotal(items: &[Item]) -> f64 {
 ///
 /// Si el total real difiere >±0.5% del calculado, se prefiere el del ticket
 /// y se loguea.
+///
+/// NOTA (migración centavos): esta función NO cambió. Su dominio son pesos
+/// f64 (texto del ticket) y la tolerancia ±0.5% es relativa, así que sigue
+/// siendo consistente; la conversión a centavos ocurre solo en `almacen.rs`
+/// al momento de escribir en la DB.
 pub(super) fn resolver_totales_venta(items: &[Item], reales: &TotalesTicket) -> (f64, f64, f64) {
     let subtotal_calc = calcular_subtotal(items);
     // Los precios ya incluyen IVA: el total = subtotal, sin sumar 16% extra.

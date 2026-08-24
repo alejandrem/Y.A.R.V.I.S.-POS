@@ -1,4 +1,5 @@
 use crate::backventanas::auth::AuthState;
+use crate::dinero::{a_centavos, a_pesos};
 use crate::models::EmployeeGoal;
 use sqlx::Row;
 use sqlx::SqlitePool;
@@ -7,6 +8,11 @@ fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     row.try_get::<f64, _>(col)
         .or_else(|_| row.try_get::<i64, _>(col).map(|v| v as f64))
         .unwrap_or(0.0)
+}
+
+/// Columna monetaria INTEGER en centavos → pesos para structs IPC.
+fn decode_cents(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+    a_pesos(row.try_get::<i64, _>(col).unwrap_or(0))
 }
 
 #[tauri::command]
@@ -34,7 +40,7 @@ pub async fn get_employee_goals(
             goal_name: r.try_get("goal_name").ok(),
             ventas_threshold: r.get("ventas_threshold"),
             bonus_percentage: decode_f64(&r, "bonus_percentage"),
-            bonus_amount: decode_f64(&r, "bonus_amount"),
+            bonus_amount: decode_cents(&r, "bonus_amount"),
             is_completed: r.get::<i32, _>("is_completed") != 0,
             completed_at: r.try_get("completed_at").ok(),
             created_at: r.try_get("created_at").ok(),
@@ -70,7 +76,7 @@ pub async fn save_employee_goal(
         .bind(&goal_name)
         .bind(ventas_threshold.as_deref().unwrap_or("5"))
         .bind(bonus_percentage.unwrap_or(0.0))
-        .bind(bonus_amount.unwrap_or(0.0))
+        .bind(a_centavos(bonus_amount.unwrap_or(0.0)))
         .bind(row.0)
         .execute(&*state)
         .await
@@ -84,7 +90,7 @@ pub async fn save_employee_goal(
         .bind(&goal_name)
         .bind(ventas_threshold.as_deref().unwrap_or("5"))
         .bind(bonus_percentage.unwrap_or(0.0))
-        .bind(bonus_amount.unwrap_or(0.0))
+        .bind(a_centavos(bonus_amount.unwrap_or(0.0)))
         .execute(&*state)
         .await
         .map_err(|e| e.to_string())?;
@@ -107,7 +113,7 @@ pub async fn save_custom_goal(
     )
     .bind(empleado_id)
     .bind(&goal_name)
-    .bind(bonus_amount)
+    .bind(a_centavos(bonus_amount))
     .execute(&*state)
     .await
     .map_err(|e| e.to_string())?;
@@ -164,13 +170,14 @@ pub async fn check_employee_goals(
         let mut is_completed: bool = row.get::<i32, _>("is_completed") != 0;
 
         let bp = decode_f64(&row, "bonus_percentage");
-        let ba = decode_f64(&row, "bonus_amount");
+        let ba = decode_cents(&row, "bonus_amount");
 
         if !is_completed {
             match g_type.as_str() {
                 "ventas" => {
-                    let ventas_row = sqlx::query_as::<_, (f64,)>(
-                        "SELECT COALESCE(SUM(total), 0) * 1.0 FROM ventas WHERE cajero_id = ? AND estado = 'completada'
+                    // SUM(total) sobre columna INTEGER: resultado en centavos.
+                    let ventas_row = sqlx::query_as::<_, (i64,)>(
+                        "SELECT COALESCE(SUM(total), 0) FROM ventas WHERE cajero_id = ? AND estado = 'completada'
                          AND fecha >= date('now', 'start of week') AND fecha < date('now', '+1 day', 'start of week', '+7 days')"
                     )
                     .bind(empleado_id)
@@ -182,7 +189,7 @@ pub async fn check_employee_goals(
                     let vt: String = row.get("ventas_threshold");
                     let umbral: f64 = vt.parse().unwrap_or(0.0);
 
-                    if umbral > 0.0 && ventas_semana >= umbral {
+                    if umbral > 0.0 && ventas_semana >= a_centavos(umbral) {
                         is_completed = true;
                         sqlx::query("UPDATE employee_goals SET is_completed = 1, completed_at = datetime('now','localtime') WHERE id = ?")
                             .bind(goal_id)

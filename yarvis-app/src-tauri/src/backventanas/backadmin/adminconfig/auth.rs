@@ -1,4 +1,5 @@
 use crate::backventanas::auth::{AuthState, Role};
+use crate::dinero::a_centavos;
 use crate::models::{AdminData, AdminProfile};
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher, PasswordVerifier};
 use rand::thread_rng;
@@ -230,8 +231,13 @@ pub async fn guardar_empleado_impl(
         return Err("Un día no puede estar en dos horarios distintos".to_string());
     }
 
-    let semanal = salario_semanal.unwrap_or(0.0).max(0.0);
-    let diario = if total_dias > 0 { semanal / total_dias as f64 } else { 0.0 };
+    let semanal_c = a_centavos(salario_semanal.unwrap_or(0.0).max(0.0));
+    // División entera redondeada: salario diario derivado en centavos.
+    let diario_c = if total_dias > 0 {
+        (semanal_c as f64 / total_dias as f64).round() as i64
+    } else {
+        0
+    };
     let inicio = bloques.first().map(|b| b.hora_inicio.clone()).unwrap_or_else(|| "00:00".into());
     let fin = bloques.first().map(|b| b.hora_fin.clone()).unwrap_or_else(|| "00:00".into());
 
@@ -245,9 +251,9 @@ pub async fn guardar_empleado_impl(
     .bind(&hashed)
     .bind(&inicio)
     .bind(&fin)
-    .bind(diario)
+    .bind(diario_c)
     .bind(total_dias)
-    .bind(semanal)
+    .bind(semanal_c)
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;

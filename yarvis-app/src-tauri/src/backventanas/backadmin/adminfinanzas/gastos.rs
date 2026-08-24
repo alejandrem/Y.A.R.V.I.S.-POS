@@ -1,13 +1,15 @@
 use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminfinanzas::fechas::calcular_proxima_fecha;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
+use crate::dinero::{a_centavos, a_pesos};
 use chrono::NaiveDate;
 use sqlx::Row;
 use sqlx::SqlitePool;
 
-fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
-    row.try_get::<f64, _>(col)
-        .or_else(|_| row.try_get::<i64, _>(col).map(|v| v as f64))
+/// Lee una columna monetaria (INTEGER en centavos) y la devuelve en pesos.
+fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+    row.try_get::<i64, _>(col)
+        .map(a_pesos)
         .unwrap_or(0.0)
 }
 
@@ -26,8 +28,8 @@ fn map_row_to_gasto(row: sqlx::sqlite::SqliteRow) -> GastoRecurrente {
         nombre: row.get("nombre"),
         tipo: row.get("tipo"),
         categoria: row.get("categoria"),
-        monto_proyectado: decode_f64(&row, "monto_proyectado"),
-        monto_real: decode_f64(&row, "monto_real"),
+        monto_proyectado: decode_dinero(&row, "monto_proyectado"),
+        monto_real: decode_dinero(&row, "monto_real"),
         frecuencia,
         dia_pago,
         intervalo_dias,
@@ -67,7 +69,7 @@ pub async fn crear_gasto_impl(pool: &SqlitePool, gasto: &CrearGastoRequest) -> R
     .bind(&gasto.nombre)
     .bind(&gasto.tipo)
     .bind(&gasto.categoria)
-    .bind(gasto.monto_proyectado)
+    .bind(a_centavos(gasto.monto_proyectado))
     .bind(&gasto.frecuencia)
     .bind(gasto.dia_pago)
     .bind(gasto.intervalo_dias)
@@ -110,7 +112,7 @@ pub async fn actualizar_gasto(
     .bind(&gasto.nombre)
     .bind(&gasto.tipo)
     .bind(&gasto.categoria)
-    .bind(gasto.monto_proyectado)
+    .bind(a_centavos(gasto.monto_proyectado))
     .bind(&gasto.frecuencia)
     .bind(gasto.dia_pago)
     .bind(gasto.intervalo_dias)
@@ -147,47 +149,53 @@ pub async fn registrar_pago_gasto_impl(
     pool: &SqlitePool,
     pago: &RegistrarPagoRequest,
 ) -> Result<i64, String> {
+    // TRANSACCIÓN: el pago y la actualización del acumulado del gasto se
+    // escriben juntos (antes quedaban a medias si el UPDATE fallaba).
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
     let result = sqlx::query(
         r#"INSERT INTO pagos_gastos (gasto_id, fecha_pago, monto_pagado, metodo_pago, folio_comprobante, notas)
            VALUES (?, ?, ?, ?, ?, ?)"#
     )
     .bind(pago.gasto_id)
     .bind(&pago.fecha_pago)
-    .bind(pago.monto_pagado)
+    .bind(a_centavos(pago.monto_pagado))
     .bind(&pago.metodo_pago)
     .bind(&pago.folio_comprobante)
     .bind(&pago.notas)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    // Actualizar monto_real y estado del gasto
+    // Actualizar monto_real y estado del gasto — aritmética EXACTA en centavos
     let gasto_row =
         sqlx::query("SELECT monto_proyectado, monto_real FROM gastos_recurrentes WHERE id = ?")
             .bind(pago.gasto_id)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
     if let Some(row) = gasto_row {
-        let monto_proyectado: f64 = decode_f64(&row, "monto_proyectado");
-        let monto_real_actual: f64 = decode_f64(&row, "monto_real");
-        let nuevo_monto_real = monto_real_actual + pago.monto_pagado;
+        let monto_proyectado_c: i64 = row.try_get("monto_proyectado").unwrap_or(0);
+        let monto_real_c: i64 = row.try_get("monto_real").unwrap_or(0);
+        let nuevo_monto_real_c = monto_real_c + a_centavos(pago.monto_pagado);
 
-        let nuevo_estado = if nuevo_monto_real >= monto_proyectado {
+        let nuevo_estado = if nuevo_monto_real_c >= monto_proyectado_c {
             "pagado"
         } else {
             "pendiente"
         };
 
         sqlx::query("UPDATE gastos_recurrentes SET monto_real = ?, estado_pago = ?, actualizado_en = datetime('now','localtime') WHERE id = ?")
-            .bind(nuevo_monto_real)
+            .bind(nuevo_monto_real_c)
             .bind(nuevo_estado)
             .bind(pago.gasto_id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(result.last_insert_rowid())
 }
@@ -209,7 +217,7 @@ pub async fn get_pagos_gasto(
     gasto_id: i64,
 ) -> Result<Vec<PagoGasto>, String> {
     auth.require_admin()?;
-    let rows = sqlx::query_as::<_, (i64, i64, String, f64, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
+    let rows = sqlx::query_as::<_, (i64, i64, String, i64, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
         "SELECT id, gasto_id, fecha_pago, monto_pagado, metodo_pago, folio_comprobante, comprobante_url, notas, creado_en FROM pagos_gastos WHERE gasto_id = ? ORDER BY fecha_pago DESC"
     )
     .bind(gasto_id)
@@ -223,7 +231,7 @@ pub async fn get_pagos_gasto(
             id: row.0,
             gasto_id: row.1,
             fecha_pago: row.2,
-            monto_pagado: row.3,
+            monto_pagado: a_pesos(row.3),
             metodo_pago: row.4,
             folio_comprobante: row.5,
             comprobante_url: row.6,

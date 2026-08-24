@@ -1,13 +1,22 @@
 use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
+use crate::dinero::{a_centavos, a_pesos, centavos_f64_a_i64};
 use chrono::{Datelike, NaiveDate};
 use sqlx::Row;
 use sqlx::SqlitePool;
 
-fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
-    row.try_get::<f64, _>(col)
-        .or_else(|_| row.try_get::<i64, _>(col).map(|v| v as f64))
-        .unwrap_or(0.0)
+/// Lee una columna monetaria y la devuelve EN PESOS. Las columnas INTEGER
+/// vienen en centavos (i64); los agregados que mezclan cantidad REAL ×
+/// precio en centavos llegan como f64 en unidades de centavos y se
+/// redondean al centavo exacto antes de convertir.
+fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+    match row.try_get::<i64, _>(col) {
+        Ok(v) => a_pesos(v),
+        Err(_) => row
+            .try_get::<f64, _>(col)
+            .map(|v| a_pesos(centavos_f64_a_i64(v)))
+            .unwrap_or(0.0),
+    }
 }
 
 async fn calcular_costo_ventas(
@@ -27,7 +36,7 @@ async fn calcular_costo_ventas(
     .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(decode_f64(&row, "cogs"))
+    Ok(decode_dinero(&row, "cogs"))
 }
 
 async fn calcular_gastos_operativos(
@@ -45,7 +54,7 @@ async fn calcular_gastos_operativos(
     .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(decode_f64(&row, "total_gastos"))
+    Ok(decode_dinero(&row, "total_gastos"))
 }
 
 async fn calcular_impuestos_comisiones(
@@ -64,7 +73,7 @@ async fn calcular_impuestos_comisiones(
     .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(decode_f64(&row, "total_iva"))
+    Ok(decode_dinero(&row, "total_iva"))
 }
 
 async fn calcular_ventas_totales(
@@ -80,7 +89,7 @@ async fn calcular_ventas_totales(
     .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(decode_f64(&row, "total"))
+    Ok(decode_dinero(&row, "total"))
 }
 
 async fn calcular_ventas_por_metodo(
@@ -103,7 +112,7 @@ async fn calcular_ventas_por_metodo(
 
     for row in rows {
         let metodo: String = row.get("metodo_pago");
-        let total = decode_f64(&row, "total");
+        let total = decode_dinero(&row, "total");
         match metodo.as_str() {
             "efectivo" => efectivo = total,
             "tarjeta" => tarjeta = total,
@@ -282,7 +291,7 @@ pub(crate) async fn recalcular_resumen_diario_impl(
         .await
         .map_err(|e| e.to_string())?;
     let cortes_z_count: i64 = row.get("count");
-    let diferencia_caja_total = decode_f64(&row, "diff");
+    let diferencia_caja_total = decode_dinero(&row, "diff");
 
     sqlx::query(
         r#"INSERT INTO resumen_financiero_diario (fecha, ventas_totales, ventas_efectivo, ventas_tarjeta, ventas_transferencia, costo_ventas, utilidad_bruta, gastos_operativos, utilidad_operativa, impuestos_comisiones, utilidad_neta, margen_neto_pct, cortes_z_count, diferencia_caja_total, actualizado_en)
@@ -304,19 +313,21 @@ pub(crate) async fn recalcular_resumen_diario_impl(
                actualizado_en = excluded.actualizado_en"#
     )
     .bind(&fecha)
-    .bind(ventas_totales)
-    .bind(ventas_efectivo)
-    .bind(ventas_tarjeta)
-    .bind(ventas_transferencia)
-    .bind(costo_ventas)
-    .bind(utilidad_bruta)
-    .bind(gastos_operativos)
-    .bind(utilidad_operativa)
-    .bind(impuestos_comisiones)
-    .bind(utilidad_neta)
+    // La caché materializada también vive en centavos (INTEGER);
+    // margen_neto_pct es porcentaje y sigue siendo REAL.
+    .bind(a_centavos(ventas_totales))
+    .bind(a_centavos(ventas_efectivo))
+    .bind(a_centavos(ventas_tarjeta))
+    .bind(a_centavos(ventas_transferencia))
+    .bind(a_centavos(costo_ventas))
+    .bind(a_centavos(utilidad_bruta))
+    .bind(a_centavos(gastos_operativos))
+    .bind(a_centavos(utilidad_operativa))
+    .bind(a_centavos(impuestos_comisiones))
+    .bind(a_centavos(utilidad_neta))
     .bind(margen_neto_pct)
     .bind(cortes_z_count)
-    .bind(diferencia_caja_total)
+    .bind(a_centavos(diferencia_caja_total))
     .execute(&*state)
     .await
     .map_err(|e| e.to_string())?;
@@ -442,7 +453,7 @@ mod tests {
             .unwrap();
 
         pool.execute(
-            "CREATE TABLE ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, iva REAL, estado TEXT)",
+            "CREATE TABLE ventas (id INTEGER PRIMARY KEY, fecha TEXT, total INTEGER, iva INTEGER, estado TEXT)",
         )
         .await
         .unwrap();
@@ -451,18 +462,19 @@ mod tests {
         )
         .await
         .unwrap();
-        pool.execute("CREATE TABLE productos (id INTEGER PRIMARY KEY, precio_costo REAL)")
+        pool.execute("CREATE TABLE productos (id INTEGER PRIMARY KEY, precio_costo INTEGER)")
             .await
             .unwrap();
-        pool.execute("CREATE TABLE pagos_gastos (fecha_pago TEXT, monto_pagado REAL)")
+        pool.execute("CREATE TABLE pagos_gastos (fecha_pago TEXT, monto_pagado INTEGER)")
             .await
             .unwrap();
 
-        sqlx::query("INSERT INTO ventas VALUES (1, '2026-08-10 12:00:00', 100, 16, 'completada')")
+        // Montos en CENTAVOS: $100.00 - $60.00 - $50.00 - $16.00
+        sqlx::query("INSERT INTO ventas VALUES (1, '2026-08-10 12:00:00', 10000, 1600, 'completada')")
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO productos VALUES (1, 60)")
+        sqlx::query("INSERT INTO productos VALUES (1, 6000)")
             .execute(&pool)
             .await
             .unwrap();
@@ -470,12 +482,12 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO pagos_gastos VALUES ('2026-08-10', 50)")
+        sqlx::query("INSERT INTO pagos_gastos VALUES ('2026-08-10', 5000)")
             .execute(&pool)
             .await
             .unwrap();
 
-        // 100 - 60 - 50 - 16 = -26. No se crea resumen_financiero_diario:
+        // 100 - 60 - 50 - 16 = -26 (en pesos). No se crea resumen_financiero_diario:
         // el cálculo debe depender de las tablas transaccionales vivas.
         let utilidad = calcular_utilidad_neta_periodo(&pool, "2026-08-01", "2026-08-31")
             .await

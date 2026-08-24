@@ -221,6 +221,13 @@ fn str_arg<'a>(args: &'a Value, clave: &str, default: &'a str) -> String {
 
 const MONEDA: &str = "MXN";
 
+/// La DB almacena el dinero en CENTAVOS enteros (migración f64 → i64).
+/// Estas tools leen centavos y devuelven PESOS al LLM (÷100 antes de
+/// serializar), porque el modelo consume/produce montos en pesos.
+fn centavos_a_pesos(centavos: f64) -> f64 {
+    round2(centavos / 100.0)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Las 7 herramientas (shapes idénticos al dataset)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -249,15 +256,17 @@ fn query_sales(conn: &Connection, args: &Value) -> Result<Value, String> {
         )
     };
 
-    let total: f64 = conn
+    // SUM(v.total) viene en CENTAVOS (columna INTEGER); se lee como f64 por
+    // si una DB vieja mezcla REAL×INTEGER y se convierte a pesos.
+    let total_centavos: f64 = conn
         .query_row(&sql, rusqlite::params![rango.desde, rango.hasta], |r| r.get(0))
         .map_err(|e| e.to_string())?;
 
     let mut out = serde_json::Map::new();
     if metric == "units" {
-        out.insert("unidades_totales".into(), serde_json::json!(total));
+        out.insert("unidades_totales".into(), serde_json::json!(total_centavos));
     } else {
-        out.insert("ventas_totales".into(), serde_json::json!(round2(total)));
+        out.insert("ventas_totales".into(), serde_json::json!(centavos_a_pesos(total_centavos)));
         out.insert("moneda".into(), serde_json::json!(MONEDA));
     }
     if let Some(p) = producto {
@@ -288,7 +297,10 @@ fn compare_periods(conn: &Connection, args: &Value) -> Result<Value, String> {
             .unwrap_or(0.0)
     };
 
-    let (a, b) = (suma(&pa), suma(&pb));
+    // En metric "revenue" la suma viene en CENTAVOS: convertir a pesos antes
+    // de restar y serializar (así la diferencia también queda en pesos).
+    let a_pesos = |v: f64| if metric == "units" { v } else { centavos_a_pesos(v) };
+    let (a, b) = (a_pesos(suma(&pa)), a_pesos(suma(&pb)));
     let diferencia = round2(a - b);
 
     let mut out = serde_json::Map::new();
@@ -326,9 +338,11 @@ fn get_top_products(conn: &Connection, args: &Value) -> Result<Value, String> {
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let filas = stmt
         .query_map(rusqlite::params![rango.desde, rango.hasta, limit], |r| {
+            // SUM(d.subtotal) está en centavos → pesos para el LLM.
+            let ventas_centavos: f64 = r.get(1)?;
             Ok(serde_json::json!({
                 "producto": r.get::<_, String>(0)?,
-                "ventas_totales": round2(r.get::<_, f64>(1)?),
+                "ventas_totales": centavos_a_pesos(ventas_centavos),
                 "unidades": r.get::<_, f64>(2)?,
             }))
         })
@@ -424,9 +438,11 @@ fn get_product_info(conn: &Connection, args: &Value) -> Result<Value, String> {
         "SELECT nombre, precio_venta, stock, categoria FROM productos WHERE nombre LIKE ?1 LIMIT 1",
         rusqlite::params![format!("%{producto}%")],
         |r| {
+            // precio_venta es INTEGER en centavos desde la migración.
+            let precio_centavos: f64 = r.get(1)?;
             Ok(serde_json::json!({
                 "producto": r.get::<_, String>(0)?,
-                "precio_venta": round2(r.get::<_, f64>(1)?),
+                "precio_venta": centavos_a_pesos(precio_centavos),
                 "stock": r.get::<_, f64>(2)?,
                 "categoria": r.get::<_, Option<String>>(3)?,
             }))
@@ -460,6 +476,8 @@ fn get_restock_analysis(conn: &Connection, args: &Value) -> Result<Value, String
     Ok(serde_json::json!({ "recomendaciones": recomendaciones }))
 }
 
+/// Redondeo de limpieza a 2 decimales. Ya NO convierte unidades: la
+/// conversión centavos→pesos vive en [`centavos_a_pesos`].
 fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
@@ -476,34 +494,35 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             r#"
+            -- Espejo del esquema migrado: dinero en INTEGER CENTAVOS.
             CREATE TABLE ventas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
-                total REAL, subtotal REAL, metodo_pago TEXT,
+                total INTEGER, subtotal INTEGER, metodo_pago TEXT,
                 cajero TEXT, estado TEXT DEFAULT 'completada'
             );
             CREATE TABLE detalle_ventas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 venta_id INTEGER, producto_id INTEGER,
                 producto_nombre TEXT, cantidad REAL,
-                precio_unitario REAL, descuento REAL, subtotal REAL
+                precio_unitario INTEGER, descuento INTEGER, subtotal INTEGER
             );
             CREATE TABLE productos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT, precio_venta REAL DEFAULT 0,
+                nombre TEXT, precio_venta INTEGER DEFAULT 0,
                 stock REAL DEFAULT 0, stock_minimo REAL DEFAULT 0,
                 vendido REAL DEFAULT 0, categoria TEXT
             );
             INSERT INTO ventas (fecha, total, subtotal, estado) VALUES
-              (datetime('now','localtime','+0 hours'), 100.0, 100.0, 'completada'),
-              (datetime('now','localtime','-1 hours'), 200.0, 200.0, 'completada'),
-              (datetime('now','localtime','-2 hours'), 50.0, 50.0, 'cancelada');
+              (datetime('now','localtime','+0 hours'), 10000, 10000, 'completada'),
+              (datetime('now','localtime','-1 hours'), 20000, 20000, 'completada'),
+              (datetime('now','localtime','-2 hours'), 5000, 5000, 'cancelada');
             INSERT INTO detalle_ventas (venta_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES
-              (1, 'Coca-Cola', 4.0, 25.0, 100.0),
-              (2, 'Sabritas', 8.0, 25.0, 200.0);
+              (1, 'Coca-Cola', 4.0, 2500, 10000),
+              (2, 'Sabritas', 8.0, 2500, 20000);
             INSERT INTO productos (nombre, precio_venta, stock, stock_minimo, vendido, categoria) VALUES
-              ('Coca-Cola', 25.0, 2.0, 5.0, 40.0, 'Bebidas'),
-              ('Pan Bimbo', 42.0, 12.0, 4.0, 15.0, 'Panadería');
+              ('Coca-Cola', 2500, 2.0, 5.0, 40.0, 'Bebidas'),
+              ('Pan Bimbo', 4200, 12.0, 4.0, 15.0, 'Panadería');
             "#,
         )
         .unwrap();
@@ -543,7 +562,17 @@ mod tests {
         let conn = db_prueba();
         let v = query_sales(&conn, &serde_json::json!({"date_range": "today", "metric": "revenue"})).unwrap();
         assert_eq!(v["moneda"], "MXN");
-        assert_eq!(v["ventas_totales"], 300.0); // 100 + 200 completadas de hoy
+        // 10000 + 20000 centavos completados de hoy → $300.00 en pesos.
+        assert_eq!(v["ventas_totales"], 300.0);
+        assert_eq!(v["ventas_totales"].as_f64().unwrap() * 100.0, 30000.0);
+    }
+
+    #[test]
+    fn get_product_info_convierte_precio_de_centavos_a_pesos() {
+        let conn = db_prueba();
+        let v = get_product_info(&conn, &serde_json::json!({"product_id": "Coca-Cola"})).unwrap();
+        // 2500 centavos en DB → $25.0 para el LLM.
+        assert_eq!(v["precio_venta"], 25.0);
     }
 
     #[test]
@@ -553,6 +582,16 @@ mod tests {
         let lista = v["productos"].as_array().unwrap();
         assert_eq!(lista.len(), 2);
         assert_eq!(lista[0]["producto"], "Sabritas"); // $200 > $100
+        assert_eq!(lista[0]["ventas_totales"], 200.0); // 20000 centavos → $200
+    }
+
+    #[test]
+    fn compare_periods_revenue_devuelve_pesos_no_centavos() {
+        let conn = db_prueba();
+        let v = compare_periods(&conn, &serde_json::json!({"period1": "today", "period2": "yesterday"})).unwrap();
+        assert_eq!(v["ventas_a"], 300.0);
+        assert_eq!(v["ventas_b"], 0.0);
+        assert_eq!(v["diferencia"], 300.0);
     }
 
     #[test]

@@ -1,12 +1,14 @@
 use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminfinanzas::models::*;
+use crate::dinero::{a_centavos, a_pesos};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use sqlx::SqlitePool;
 
-fn decode_f64(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
-    row.try_get::<f64, _>(col)
-        .or_else(|_| row.try_get::<i64, _>(col).map(|v| v as f64))
+/// Lee una columna monetaria (INTEGER en centavos) y la devuelve en pesos.
+fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+    row.try_get::<i64, _>(col)
+        .map(a_pesos)
         .unwrap_or(0.0)
 }
 
@@ -65,14 +67,14 @@ pub async fn get_cortes_caja(
             id: row.get("id"),
             fecha_apertura: row.get("fecha_apertura"),
             fecha_cierre: row.try_get("fecha_cierre").ok(),
-            monto_inicial: decode_f64(&row, "monto_inicial"),
-            total_ventas: decode_f64(&row, "total_ventas"),
-            total_efectivo: decode_f64(&row, "total_efectivo"),
-            total_tarjeta: decode_f64(&row, "total_tarjeta"),
-            total_transferencia: decode_f64(&row, "total_transferencia"),
-            entradas_manuales: decode_f64(&row, "entradas_manuales"),
-            retiros_manuales: decode_f64(&row, "retiros_manuales"),
-            diferencia: decode_f64(&row, "diferencia"),
+            monto_inicial: decode_dinero(&row, "monto_inicial"),
+            total_ventas: decode_dinero(&row, "total_ventas"),
+            total_efectivo: decode_dinero(&row, "total_efectivo"),
+            total_tarjeta: decode_dinero(&row, "total_tarjeta"),
+            total_transferencia: decode_dinero(&row, "total_transferencia"),
+            entradas_manuales: decode_dinero(&row, "entradas_manuales"),
+            retiros_manuales: decode_dinero(&row, "retiros_manuales"),
+            diferencia: decode_dinero(&row, "diferencia"),
             usuario_id: row.get("usuario_id"),
             usuario_nombre: row.get("usuario_nombre"),
             estado: row.get("estado"),
@@ -106,14 +108,14 @@ pub async fn get_corte_detalle(
             id: row.get("id"),
             fecha_apertura: row.get("fecha_apertura"),
             fecha_cierre: row.try_get("fecha_cierre").ok(),
-            monto_inicial: decode_f64(&row, "monto_inicial"),
-            total_ventas: decode_f64(&row, "total_ventas"),
-            total_efectivo: decode_f64(&row, "total_efectivo"),
-            total_tarjeta: decode_f64(&row, "total_tarjeta"),
-            total_transferencia: decode_f64(&row, "total_transferencia"),
-            entradas_manuales: decode_f64(&row, "entradas_manuales"),
-            retiros_manuales: decode_f64(&row, "retiros_manuales"),
-            diferencia: decode_f64(&row, "diferencia"),
+            monto_inicial: decode_dinero(&row, "monto_inicial"),
+            total_ventas: decode_dinero(&row, "total_ventas"),
+            total_efectivo: decode_dinero(&row, "total_efectivo"),
+            total_tarjeta: decode_dinero(&row, "total_tarjeta"),
+            total_transferencia: decode_dinero(&row, "total_transferencia"),
+            entradas_manuales: decode_dinero(&row, "entradas_manuales"),
+            retiros_manuales: decode_dinero(&row, "retiros_manuales"),
+            diferencia: decode_dinero(&row, "diferencia"),
             usuario_id: row.get("usuario_id"),
             usuario_nombre: row.get("usuario_nombre"),
             estado: row.get("estado"),
@@ -151,7 +153,7 @@ pub async fn get_corte_detalle(
             .map(|row| {
                 (
                     row.get::<String, _>("metodo_pago"),
-                    decode_f64(&row, "total"),
+                    decode_dinero(&row, "total"),
                     row.get::<i64, _>("count"),
                 )
             })
@@ -184,7 +186,7 @@ async fn crear_corte_impl(
         r#"INSERT INTO cortes_caja (monto_inicial, tipo_corte, turno, observaciones, usuario_id, estado)
            VALUES (?, ?, ?, ?, ?, 'abierto')"#
     )
-    .bind(datos.monto_inicial)
+    .bind(a_centavos(datos.monto_inicial))
     .bind(tipo)
     .bind(&datos.turno)
     .bind(&datos.observaciones)
@@ -229,9 +231,17 @@ pub async fn cerrar_corte(
     retiros_manuales: f64,
 ) -> Result<(), String> {
     auth.require_admin()?;
-    let total_calculado =
-        total_efectivo + total_tarjeta + total_transferencia + entradas_manuales - retiros_manuales;
-    let diferencia = total_calculado - total_ventas;
+    // Aritmética de cierre EXACTA en centavos: la diferencia de caja es
+    // dinero y no debe heredar ruido binario de los f64 del IPC.
+    let total_ventas_c = a_centavos(total_ventas);
+    let total_efectivo_c = a_centavos(total_efectivo);
+    let total_tarjeta_c = a_centavos(total_tarjeta);
+    let total_transferencia_c = a_centavos(total_transferencia);
+    let entradas_c = a_centavos(entradas_manuales);
+    let retiros_c = a_centavos(retiros_manuales);
+    let total_calculado_c =
+        total_efectivo_c + total_tarjeta_c + total_transferencia_c + entradas_c - retiros_c;
+    let diferencia_c = total_calculado_c - total_ventas_c;
 
     sqlx::query(
         r#"UPDATE cortes_caja SET
@@ -246,13 +256,13 @@ pub async fn cerrar_corte(
            estado = 'cerrado'
            WHERE id = ?"#,
     )
-    .bind(total_ventas)
-    .bind(total_efectivo)
-    .bind(total_tarjeta)
-    .bind(total_transferencia)
-    .bind(entradas_manuales)
-    .bind(retiros_manuales)
-    .bind(diferencia)
+    .bind(total_ventas_c)
+    .bind(total_efectivo_c)
+    .bind(total_tarjeta_c)
+    .bind(total_transferencia_c)
+    .bind(entradas_c)
+    .bind(retiros_c)
+    .bind(diferencia_c)
     .bind(corte_id)
     .execute(&*state)
     .await
@@ -275,7 +285,7 @@ pub async fn agregar_movimiento_caja(
     .bind(mov.corte_id)
     .bind(&mov.tipo)
     .bind(&mov.concepto)
-    .bind(mov.monto)
+    .bind(a_centavos(mov.monto))
     .bind(&mov.metodo_pago)
     .bind(mov.referencia_id)
     .execute(&*state)
@@ -292,7 +302,7 @@ pub async fn get_movimientos_corte(
     corte_id: i64,
 ) -> Result<Vec<MovimientoCaja>, String> {
     auth.require_admin()?;
-    let rows = sqlx::query_as::<_, (i64, i64, String, String, f64, Option<String>, Option<i64>, String)>(
+    let rows = sqlx::query_as::<_, (i64, i64, String, String, i64, Option<String>, Option<i64>, String)>(
         "SELECT id, corte_id, tipo, concepto, monto, metodo_pago, referencia_id, creado_en FROM movimientos_caja WHERE corte_id = ? ORDER BY creado_en ASC"
     )
     .bind(corte_id)
@@ -307,7 +317,7 @@ pub async fn get_movimientos_corte(
             corte_id: row.1,
             tipo: row.2,
             concepto: row.3,
-            monto: row.4,
+            monto: a_pesos(row.4),
             metodo_pago: row.5,
             referencia_id: row.6,
             creado_en: row.7,
@@ -344,14 +354,14 @@ pub async fn get_cortes_por_cajero_fecha(
             id: row.get("id"),
             fecha_apertura: row.get("fecha_apertura"),
             fecha_cierre: row.try_get("fecha_cierre").ok(),
-            monto_inicial: decode_f64(&row, "monto_inicial"),
-            total_ventas: decode_f64(&row, "total_ventas"),
-            total_efectivo: decode_f64(&row, "total_efectivo"),
-            total_tarjeta: decode_f64(&row, "total_tarjeta"),
-            total_transferencia: decode_f64(&row, "total_transferencia"),
-            entradas_manuales: decode_f64(&row, "entradas_manuales"),
-            retiros_manuales: decode_f64(&row, "retiros_manuales"),
-            diferencia: decode_f64(&row, "diferencia"),
+            monto_inicial: decode_dinero(&row, "monto_inicial"),
+            total_ventas: decode_dinero(&row, "total_ventas"),
+            total_efectivo: decode_dinero(&row, "total_efectivo"),
+            total_tarjeta: decode_dinero(&row, "total_tarjeta"),
+            total_transferencia: decode_dinero(&row, "total_transferencia"),
+            entradas_manuales: decode_dinero(&row, "entradas_manuales"),
+            retiros_manuales: decode_dinero(&row, "retiros_manuales"),
+            diferencia: decode_dinero(&row, "diferencia"),
             usuario_id: row.get("usuario_id"),
             usuario_nombre: row.get("usuario_nombre"),
             estado: row.get("estado"),

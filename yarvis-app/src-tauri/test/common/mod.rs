@@ -42,12 +42,13 @@ pub async fn db() -> SqlitePool {
 
 /// Inserta un producto y devuelve su id.
 pub async fn seed_producto(pool: &SqlitePool, nombre: &str, stock: f64, precio_venta: f64) -> i64 {
+    // Los precios van en CENTAVOS (la DB es INTEGER); el stock sigue en f64.
     let r = sqlx::query(
         "INSERT INTO productos (nombre, precio_costo, precio_venta, stock, stock_minimo, vendido) VALUES (?, ?, ?, ?, ?, 0)",
     )
     .bind(nombre)
-    .bind(precio_venta * 0.5)
-    .bind(precio_venta)
+    .bind(yarvis_app_lib::dinero::a_centavos(precio_venta * 0.5))
+    .bind(yarvis_app_lib::dinero::a_centavos(precio_venta))
     .bind(stock)
     .bind(1.0)
     .execute(pool)

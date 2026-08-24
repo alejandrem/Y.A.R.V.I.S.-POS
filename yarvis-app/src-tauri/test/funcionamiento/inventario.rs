@@ -53,11 +53,11 @@ async fn edicion_modifica_stock_y_precios() {
     it.precio_venta = 42.5;
     update_inventory_item_impl(&pool, &it).await.unwrap();
 
-    let (stock, precio): (f64, f64) =
+    let (stock, precio): (f64, i64) =
         sqlx::query_as("SELECT stock, precio_venta FROM productos WHERE id = ?")
             .bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(stock, 50.0);
-    assert_eq!(precio, 42.5);
+    assert_eq!(precio, 4_250);
 }
 
 #[tokio::test]

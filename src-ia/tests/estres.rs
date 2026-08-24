@@ -374,23 +374,24 @@ fn crear_bd(dir: &Path) -> String {
     let path = dir.join("estres.db");
     let conn = Connection::open(&path).unwrap();
     conn.execute_batch(
+        // Espejo del esquema migrado: dinero en INTEGER CENTAVOS.
         "CREATE TABLE productos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL,
-            precio_venta REAL DEFAULT 0,
+            precio_venta INTEGER DEFAULT 0,
             stock REAL DEFAULT 0,
             vendido REAL DEFAULT 0
          );
          CREATE TABLE ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            total REAL, subtotal REAL, iva REAL,
+            total INTEGER, subtotal INTEGER, iva INTEGER,
             cajero TEXT, metodo_pago TEXT, estado TEXT, fecha TEXT
          );
          CREATE TABLE detalle_ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             venta_id INTEGER, producto_id INTEGER, producto_nombre TEXT,
-            cantidad REAL, precio_unitario REAL,
-            descuento REAL, subtotal REAL
+            cantidad REAL, precio_unitario INTEGER,
+            descuento INTEGER, subtotal INTEGER
          );",
     )
     .unwrap();
@@ -434,7 +435,7 @@ fn ticket_gigante_20mil_items_entra_completo() {
     // en el ticket → fallback al cálculo (2,400,000 + 384,000).
     assert_eq!(stats.resumen_ventas[0].total, 2_400_000.0);
 
-    let (total, subtotal, iva): (f64, f64, f64) = Connection::open(&db)
+    let (total, subtotal, iva): (i64, i64, i64) = Connection::open(&db)
         .unwrap()
         .query_row("SELECT total, subtotal, iva FROM ventas", [], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -442,9 +443,10 @@ fn ticket_gigante_20mil_items_entra_completo() {
         .unwrap();
     // Dinero (regla D actual): los precios YA incluyen IVA → iva almacenado
     // es 0 y total = subtotal (o el real declarado por el ticket si existe).
-    assert_eq!(subtotal, 2_400_000.0);
-    assert_eq!(iva, 0.0);
-    assert_eq!(total, 2_400_000.0);
+    // La DB guarda CENTAVOS: $2,400,000 → 240,000,000.
+    assert_eq!(subtotal, 240_000_000);
+    assert_eq!(iva, 0);
+    assert_eq!(total, 240_000_000);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
