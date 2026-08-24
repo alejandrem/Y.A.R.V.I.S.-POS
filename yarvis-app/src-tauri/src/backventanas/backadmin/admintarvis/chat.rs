@@ -11,6 +11,105 @@ use src_ia::motor_chat::cloud::apis_cloud::{
     generar_completo, generar_stream, nombre_proveedor, Evento,
 };
 use src_ia::motor_chat::cloud::prompts::{construir_mensajes_api_rol, Mensaje};
+use src_ia::motor_chat::llm::tools;
+
+/// Ruta del archivo SQLite desde el pool (para el ejecutor de tools).
+fn db_path_de(pool: &sqlx::SqlitePool) -> String {
+    pool.connect_options().get_filename().to_string_lossy().to_string()
+}
+
+type GeneradorFut = std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>;
+type Generador<'a> = Box<dyn FnMut(Vec<Mensaje>) -> GeneradorFut + Send + 'a>;
+
+/// Ciclo tool_call→ejecutar→re-preguntar. Mientras el modelo siga pidiendo
+/// herramientas (hasta MAX rondas), ejecuta el SQL real y le devuelve el
+/// resultado como mensaje role:"tool" hasta obtener una respuesta final.
+async fn resolver_ciclo_tools(
+    mut respuesta: String,
+    mut historial: Vec<Mensaje>,
+    db_path: String,
+    generar: &mut Generador<'_>,
+) -> Result<String, String> {
+    for _ in 0..tools::MAX_RONDAS_TOOLS {
+        let Some((nombre, args)) = tools::detectar_tool_call(&respuesta) else {
+            return Ok(respuesta);
+        };
+        println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
+        let res = tokio::task::spawn_blocking({
+            let db_path = db_path.clone();
+            move || tools::ejecutar_tool(&nombre, &args, &db_path)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let json_res = match res {
+            Ok(r) => r,
+            Err(e) => serde_json::json!({ "error": e }).to_string(),
+        };
+        historial.push(Mensaje::new("assistant", respuesta));
+        historial.push(Mensaje::new("tool", json_res));
+        respuesta = (&mut *generar)(historial.clone()).await?;
+    }
+    // Agotó rondas: entregar limpio (sin bloques crudos)
+    Ok(tools::respuesta_final_segura(&respuesta))
+}
+
+/// Suprime bloques <tool_call>...</tool_call> de un stream token a token,
+/// reteniendo colas parciales que podrían ser el inicio del marcador.
+struct SupresorToolCall {
+    retenido: String,
+    en_bloque: bool,
+}
+
+impl SupresorToolCall {
+    fn new() -> Self {
+        Self { retenido: String::new(), en_bloque: false }
+    }
+
+    fn procesar(&mut self, frag: &str) -> String {
+        self.retenido.push_str(frag);
+        let mut out = String::new();
+        loop {
+            if self.en_bloque {
+                if let Some(i) = self.retenido.find("</tool_call>") {
+                    self.retenido.drain(..i + "</tool_call>".len());
+                    self.en_bloque = false;
+                    continue;
+                }
+                self.retenido.clear();
+                break;
+            }
+            match self.retenido.find("<tool_call>") {
+                Some(i) => {
+                    out.push_str(&self.retenido[..i]);
+                    self.retenido.drain(..i + "<tool_call>".len());
+                    self.en_bloque = true;
+                }
+                None => {
+                    let max_hold = "<tool_call>".len() - 1;
+                    if self.retenido.len() > max_hold {
+                        let mut corte = self.retenido.len() - max_hold;
+                        while corte > 0 && !self.retenido.is_char_boundary(corte) {
+                            corte -= 1;
+                        }
+                        out.push_str(&self.retenido[..corte]);
+                        self.retenido.drain(..corte);
+                    }
+                    break;
+                }
+            }
+        }
+        out
+    }
+
+    fn finalizar(&mut self) -> String {
+        if self.en_bloque {
+            self.retenido.clear();
+            String::new()
+        } else {
+            std::mem::take(&mut self.retenido)
+        }
+    }
+}
 use src_ia::motor_chat::cloud::think::{SeparadorThink, TipoFragmento};
 use src_ia::motor_chat::llm::{
     cargar_modelo_1_7, chat_1_7, descargar_modelo_1_7, modelo_1_7_cargado, nombre_modelo_local,
@@ -162,6 +261,7 @@ pub async fn unload_chat_model(
 #[tauri::command]
 pub async fn send_chat_message(
     auth: tauri::State<'_, AuthState>,
+    state: tauri::State<'_, sqlx::SqlitePool>,
     messages: Vec<serde_json::Value>,
     role: String,
     model: String,
@@ -170,27 +270,36 @@ pub async fn send_chat_message(
 ) -> Result<ChatResponse, String> {
     auth.require_operator()?;
     let provider = provider.unwrap_or_default();
+    let db_path = db_path_de(&state);
     // Modo cloud: lo responde Rust directamente (port de generar_completo).
     // Si falla, cae al modelo local.
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
         let es_empleado = auth.es_empleado();
         let chat = construir_mensajes_api_rol(&mensajes_serde_a_rust(&messages), es_empleado);
-        match generar_completo(&provider, &api_key, &model, chat).await {
+        match generar_completo(&provider, &api_key, &model, chat.clone()).await {
             Ok((respuesta, modelo_real)) => {
                 let usado = if modelo_real.is_empty() {
                     nombre_proveedor(&provider)
                 } else {
                     modelo_real
                 };
+                let mut generador: Generador = Box::new(move |hist| {
+                    let p = provider.clone();
+                    let k = api_key.clone();
+                    let m = model.clone();
+                    Box::pin(async move { generar_completo(&p, &k, &m, hist).await.map(|(r, _)| r) })
+                });
+                let final_resp =
+                    resolver_ciclo_tools(respuesta, chat, db_path, &mut generador).await?;
                 return Ok(ChatResponse {
-                    response: respuesta,
+                    response: final_resp,
                     model_used: usado,
                 });
             }
             Err(e) => {
                 println!("[YARVIS-CHAT] Error proveedor ({provider}): {e}");
-                return _chat_local(messages).await;
+                return _chat_local(messages, db_path).await;
             }
         }
     }
@@ -199,7 +308,7 @@ pub async fn send_chat_message(
     println!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
-    _chat_local(messages).await
+    _chat_local(messages, db_path).await
 }
 
 /// Chat con streaming — modo cloud lo emite Rust (port de generar_stream),
@@ -208,6 +317,7 @@ pub async fn send_chat_message(
 pub async fn send_chat_stream(
     app: tauri::AppHandle,
     auth: tauri::State<'_, AuthState>,
+    state: tauri::State<'_, sqlx::SqlitePool>,
     messages: Vec<serde_json::Value>,
     role: String,
     model: String,
@@ -216,17 +326,18 @@ pub async fn send_chat_stream(
 ) -> Result<String, String> {
     auth.require_operator()?;
     let provider = provider.unwrap_or_default();
+    let db_path = db_path_de(&state);
 
     // ---- Modo cloud: streaming en Rust. ----
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
         let es_empleado = auth.es_empleado();
         let chat = construir_mensajes_api_rol(&mensajes_serde_a_rust(&messages), es_empleado);
-        match _stream_cloud(&app, &provider, &api_key, &model, chat).await {
+        match _stream_cloud(&app, &provider, &api_key, &model, chat, &db_path, 0).await {
             Ok(respuesta) => return Ok(respuesta),
             Err(e) => {
                 println!("[YARVIS-CHAT] Error proveedor ({provider}), fallback local: {e}");
-                return _stream_local(&app, messages).await;
+                return _stream_local(&app, messages, db_path).await;
             }
         }
     }
@@ -235,7 +346,7 @@ pub async fn send_chat_stream(
     println!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
-    _stream_local(&app, messages).await
+    _stream_local(&app, messages, db_path).await
 }
 
 /// Emite un stream cloud completo con Rust y devuelve la respuesta acumulada.
@@ -245,11 +356,15 @@ async fn _stream_cloud(
     api_key: &str,
     model: &str,
     chat: Vec<Mensaje>,
+    db_path: &str,
+    ronda: usize,
 ) -> Result<String, String> {
-    let stream = generar_stream(provider, api_key, model, chat);
+    let stream = generar_stream(provider, api_key, model, chat.clone());
     futures_util::pin_mut!(stream);
 
     let mut sep = SeparadorThink::new(CLOUD_MAX_W);
+    // Supresor: los bloques <tool_call> NUNCA llegan a la UI.
+    let mut supresor = SupresorToolCall::new();
     let mut full_response = String::new();
     let mut model_used = String::from("unknown");
 
@@ -261,14 +376,17 @@ async fn _stream_cloud(
                 }
                 for (tipo, frag) in sep.procesar(&texto) {
                     if tipo == TipoFragmento::Token {
+                        let visible = supresor.procesar(&frag);
                         full_response.push_str(&frag);
-                        let _ = app.emit(
-                            "chat-token",
-                            serde_json::json!({
-                                "token": frag,
-                                "model": modelo,
-                            }),
-                        );
+                        if !visible.is_empty() {
+                            let _ = app.emit(
+                                "chat-token",
+                                serde_json::json!({
+                                    "token": visible,
+                                    "model": modelo,
+                                }),
+                            );
+                        }
                     } else {
                         let _ = app.emit(
                             "chat-think",
@@ -300,15 +418,39 @@ async fn _stream_cloud(
     }
     for (tipo, frag) in sep.finalizar() {
         if tipo == TipoFragmento::Token {
+            let visible = supresor.procesar(&frag);
             full_response.push_str(&frag);
-            let _ = app.emit(
-                "chat-token",
-                serde_json::json!({
-                    "token": frag,
-                    "model": model_used,
-                }),
-            );
+            if !visible.is_empty() {
+                let _ = app.emit(
+                    "chat-token",
+                    serde_json::json!({
+                        "token": visible,
+                        "model": model_used,
+                    }),
+                );
+            }
         }
+    }
+    let _ = supresor.finalizar();
+
+    // ¿El stream pidió herramientas? Ejecutarlas y re-generar en silencio;
+    // la respuesta final (sin tool_calls) se emite troceada al usuario.
+    if tools::detectar_tool_call(&full_response).is_some() && ronda < tools::MAX_RONDAS_TOOLS {
+        println!("[YARVIS-TOOLS] cloud pidió tool en ronda {ronda}");
+        let mut generador: Generador = Box::new({
+            let provider = provider.to_string();
+            let api_key = api_key.to_string();
+            let model = model.to_string();
+            move |hist| {
+                let p = provider.clone();
+                let k = api_key.clone();
+                let m = model.clone();
+                Box::pin(async move { generar_completo(&p, &k, &m, hist).await.map(|(r, _)| r) })
+            }
+        });
+        let final_resp =
+            resolver_ciclo_tools(full_response, chat, db_path.to_string(), &mut generador).await?;
+        return _emitir_como_stream(app, &final_resp, &model_used);
     }
 
     let _ = app.emit("chat-done", serde_json::json!({ "model": model_used }));
@@ -322,12 +464,70 @@ async fn _stream_cloud(
     Ok(full_response)
 }
 
+/// Emite un texto final troceado (~40 chars) como si fuera streaming local.
+fn _emitir_como_stream(
+    app: &tauri::AppHandle,
+    texto: &str,
+    modelo: &str,
+) -> Result<String, String> {
+    let mut seg = String::new();
+    for c in texto.chars() {
+        seg.push(c);
+        if seg.chars().count() >= 40 {
+            let _ = app.emit("chat-token", serde_json::json!({ "token": seg, "model": modelo }));
+            seg = String::new();
+        }
+    }
+    if !seg.is_empty() {
+        let _ = app.emit("chat-token", serde_json::json!({ "token": seg, "model": modelo }));
+    }
+    let _ = app.emit("chat-done", serde_json::json!({ "model": modelo }));
+    let _ = app.emit(
+        "chat-complete",
+        serde_json::json!({ "response": texto, "model": modelo }),
+    );
+    Ok(texto.to_string())
+}
+
 /// Chat local (sin provider): responde el Qwen 1.7B nativo de Rust.
-async fn _chat_local(messages: Vec<serde_json::Value>) -> Result<ChatResponse, String> {
-    let msgs = mensajes_serde_a_rust(&messages);
-    let response = tokio::task::spawn_blocking(move || chat_1_7(&msgs))
+async fn _chat_local(
+    messages: Vec<serde_json::Value>,
+    db_path: String,
+) -> Result<ChatResponse, String> {
+    let mut historial = mensajes_serde_a_rust(&messages);
+    let mut respuesta = tokio::task::spawn_blocking({
+        let h = historial.clone();
+        move || chat_1_7(&h)
+    })
+    .await
+    .map_err(|e| format!("El hilo del modelo 1.7B falló: {e}"))??;
+
+    for _ in 0..tools::MAX_RONDAS_TOOLS {
+        let Some((nombre, args)) = tools::detectar_tool_call(&respuesta) else { break };
+        println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
+        let res = tokio::task::spawn_blocking({
+            let db_path = db_path.clone();
+            let n = nombre.clone();
+            let a = args.clone();
+            move || tools::ejecutar_tool(&n, &a, &db_path)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let json_res = match res {
+            Ok(r) => r,
+            Err(e) => serde_json::json!({ "error": e }).to_string(),
+        };
+        historial.push(Mensaje::new("assistant", respuesta));
+        historial.push(Mensaje::new("tool", json_res));
+        respuesta = tokio::task::spawn_blocking({
+            let h = historial.clone();
+            move || chat_1_7(&h)
+        })
         .await
         .map_err(|e| format!("El hilo del modelo 1.7B falló: {e}"))??;
+    }
+    let response = tools::respuesta_final_segura(&respuesta);
+
     Ok(ChatResponse {
         response,
         model_used: nombre_modelo_local(),
@@ -341,12 +541,43 @@ async fn _chat_local(messages: Vec<serde_json::Value>) -> Result<ChatResponse, S
 async fn _stream_local(
     app: &tauri::AppHandle,
     messages: Vec<serde_json::Value>,
+    db_path: String,
 ) -> Result<String, String> {
-    let msgs = mensajes_serde_a_rust(&messages);
+    let mut historial = mensajes_serde_a_rust(&messages);
 
-    let cleaned = tokio::task::spawn_blocking(move || chat_1_7(&msgs))
+    let mut cleaned = tokio::task::spawn_blocking({
+        let h = historial.clone();
+        move || chat_1_7(&h)
+    })
+    .await
+    .map_err(|e| format!("El hilo del modelo 1.7B falló: {e}"))??;
+
+    // Ciclo de herramientas ANTES de emitir nada a la UI.
+    for _ in 0..tools::MAX_RONDAS_TOOLS {
+        let Some((nombre, args)) = tools::detectar_tool_call(&cleaned) else { break };
+        println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
+        let res = tokio::task::spawn_blocking({
+            let db_path = db_path.clone();
+            let n = nombre.clone();
+            let a = args.clone();
+            move || tools::ejecutar_tool(&n, &a, &db_path)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let json_res = match res {
+            Ok(r) => r,
+            Err(e) => serde_json::json!({ "error": e }).to_string(),
+        };
+        historial.push(Mensaje::new("assistant", cleaned));
+        historial.push(Mensaje::new("tool", json_res));
+        cleaned = tokio::task::spawn_blocking({
+            let h = historial.clone();
+            move || chat_1_7(&h)
+        })
         .await
         .map_err(|e| format!("El hilo del modelo 1.7B falló: {e}"))??;
+    }
+    let cleaned = tools::respuesta_final_segura(&cleaned);
 
     // Emite la respuesta en trozos (~40 chars) preservando saltos de línea.
     let mut seg = String::new();

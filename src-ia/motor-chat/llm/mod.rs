@@ -14,6 +14,8 @@
 //! La inferencia vive detrás del feature `llm-local` (igual que el parseo de
 //! tickets); el backend Tauri la activa con `features = ["llm-local"]`.
 
+pub mod tools;
+
 use super::cloud::prompts::Mensaje;
 use std::path::PathBuf;
 
@@ -38,9 +40,13 @@ pub fn nombre_modelo_local() -> String {
 
 /// System prompt del 1.7B local: marca que está en fase de TESTING (previa al
 /// fine-tuning). Sin contexto de BD: solo identidad + reglas de prueba.
-pub const SYSTEM_PROMPT_TEST: &str = r#"Eres Y.A.R.V.I.S., el asistente inteligente de negocios.
-Estas en produccion y siendo TESTEADO antes de tu fine-tuning. Respuesta con sinceridad: si no tienes informacion o no sabes hacer algo, dilo claro y explica por que.
-Aun tienes pocas herramientas: puedes orientar al usuario sobre ventas y consultas del negocio, pero sin inventar datos.
+pub const SYSTEM_PROMPT_TEST: &str = r#"Eres un asistente de tienda con acceso a herramientas: [query_sales, compare_periods, get_top_products, query_inventory, forecast_sales, get_product_info, get_restock_analysis]
+Eres Y.A.R.V.I.S., el asistente inteligente de negocios. Respuesta con sinceridad: si no tienes informacion o no sabes hacer algo, dilo claro y explica por que.
+Cuando la pregunta pueda responderse con una herramienta (ventas, inventario, productos, pronosticos o resurtido), responde UNICAMENTE con:
+<tool_call>
+{"name": "nombre_de_tool", "arguments": { ... }}
+</tool_call>
+Si ninguna herramienta aplica, responde directo sin tool_call. No inventes datos.
 Se directo y util."#;
 
 /// Arma los mensajes [system (test) + historial] para el modelo local 1.7B.
