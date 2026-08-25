@@ -18,14 +18,18 @@ pub fn hash_password(pass: &str) -> String {
 }
 
 /// Verifica una contraseña contra su hash PHC de Argon2.
-/// Si el hash no es válido (datos viejos en texto plano), compara directamente
-/// para no bloquear al usuario existente.
+///
+/// SIN fallback a texto plano: si el hash no parsea, el acceso se deniega.
+/// El fallback anterior perpetuaba credenciales sin hash indefinidamente;
+/// todos los usuarios actuales fueron creados vía hash_password (Argon2id),
+/// así que un valor que no parsea es corrupción o tampering, nunca legacy.
+/// En ese caso el admin debe resetear la contraseña desde su panel.
 pub fn verify_password(pass: &str, stored: &str) -> bool {
     match argon2::password_hash::PasswordHash::new(stored) {
         Ok(parsed) => Argon2::default()
             .verify_password(pass.as_bytes(), &parsed)
             .is_ok(),
-        Err(_) => pass == stored,
+        Err(_) => false,
     }
 }
 

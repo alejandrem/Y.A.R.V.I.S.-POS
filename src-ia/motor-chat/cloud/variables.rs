@@ -29,14 +29,25 @@ pub const PROVIDERS: &[Provider] = &[
     },
 ];
 
-/// Timeout de lectura HTTP hacia los proveedores (segundos).
-pub const TIMEOUT_READ_SECS: u64 = 120;
-/// Timeout de conexión HTTP hacia los proveedores (segundos).
+/// Timeout de CONEXIÓN hacia los proveedores (segundos).
 pub const TIMEOUT_CONNECT_SECS: u64 = 30;
 
-/// Límite de tokens de SALIDA que se pide a ambos proveedores de nube
-/// (OpenAI usa `max_tokens`, Gemini `generationConfig.maxOutputTokens`).
+/// Timeout de INACTIVIDAD (segundos): máximo silencio entre chunks del
+/// stream SSE. NO es un timeout total — una generación larga pero viva
+/// (llegan chunks) nunca se corta; un servidor colgado sí se detecta.
+/// Antes había un timeout global de 120 s que mataba streams largos a
+/// mitad de respuesta.
+pub const TIMEOUT_IDLE_SECS: u64 = 90;
+
+/// Límite de tokens de SALIDA para OpenCode Zen (OpenAI-compatible usa
+/// `max_tokens`). Los modelos free toleran valores altos.
 pub const MAX_TOKENS: u32 = 39800;
+
+/// Límite de tokens de SALIDA para Gemini (`generationConfig.maxOutputTokens`).
+/// Los modelos flash tienen techos de salida bajos (8192 en gemini-2.0-flash):
+/// enviarles un valor mayor responde 400 INVALID_ARGUMENT en CADA llamada.
+/// Antes se enviaba MAX_TOKENS tal cual y Gemini estaba roto por esto.
+pub const MAX_TOKENS_GOOGLE: u32 = 8192;
 
 /// Modelos gratuitos de OpenCode que NO terminan en "-free" pero sí lo son.
 pub const MODELOS_FREE_EXTRA: &[&str] = &["big-pickle"];

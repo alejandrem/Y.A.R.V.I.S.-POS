@@ -78,3 +78,17 @@ async fn contraseñas_distintas_aceptadas() {
     let r = guardar_empleado_impl(&pool, "Dos".into(), "clavebbb".into(), None, None).await;
     assert!(r.is_ok());
 }
+
+
+#[test]
+fn password_sin_hash_es_rechazada_regresion() {
+    // REGRESIÓN: verify_password tuvo un fallback que comparaba en claro
+    // cuando el hash no parseaba ("perpetúa credenciales sin hash para
+    // siempre"). Fue eliminado: un stored sin formato Argon2 debe negar
+    // el acceso SIEMPRE, aunque la contraseña coincida literalmente.
+    assert!(verify_password("secreto", "secreto") == false);
+    assert!(verify_password("secreto", "no-es-mi-password") == false);
+    // Y el flujo normal sigue funcionando:
+    let hash = hash_password("clave-segura");
+    assert!(verify_password("clave-segura", &hash));
+}

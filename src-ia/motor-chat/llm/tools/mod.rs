@@ -219,6 +219,14 @@ fn str_arg<'a>(args: &'a Value, clave: &str, default: &'a str) -> String {
     args.get(clave).and_then(|v| v.as_str()).unwrap_or(default).to_string()
 }
 
+/// Escapa los comodines de LIKE (`%`, `_` y el propio `\`) para que el
+/// texto de búsqueda se trate literalmente. Usar SIEMPRE con
+/// `ESCAPE '\'` en la consulta. Sin esto, un producto llamado "50%"
+/// alteraba la semántica del patrón.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
 const MONEDA: &str = "MXN";
 
 /// La DB almacena el dinero en CENTAVOS enteros (migración f64 → i64).
@@ -237,30 +245,36 @@ fn query_sales(conn: &Connection, args: &Value) -> Result<Value, String> {
     let metric = str_arg(args, "metric", "revenue");
     let producto = args.get("product_id").and_then(|v| v.as_str());
 
-    let join_prod = producto.map_or(String::new(), |p| {
-        format!(
-            " JOIN detalle_ventas d ON d.venta_id = v.id AND d.producto_nombre LIKE '%{p}%' "
-        )
-    });
+    // SEGURIDAD: el product_id viene de los `arguments` que el LLM escribe
+    // en <tool_call> (input semiconfiado). TODO va parametrizado con
+    // placeholders ?1..?3 — jamás interpolar strings en el SQL. Los
+    // comodines LIKE del input se escapan para que se traten literalmente.
+    let filtro_prod =
+        producto.map(|_| " AND d.producto_nombre LIKE '%' || ?3 || '%' ESCAPE '\\'").unwrap_or("");
     let sql = if metric == "units" {
-        // Unidades siempre vienen del detalle de venta.
-        let filtro_prod = producto
-            .map(|p| format!(" AND d.producto_nombre LIKE '%{p}%'"))
-            .unwrap_or_default();
         format!(
             "SELECT COALESCE(SUM(d.cantidad), 0) FROM ventas v JOIN detalle_ventas d ON d.venta_id = v.id WHERE v.estado = 'completada' AND date(v.fecha) BETWEEN ?1 AND ?2{filtro_prod}"
         )
     } else {
+        let join_prod = producto
+            .map(|_| " JOIN detalle_ventas d ON d.venta_id = v.id AND d.producto_nombre LIKE '%' || ?3 || '%' ESCAPE '\\' ")
+            .unwrap_or("");
         format!(
-            "SELECT COALESCE(SUM(v.total), 0) FROM ventas v {join_prod} WHERE v.estado = 'completada' AND date(v.fecha) BETWEEN ?1 AND ?2"
+            "SELECT COALESCE(SUM(v.total), 0) FROM ventas v{join_prod} WHERE v.estado = 'completada' AND date(v.fecha) BETWEEN ?1 AND ?2"
         )
     };
 
     // SUM(v.total) viene en CENTAVOS (columna INTEGER); se lee como f64 por
     // si una DB vieja mezcla REAL×INTEGER y se convierte a pesos.
-    let total_centavos: f64 = conn
-        .query_row(&sql, rusqlite::params![rango.desde, rango.hasta], |r| r.get(0))
-        .map_err(|e| e.to_string())?;
+    let total_centavos: f64 = if let Some(p) = producto {
+        conn.query_row(&sql, rusqlite::params![rango.desde, rango.hasta, escape_like(p)], |r| {
+            r.get(0)
+        })
+        .map_err(|e| e.to_string())?
+    } else {
+        conn.query_row(&sql, rusqlite::params![rango.desde, rango.hasta], |r| r.get(0))
+            .map_err(|e| e.to_string())?
+    };
 
     let mut out = serde_json::Map::new();
     if metric == "units" {
@@ -454,15 +468,15 @@ fn get_product_info(conn: &Connection, args: &Value) -> Result<Value, String> {
 fn get_restock_analysis(conn: &Connection, args: &Value) -> Result<Value, String> {
     let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10).clamp(1, 30);
     // Productos con venta reciente ordenados por urgencia (stock más bajo).
-    let sql = format!(
-        "SELECT nombre, stock, stock_minimo, vendido
+    // LIMIT parametrizado: aunque el valor viene clampeado a i64, el
+    // estándar del módulo es cero interpolación en SQL.
+    let sql = "SELECT nombre, stock, stock_minimo, vendido
          FROM productos
          WHERE stock <= stock_minimo
-         ORDER BY stock ASC LIMIT {limit}"
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+         ORDER BY stock ASC LIMIT ?1";
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
     let filas = stmt
-        .query_map([], |r| {
+        .query_map(rusqlite::params![limit], |r| {
             let stock: f64 = r.get(1)?;
             let minimo: f64 = r.get(2)?;
             Ok(serde_json::json!({

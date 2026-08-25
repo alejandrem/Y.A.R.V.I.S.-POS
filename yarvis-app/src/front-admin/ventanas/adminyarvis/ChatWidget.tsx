@@ -3,6 +3,7 @@
 // define los tipos compartidos (Message, ChatSession, selección de modelo) y resuelve
 // los efectos transversales: cambio de modelo, switch de chat, acción "Limpiar chat".
 import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import ChatSidebar from "./components/ChatSidebar";
 import ChatMessages from "./components/ChatMessages";
 import ChatInput from "./components/ChatInput";
@@ -49,6 +50,25 @@ export interface ChatModelSelection {
 
 export interface ActiveCloud extends ChatModelSelection {}
 
+// Caché EN MEMORIA de las API keys, alimentada desde el backend
+// (api_keys.json con permisos 0600). Las keys NUNCA residen en
+// localStorage del webview: quedarían en texto plano y legibles por XSS.
+let apiKeysCache: Record<string, string> = {};
+
+/** Refresca el caché desde el disco (vía backend). Llamar al montar el panel. */
+export async function refrescarApiKeysCache(): Promise<void> {
+  try {
+    apiKeysCache = await invoke<Record<string, string>>("leer_api_keys");
+  } catch (e) {
+    console.error("[YARVIS] no se pudo refrescar el caché de API keys:", e);
+  }
+}
+
+/** Actualiza el caché tras guardar en el backend. */
+export function setApiKeysCache(keys: Record<string, string>): void {
+  apiKeysCache = keys ?? {};
+}
+
 export function getActiveCloud(): ActiveCloud {
   const empty: ActiveCloud = {
     provider: "",
@@ -59,7 +79,7 @@ export function getActiveCloud(): ActiveCloud {
   };
 
   try {
-    const keys = JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}") as Record<string, string>;
+    const keys = apiKeysCache;
     const activeProvider = localStorage.getItem("yarvis_active_provider") as "google" | "opencode" | null;
     const provider = activeProvider && (keys[activeProvider] || "").trim()
       ? activeProvider

@@ -15,6 +15,7 @@ import ChatWidget, {
   type CloudModel,
   CLOUD_PROVIDERS,
 } from "../../../front-admin/ventanas/adminyarvis/ChatWidget";
+import { setApiKeysCache } from "../../../front-admin/ventanas/adminyarvis/ChatWidget";
 import {
   ICONO_CHECK,
   ICONO_ENGRANAJE,
@@ -70,9 +71,8 @@ const YarvisEmpleado = ({ active = true }: YarvisEmpleadoProps) => {
   const [showConfig, setShowConfig] = useState(false);
   const [configSection, setConfigSection] = useState<"opencode" | "google" | "local">("opencode");
   const [showModelMenu, setShowModelMenu] = useState(false);
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}"); } catch { return {}; }
-  });
+  // API keys en disco vía backend (api_keys.json 0600), no localStorage.
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [localModelPath, setLocalModelPath] = useState(() => localStorage.getItem("yarvis_local_model_path") || "");
   const [localModelName, setLocalModelName] = useState("Modelo local");
   const [selectedProvider, setSelectedProvider] = useState<"" | ProviderId>(() => {
@@ -83,6 +83,12 @@ const YarvisEmpleado = ({ active = true }: YarvisEmpleadoProps) => {
     try { return JSON.parse(localStorage.getItem("yarvis_cloud_models_selected") || "{}"); } catch { return {}; }
   });
   const [cloudModels, setCloudModels] = useState<Record<string, CloudModel[]>>({});
+
+  useEffect(() => {
+    invoke<Record<string, string>>("leer_api_keys")
+      .then((keys) => { if (Object.keys(keys).length > 0) { setApiKeys(keys); setApiKeysCache(keys); } })
+      .catch((e) => console.error("[YARVIS] no se pudieron leer las API keys:", e));
+  }, []);
   const [cloudModelsLoading, setCloudModelsLoading] = useState<Record<string, boolean>>({});
   const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({ "1.7B": false });
   const [ramGb, setRamGb] = useState(0);
@@ -276,17 +282,29 @@ const YarvisEmpleado = ({ active = true }: YarvisEmpleadoProps) => {
     // Regla del local: las claves que ya existen (puestas por el
     // administrador) NUNCA se eliminan ni se sobrescriben con vacío. El
     // empleado solo puede AGREGAR una clave para un proveedor que aún
-    // no tiene una.
-    const previas: Record<string, string> = (() => {
-      try { return JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}"); } catch { return {}; }
-    })();
+    // no tiene una. Las previas se leen del backend (disco 0600).
+    let previas: Record<string, string> = {};
+    try {
+      previas = await invoke<Record<string, string>>("leer_api_keys");
+    } catch (e) {
+      console.error("[YARVIS] no se pudieron leer las API keys previas:", e);
+      setConfigMessage(`Error leyendo claves: ${e}`);
+      return;
+    }
     const fusionadas: Record<string, string> = { ...previas };
     (Object.keys(apiKeys) as ProviderId[]).forEach((provider) => {
       const nueva = (apiKeys[provider] || "").trim();
       if (nueva || !previas[provider]) fusionadas[provider] = nueva;
     });
     setApiKeys(fusionadas);
-    localStorage.setItem("yarvis_api_keys", JSON.stringify(fusionadas));
+    try {
+      await invoke("guardar_api_keys", { keys: fusionadas });
+      setApiKeysCache(fusionadas);
+    } catch (e) {
+      console.error("[YARVIS] no se pudieron guardar las API keys:", e);
+      setConfigMessage(`Error guardando claves: ${e}`);
+      return;
+    }
 
     const activo = selectedProvider ? fusionadas[selectedProvider] : "";
     if (selectedProvider && !activo) {

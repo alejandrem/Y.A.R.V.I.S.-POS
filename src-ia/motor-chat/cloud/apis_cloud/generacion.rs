@@ -11,17 +11,22 @@ use reqwest::Client;
 
 use super::super::prompts::Mensaje;
 use super::super::think::{limpiar_think, SeparadorThink, TipoFragmento};
-use super::super::variables::{PROVIDERS, TIMEOUT_CONNECT_SECS, TIMEOUT_READ_SECS};
+use super::super::variables::{PROVIDERS, TIMEOUT_CONNECT_SECS, TIMEOUT_IDLE_SECS};
 use super::errores::{espera_429, ErrorCloud};
 use super::helpers::cola_modelos_a_probar;
 use super::proveedores::stream_modelo;
 use super::tipos::Evento;
 
-/// HTTP client compartido por toda la API (timeouts de conexión y lectura).
+/// HTTP client compartido por toda la API.
+///
+/// Sin timeout GLOBAL: con SSE, `Client::timeout` aplica al ciclo completo
+/// petición+cuerpo y mataba generaciones largas (>120 s) a mitad de stream.
+/// En su lugar, `read_timeout` limita el SILENCIO entre chunks: un stream
+/// vivo nunca se corta; un servidor colgado se detecta a los IDLE segundos.
 pub(crate) fn cliente() -> Client {
     Client::builder()
         .connect_timeout(Duration::from_secs(TIMEOUT_CONNECT_SECS))
-        .timeout(Duration::from_secs(TIMEOUT_READ_SECS))
+        .read_timeout(Duration::from_secs(TIMEOUT_IDLE_SECS))
         .build()
         .expect("Error creando HTTP client compartido")
 }

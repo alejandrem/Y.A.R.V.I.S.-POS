@@ -8,7 +8,7 @@ use futures_util::StreamExt;
 use reqwest::Client;
 
 use super::super::prompts::Mensaje;
-use super::super::variables::{Provider, MAX_TOKENS};
+use super::super::variables::{Provider, MAX_TOKENS, MAX_TOKENS_GOOGLE};
 use super::errores::ErrorCloud;
 use super::helpers::normalizar_mensajes;
 use super::sse::sse_lineas;
@@ -179,8 +179,10 @@ pub(crate) async fn stream_google<'a>(
 
         let mut body = serde_json::json!({
             "contents": contents,
+            // Techo propio de Gemini: MAX_TOKENS (39800) excede el límite de
+            // salida de los modelos flash y provoca 400 en cada llamada.
             "generationConfig": {
-                "maxOutputTokens": MAX_TOKENS,
+                "maxOutputTokens": MAX_TOKENS_GOOGLE,
                 "temperature": 0.6,
             },
         });

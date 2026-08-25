@@ -424,3 +424,39 @@ Orden de implementación sugerido (por impacto/poco riesgo)
 - `yarvis-app/src/front-admin/types.ts` — 15 interfaces TypeScript nuevas para finanzas
 
 **Leccion aprendida:** Cuando el frontend y el backend calculan rangos de fechas por separado, pueden divergir silenciosamente. Idealmente el frontend deberia enviar el rango al backend y el backend deberia usar ese rango en TODAS las funciones (como ya hace `get_resumen_periodo`). Las funciones que calculan sus propias fechas (como `get_ventas_vs_gastos_mensual` y `get_punto_equilibrio`) crean una fuente de verdad inconsistente.
+
+---
+
+### Bug B1: `npm run tauri build` falla al generar el AppImage (`failed to run linuxdeploy`) — MEDIO (RESUELTO)
+
+**Contexto:** Arch Linux. El build compila perfecto (binario release, `.deb` y `.rpm` se generan), pero el paso final del bundle AppImage muere con:
+```
+failed to bundle project `failed to run linuxdeploy`
+```
+
+**Causa raiz:**
+
+El bundler de Tauri descarga `linuxdeploy-x86_64.AppImage` a `src-tauri/target/cache/` y lo EJECUTA para armar el AppImage. Los AppImage requieren FUSE (`fusermount`) para montarse a si mismos al ejecutarse. En el sistema no habia `fuse2` instalado, asi que linuxdeploy no podia ni arrancar.
+
+Diagnostico rapido:
+```bash
+fusermount --version   # -> "fusermount no encontrado"
+pacman -Q fuse2        # -> no instalado
+```
+
+**Solucion (cualquiera de las dos):**
+
+1. La limpia — instalar FUSE (requiere reiniciar sesion si es la primera vez):
+```bash
+sudo pacman -S fuse2
+npm run tauri build
+```
+
+2. La portable — sin instalar nada, decirle al AppImage que se extraiga solo en vez de montarse:
+```bash
+APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
+```
+
+**Importante NO confundir:** el error aparece AL FINAL del output pero NO invalida el build. El binario de produccion (`target/release/yarvis-app`), el `.deb` y el `.rpm` ya estaban generados y funcionan. El AppImage es solo un formato mas de distribucion (el mas portable: un solo archivo sin instalacion).
+
+**Leccion aprendida:** leer la ultima linea de un fallo de bundling con lupa pero sin panico: Tauri genera varios formatos de paquete en secuencia y un fallo en el ultimo no tira los anteriores. Y en Arch, `fuse2` NO viene por defecto aunque `fuse3` si venga en algunos sistemas — linuxdeploy todavia usa FUSE 2.

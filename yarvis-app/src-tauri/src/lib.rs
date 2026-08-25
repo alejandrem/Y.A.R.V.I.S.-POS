@@ -3,6 +3,7 @@
 // Inicializa SQLite. Todo corre 100% nativo en Rust.
 // ============================================================
 
+pub mod api_config;
 pub mod backventanas;
 pub mod dinero;
 pub mod models;
@@ -28,6 +29,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Auth
+            api_config::guardar_api_keys,
+            api_config::leer_api_keys,
             backventanas::backadmin::adminconfig::auth::check_setup_done,
             backventanas::backadmin::adminconfig::auth::guardar_admin,
             backventanas::backadmin::adminconfig::auth::validar_login_admin,

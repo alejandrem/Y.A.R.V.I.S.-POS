@@ -10,6 +10,7 @@ import ChatWidget, {
   type CloudModel,
   CLOUD_PROVIDERS,
 } from "./ChatWidget";
+import { setApiKeysCache } from "./ChatWidget";
 import {
   ICONO_CHECK,
   ICONO_ENGRANAJE,
@@ -41,9 +42,10 @@ const AdminYarvis = ({ active = true }: AdminYarvisProps) => {
   const [showConfig, setShowConfig] = useState(false);
   const [configSection, setConfigSection] = useState<"opencode" | "google" | "local">("opencode");
   const [showModelMenu, setShowModelMenu] = useState(false);
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem("yarvis_api_keys") || "{}"); } catch { return {}; }
-  });
+  // Las API keys viven en disco vía backend (api_keys.json con permisos
+  // 0600) — NUNCA en localStorage, que queda en texto plano y es legible
+  // por cualquier XSS del webview.
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [localModelPath, setLocalModelPath] = useState(() => localStorage.getItem("yarvis_local_model_path") || "");
   const [localModelName, setLocalModelName] = useState("Modelo local");
   const [selectedProvider, setSelectedProvider] = useState<"" | ProviderId>(() => {
@@ -54,6 +56,12 @@ const AdminYarvis = ({ active = true }: AdminYarvisProps) => {
     try { return JSON.parse(localStorage.getItem("yarvis_cloud_models_selected") || "{}"); } catch { return {}; }
   });
   const [cloudModels, setCloudModels] = useState<Record<string, CloudModel[]>>({});
+
+  useEffect(() => {
+    invoke<Record<string, string>>("leer_api_keys")
+      .then((keys) => { if (Object.keys(keys).length > 0) { setApiKeys(keys); setApiKeysCache(keys); } })
+      .catch((e) => console.error("[YARVIS] no se pudieron leer las API keys:", e));
+  }, []);
   const [cloudModelsLoading, setCloudModelsLoading] = useState<Record<string, boolean>>({});
   const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({ "1.7B": false });
   const [ramGb, setRamGb] = useState(0);
@@ -244,7 +252,14 @@ const AdminYarvis = ({ active = true }: AdminYarvisProps) => {
   };
 
   const saveApiConfig = async () => {
-    localStorage.setItem("yarvis_api_keys", JSON.stringify(apiKeys));
+    try {
+      await invoke("guardar_api_keys", { keys: apiKeys });
+      setApiKeysCache(apiKeys);
+    } catch (e) {
+      console.error("[YARVIS] no se pudieron guardar las API keys:", e);
+      setConfigMessage(`Error guardando claves: ${e}`);
+      return;
+    }
     if (selectedProvider && !apiKeys[selectedProvider]) {
       setSelectedProvider("");
       localStorage.removeItem("yarvis_active_provider");

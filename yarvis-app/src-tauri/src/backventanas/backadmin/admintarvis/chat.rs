@@ -21,6 +21,38 @@ fn db_path_de(pool: &sqlx::SqlitePool) -> String {
 type GeneradorFut = std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>;
 type Generador<'a> = Box<dyn FnMut(Vec<Mensaje>) -> GeneradorFut + Send + 'a>;
 
+/// Tools que exponen métricas financieras GLOBALES (revenue total,
+/// comparativas de periodo, análisis de recompra con costos). El prompt
+/// le pide al modelo no usarlas con empleados, pero un prompt es
+/// sugerencia — ESTO es control de acceso real en el punto de ejecución.
+const TOOLS_SOLO_ADMIN: &[&str] = &["query_sales", "compare_periods", "get_restock_analysis"];
+
+/// Ejecuta una tool respetando el rol de la sesión. Si está bloqueada, NO
+/// se ejecuta: se le devuelve al modelo un error de permisos para que
+/// responda con elegancia ("eso te lo puede decir el administrador").
+async fn ejecutar_tool_con_rol(
+    nombre: &str,
+    args: &str,
+    db_path: &str,
+    es_empleado: bool,
+) -> String {
+    if es_empleado && TOOLS_SOLO_ADMIN.contains(&nombre) {
+        println!("[YARVIS-TOOLS] BLOQUEADA por rol ({es_empleado}): {nombre}");
+        return serde_json::json!({
+            "error": "Permiso denegado: esta consulta financiera solo está disponible para el administrador."
+        })
+        .to_string();
+    }
+    let n = nombre.to_string();
+    let a = args.to_string();
+    let db = db_path.to_string();
+    match tokio::task::spawn_blocking(move || tools::ejecutar_tool(&n, &a, &db)).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => serde_json::json!({ "error": e }).to_string(),
+        Err(e) => serde_json::json!({ "error": e.to_string() }).to_string(),
+    }
+}
+
 /// Ciclo tool_call→ejecutar→re-preguntar. Mientras el modelo siga pidiendo
 /// herramientas (hasta MAX rondas), ejecuta el SQL real y le devuelve el
 /// resultado como mensaje role:"tool" hasta obtener una respuesta final.
@@ -28,6 +60,7 @@ async fn resolver_ciclo_tools(
     mut respuesta: String,
     mut historial: Vec<Mensaje>,
     db_path: String,
+    es_empleado: bool,
     generar: &mut Generador<'_>,
 ) -> Result<String, String> {
     for _ in 0..tools::MAX_RONDAS_TOOLS {
@@ -35,16 +68,7 @@ async fn resolver_ciclo_tools(
             return Ok(respuesta);
         };
         println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
-        let res = tokio::task::spawn_blocking({
-            let db_path = db_path.clone();
-            move || tools::ejecutar_tool(&nombre, &args, &db_path)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-        let json_res = match res {
-            Ok(r) => r,
-            Err(e) => serde_json::json!({ "error": e }).to_string(),
-        };
+        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
         historial.push(Mensaje::new("assistant", respuesta));
         historial.push(Mensaje::new("tool", json_res));
         respuesta = (&mut *generar)(historial.clone()).await?;
@@ -291,7 +315,7 @@ pub async fn send_chat_message(
                     Box::pin(async move { generar_completo(&p, &k, &m, hist).await.map(|(r, _)| r) })
                 });
                 let final_resp =
-                    resolver_ciclo_tools(respuesta, chat, db_path, &mut generador).await?;
+                    resolver_ciclo_tools(respuesta, chat, db_path, es_empleado, &mut generador).await?;
                 return Ok(ChatResponse {
                     response: final_resp,
                     model_used: usado,
@@ -299,7 +323,7 @@ pub async fn send_chat_message(
             }
             Err(e) => {
                 println!("[YARVIS-CHAT] Error proveedor ({provider}): {e}");
-                return _chat_local(messages, db_path).await;
+                return _chat_local(messages, db_path, auth.es_empleado()).await;
             }
         }
     }
@@ -308,7 +332,7 @@ pub async fn send_chat_message(
     println!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
-    _chat_local(messages, db_path).await
+    _chat_local(messages, db_path, auth.es_empleado()).await
 }
 
 /// Chat con streaming — modo cloud lo emite Rust (port de generar_stream),
@@ -333,11 +357,11 @@ pub async fn send_chat_stream(
         let api_key = api_key.unwrap_or_default();
         let es_empleado = auth.es_empleado();
         let chat = construir_mensajes_api_rol(&mensajes_serde_a_rust(&messages), es_empleado);
-        match _stream_cloud(&app, &provider, &api_key, &model, chat, &db_path, 0).await {
+        match _stream_cloud(&app, &provider, &api_key, &model, chat, &db_path, es_empleado, 0).await {
             Ok(respuesta) => return Ok(respuesta),
             Err(e) => {
                 println!("[YARVIS-CHAT] Error proveedor ({provider}), fallback local: {e}");
-                return _stream_local(&app, messages, db_path).await;
+                return _stream_local(&app, messages, db_path, es_empleado).await;
             }
         }
     }
@@ -346,7 +370,7 @@ pub async fn send_chat_stream(
     println!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
-    _stream_local(&app, messages, db_path).await
+    _stream_local(&app, messages, db_path, auth.es_empleado()).await
 }
 
 /// Emite un stream cloud completo con Rust y devuelve la respuesta acumulada.
@@ -357,6 +381,7 @@ async fn _stream_cloud(
     model: &str,
     chat: Vec<Mensaje>,
     db_path: &str,
+    es_empleado: bool,
     ronda: usize,
 ) -> Result<String, String> {
     let stream = generar_stream(provider, api_key, model, chat.clone());
@@ -449,7 +474,7 @@ async fn _stream_cloud(
             }
         });
         let final_resp =
-            resolver_ciclo_tools(full_response, chat, db_path.to_string(), &mut generador).await?;
+            resolver_ciclo_tools(full_response, chat, db_path.to_string(), es_empleado, &mut generador).await?;
         return _emitir_como_stream(app, &final_resp, &model_used);
     }
 
@@ -493,6 +518,7 @@ fn _emitir_como_stream(
 async fn _chat_local(
     messages: Vec<serde_json::Value>,
     db_path: String,
+    es_empleado: bool,
 ) -> Result<ChatResponse, String> {
     let mut historial = mensajes_serde_a_rust(&messages);
     let mut respuesta = tokio::task::spawn_blocking({
@@ -505,18 +531,7 @@ async fn _chat_local(
     for _ in 0..tools::MAX_RONDAS_TOOLS {
         let Some((nombre, args)) = tools::detectar_tool_call(&respuesta) else { break };
         println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
-        let res = tokio::task::spawn_blocking({
-            let db_path = db_path.clone();
-            let n = nombre.clone();
-            let a = args.clone();
-            move || tools::ejecutar_tool(&n, &a, &db_path)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-        let json_res = match res {
-            Ok(r) => r,
-            Err(e) => serde_json::json!({ "error": e }).to_string(),
-        };
+        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
         historial.push(Mensaje::new("assistant", respuesta));
         historial.push(Mensaje::new("tool", json_res));
         respuesta = tokio::task::spawn_blocking({
@@ -542,6 +557,7 @@ async fn _stream_local(
     app: &tauri::AppHandle,
     messages: Vec<serde_json::Value>,
     db_path: String,
+    es_empleado: bool,
 ) -> Result<String, String> {
     let mut historial = mensajes_serde_a_rust(&messages);
 
@@ -556,18 +572,7 @@ async fn _stream_local(
     for _ in 0..tools::MAX_RONDAS_TOOLS {
         let Some((nombre, args)) = tools::detectar_tool_call(&cleaned) else { break };
         println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
-        let res = tokio::task::spawn_blocking({
-            let db_path = db_path.clone();
-            let n = nombre.clone();
-            let a = args.clone();
-            move || tools::ejecutar_tool(&n, &a, &db_path)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-        let json_res = match res {
-            Ok(r) => r,
-            Err(e) => serde_json::json!({ "error": e }).to_string(),
-        };
+        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
         historial.push(Mensaje::new("assistant", cleaned));
         historial.push(Mensaje::new("tool", json_res));
         cleaned = tokio::task::spawn_blocking({
