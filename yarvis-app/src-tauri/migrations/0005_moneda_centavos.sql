@@ -1,4 +1,3 @@
--- no-transaction
 -- ============================================================
 -- 0005_moneda_centavos — El dinero pasa a vivir en CENTAVOS (INTEGER).
 --
@@ -10,18 +9,18 @@
 -- columna con afinidad REAL convierte cualquier entero escrito a float,
 -- así que no basta con escribir enteros en las columnas viejas.
 --
--- Procedimiento oficial de SQLite para table rebuilds:
---   PRAGMA foreign_keys=OFF → crear tabla nueva → copiar datos ×100
---   → DROP vieja → RENAME → recrear índices.
--- La migración corre SIN transacción porque PRAGMA foreign_keys es un
--- no-op dentro de una; es exactamente lo que documenta sqlite.org.
+-- IMPORTANTE sobre foreign_keys: sqlx-sqlite envuelve SIEMPRE cada
+-- migración en una transacción (ignora el marcador `-- no-transaction`)
+-- y SQLite ignora `PRAGMA foreign_keys` dentro de una transacción.
+-- Por eso las FKs se apagan DESDE LA CONEXIÓN en db.rs (fase 1 de
+-- initialize_db) y se reactivan al reabrir el pool (fase 2). No intentar
+-- controlarlas desde aquí: sería un no-op silencioso que solo falla con
+-- datos reales, nunca con DBs vacías de test.
 --
 -- Conversión: CAST(ROUND(col * 100) AS INTEGER) — redondea al centavo
 -- más cercano para absorber el ruido binario del f64 histórico.
 -- Los NULL se preservan (ROUND(NULL)=NULL).
 -- ============================================================
-
-PRAGMA foreign_keys = OFF;
 
 -- ------------------ usuarios ------------------
 CREATE TABLE usuarios_new (
@@ -374,4 +373,3 @@ ALTER TABLE resumen_financiero_diario_new RENAME TO resumen_financiero_diario;
 
 CREATE INDEX IF NOT EXISTS idx_resumen_fecha ON resumen_financiero_diario(fecha);
 
-PRAGMA foreign_keys = ON;

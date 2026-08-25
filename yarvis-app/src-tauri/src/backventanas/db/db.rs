@@ -45,14 +45,19 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
         // default y borrar una venta dejaría huérfanos en detalle_ventas).
         // FIX (auditoría): sin busy_timeout, escrituras concurrentes desde
         // distintos comandos Tauri devuelven SQLITE_BUSY (reintento 5s).
-        let options = SqliteConnectOptions::new()
+        let base_options = SqliteConnectOptions::new()
             .filename(&db_path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .foreign_keys(true)
             .busy_timeout(std::time::Duration::from_secs(5));
 
-        let pool = SqlitePool::connect_with(options)
+        // FASE 1 — migraciones SIN foreign_keys.
+        // Por qué: sqlx-sqlite envuelve SIEMPRE cada migración en una
+        // transacción (ignora el marcador `-- no-transaction`) y SQLite
+        // ignora `PRAGMA foreign_keys` DENTRO de una transacción. La
+        // reconstrucción de tablas de 0005 necesita FKs apagadas, así que
+        // el flag debe venir apagado desde la propia conexión.
+        let pool_migraciones = SqlitePool::connect_with(base_options.clone().foreign_keys(false))
             .await
             .expect("Fallo al conectar a SQLite");
 
@@ -60,9 +65,17 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
         // `sqlx::migrate!` embebe los .sql al compilar, así que el esquema
         // viaja DENTRO del binario (sigue siendo portable al 100%).
         MIGRATOR
-            .run(&pool)
+            .run(&pool_migraciones)
             .await
             .expect("Fallo al aplicar migraciones de la DB");
+
+        pool_migraciones.close().await;
+
+        // FASE 2 — operación normal CON foreign_keys activas: integridad
+        // referencial real para ventas/detalles/inventario.
+        let pool = SqlitePool::connect_with(base_options.foreign_keys(true))
+            .await
+            .expect("Fallo al reconectar a SQLite");
 
         (pool, db_path_str)
     })

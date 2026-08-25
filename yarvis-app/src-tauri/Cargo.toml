@@ -71,6 +71,10 @@ name = "func_tickets"
 path = "test/funcionamiento/tickets.rs"
 
 [[test]]
+name = "func_cortes"
+path = "test/funcionamiento/cortes.rs"
+
+[[test]]
 name = "estres_ventas"
 path = "test/estres/estres_ventas.rs"
 

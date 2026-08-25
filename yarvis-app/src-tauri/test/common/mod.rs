@@ -15,6 +15,9 @@ static SEQ: AtomicU64 = AtomicU64::new(0);
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 /// DB temporal única por test, con las mismas opciones de conexión que producción.
+/// Dos fases como en db.rs: migrar SIN foreign_keys (sqlx envuelve cada
+/// migración en una transacción donde PRAGMA foreign_keys es un no-op y la
+/// reconstrucción de 0005 lo requiere) y reabrir CON foreign_keys.
 pub async fn db() -> SqlitePool {
     let n = SEQ.fetch_add(1, Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()
@@ -28,15 +31,21 @@ pub async fn db() -> SqlitePool {
         n
     ));
 
-    let options = SqliteConnectOptions::new()
+    let base = SqliteConnectOptions::new()
         .filename(&path)
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
-        .foreign_keys(true)
         .busy_timeout(std::time::Duration::from_secs(5));
 
-    let pool = SqlitePool::connect_with(options).await.expect("conectar sqlite de prueba");
-    MIGRATOR.run(&pool).await.expect("aplicar migraciones");
+    let pool_migraciones = SqlitePool::connect_with(base.clone().foreign_keys(false))
+        .await
+        .expect("conectar sqlite de prueba");
+    MIGRATOR.run(&pool_migraciones).await.expect("aplicar migraciones");
+    pool_migraciones.close().await;
+
+    let pool = SqlitePool::connect_with(base.foreign_keys(true))
+        .await
+        .expect("reconectar sqlite de prueba");
     pool
 }
 
