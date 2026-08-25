@@ -19,7 +19,9 @@ pub const PROVIDERS: &[Provider] = &[
         key: "google",
         name: "Gemini",
         base_url: "https://generativelanguage.googleapis.com/v1beta",
-        default_model: "gemini-2.0-flash",
+        // gemini-2.x fue RETIRADO para keys nuevas ("no longer available to new
+        // users", error 404). La API recomienda gemini-3.6-flash (verificado).
+        default_model: "gemini-3.6-flash",
     },
     Provider {
         key: "opencode",
