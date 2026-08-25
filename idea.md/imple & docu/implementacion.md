@@ -1,6 +1,8 @@
 # Plan de Implementación Riguroso - Y.A.R.V.I.S. POS 🚀
 
-> ⚠️ **ACTUALIZADO (2026-Ago):** este documento ya no es un "mockup a futuro de Python". Es el **estado real** de la implementación en Rust. Las olas marcadas ✅ están **implementadas** y verificadas. Las zonas sin ✅ son planes pendientes.
+> ⚠️ **ACTUALIZADO (2026-Ago):** Este documento convive con
+> **`refactor_y_seguridad_2026-08.md`** (auditoría senior, migración a centavos,
+> endurecimiento de seguridad y tools cloud) — léelo para el estado más reciente. este documento ya no es un "mockup a futuro de Python". Es el **estado real** de la implementación en Rust. Las olas marcadas ✅ están **implementadas** y verificadas. Las zonas sin ✅ son planes pendientes.
 
 Bienvenido al mapa de batalla. Este no es un proyecto de fin de semana, es una obra de ingeniería. Para asegurar que Y.A.R.V.I.S. sea un software robusto, escalable y mantenible a lo largo de los años, se implementó por fases.
 

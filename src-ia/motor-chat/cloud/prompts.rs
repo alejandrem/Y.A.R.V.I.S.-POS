@@ -56,10 +56,25 @@ Ejemplo correcto: "Estos son los productos por reabastecer:
 Si el resultado viene vacio, dilo claramente: "No hay productos con bajo stock, todo esta surtido."
 Si NINGUNA herramienta aplica a la pregunta, respondele directo sin tool_call."#;
 
+/// Tools de navegación de inventario agregadas para los modelos cloud.
+/// Se APPEND al final del prompt: NO modifica TOOLS_LINEA ni
+/// TOOLS_INSTRUCCIONES (el formato exacto del fine-tuning queda intacto).
+/// Solo lectura: jamás escriben en la DB.
+const TOOLS_EXTRAS: &str = r#"
+Herramientas ADICIONALES para navegar el inventario (ademas de las anteriores):
+- search_products: query OBLIGATORIO (texto parcial del nombre del producto), limit opcional
+- list_categories: SIN argumentos; devuelve cada categoria con cuantos productos tiene
+- get_products_by_category: category OPCIONAL (nombre de categoria; si se omite lista todo el catalogo), limit opcional
+Estrategia recomendada: si el usuario pide "ver el inventario" o no sabe que buscar,
+empieza con list_categories; luego usa get_products_by_category para hojear una categoria;
+usa search_products cuando mencione un producto o marca concreta (busca por fragmento,
+ej: query "coca" encuentra "Coca-Cola 600ml"). Combinalas con get_product_info para dar
+precio y stock exactos de un solo articulo."#;
+
 /// System prompt del ADMIN dueño de la tienda (con sus tools).
 pub fn construir_system_prompt_admin() -> String {
     format!(
-        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}
+        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}{TOOLS_EXTRAS}
 Eres Y.A.R.V.I.S un asistente de una tienda mexicana, responde siempre en español.
 La persona que te escribe es el ADMINISTRADOR/DUENO de la tienda: puedes hablarle
 de finanzas, ganancias, nomina, empleados y decisiones de negocio con total confianza.
@@ -75,7 +90,7 @@ Eres libre de dar opiniones sobre lo que deseas mejorar aunque solo vas a consul
 /// stock, productos, precios de venta y movimientos de su turno.
 pub fn construir_system_prompt_empleado() -> String {
     format!(
-        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}
+        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}{TOOLS_EXTRAS}
 Eres Y.A.R.V.I.S el asistente de una tienda mexicana, responde siempre en español.
 La persona que te escribe es un EMPLEADO de mostrador, NO el dueno:
 dirigete a el como companero de trabajo.
@@ -131,6 +146,20 @@ mod tests {
         assert!(chat[0].content.contains("Y.A.R.V.I.S"));
         assert_eq!(chat[1].content, "hola");
         assert_eq!(chat[2].content, "hola!");
+    }
+
+    #[test]
+    fn prompts_cloud_documentan_tools_de_navegacion() {
+        let admin = construir_system_prompt_admin();
+        let empleado = construir_system_prompt_empleado();
+        for prompt in [admin, empleado] {
+            // Las 3 tools nuevas están documentadas...
+            assert!(prompt.contains("search_products"), "falta search_products");
+            assert!(prompt.contains("list_categories"));
+            assert!(prompt.contains("get_products_by_category"));
+            // ...y el formato del fine-tuning sigue intacto.
+            assert!(prompt.contains("[query_sales, compare_periods, get_top_products, query_inventory, forecast_sales, get_product_info, get_restock_analysis]"));
+        }
     }
 
     #[test]
