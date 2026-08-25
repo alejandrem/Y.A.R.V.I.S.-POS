@@ -1,5 +1,8 @@
 [package]
 name = "src-ia"
+# Los tests de integración se declaran explícitos abajo: los módulos hermanos
+# de `estres` (soporte/fuzzing/masivo) NO deben autodescubrirse como targets.
+autotests = false
 version = "0.1.0"
 edition = "2021"
 description = "Núcleo de IA en Rust (migración desde yarvis-IA). Port de parseador, RAG, profeta y chat."
@@ -32,3 +35,19 @@ tracing = "0.1"
 
 [profile.dev]
 opt-level = 1
+
+[[test]]
+name = "estres"
+path = "tests/estres.rs"
+
+[[test]]
+name = "test_chat_1_7_real"
+path = "tests/test_chat_1_7_real.rs"
+
+[[test]]
+name = "verificar_conexion"
+path = "tests/verificar_conexion.rs"
+
+[[test]]
+name = "verificar_modelos"
+path = "tests/verificar_modelos.rs"
