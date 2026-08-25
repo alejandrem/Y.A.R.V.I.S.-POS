@@ -21,6 +21,16 @@ fn db_path_de(pool: &sqlx::SqlitePool) -> String {
 type GeneradorFut = std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>;
 type Generador<'a> = Box<dyn FnMut(Vec<Mensaje>) -> GeneradorFut + Send + 'a>;
 
+/// Bandera de cancelación del stream en curso. `stop_chat_stream` la levanta;
+/// los bucles de emisión (cloud y local) la consultan entre tokens/rondas y
+/// cortan la respuesta. Es cooperativa: la generación local a bloqueo termina
+/// su ciclo interno, pero NADA más se emite a la UI después de cancelar.
+static STREAM_CANCELADO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn stream_cancelado() -> bool {
+    STREAM_CANCELADO.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Tools que exponen métricas financieras GLOBALES (revenue total,
 /// comparativas de periodo, análisis de recompra con costos). El prompt
 /// le pide al modelo no usarlas con empleados, pero un prompt es
@@ -37,7 +47,7 @@ async fn ejecutar_tool_con_rol(
     es_empleado: bool,
 ) -> String {
     if es_empleado && TOOLS_SOLO_ADMIN.contains(&nombre) {
-        println!("[YARVIS-TOOLS] BLOQUEADA por rol ({es_empleado}): {nombre}");
+        tracing::warn!("[YARVIS-TOOLS] BLOQUEADA por rol ({es_empleado}): {nombre}");
         return serde_json::json!({
             "error": "Permiso denegado: esta consulta financiera solo está disponible para el administrador."
         })
@@ -67,7 +77,7 @@ async fn resolver_ciclo_tools(
         let Some((nombre, args)) = tools::detectar_tool_call(&respuesta) else {
             return Ok(respuesta);
         };
-        println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
+        tracing::info!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
         let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
         historial.push(Mensaje::new("assistant", respuesta));
         historial.push(Mensaje::new("tool", json_res));
@@ -255,9 +265,15 @@ pub async fn get_cloud_models(
 /// Detiene la generación en curso. La inferencia local del 1.7B es a bloqueo
 /// (llama.cpp), así que no hay nada que interrumpir: se responde ok para no
 /// romper el contrato con la UI (idéntico al endpoint `/stop` del motor original).
+/// Detiene la emisión del stream en curso: levanta la bandera que los bucles
+/// de generación (cloud y local) consultan entre tokens y rondas de tools.
+/// La inferencia local a bloqueo puede tardar en llegar a un punto de chequeo,
+/// pero ningún token posterior se emite a la UI tras esta llamada.
 #[tauri::command]
 pub async fn stop_chat_stream(auth: tauri::State<'_, AuthState>) -> Result<String, String> {
     auth.require_operator()?;
+    STREAM_CANCELADO.store(true, std::sync::atomic::Ordering::Relaxed);
+    tracing::info!("[YARVIS-CHAT] stop solicitado por el usuario");
     Ok("ok".to_string())
 }
 
@@ -271,7 +287,7 @@ pub async fn unload_chat_model(
     let descargado = tokio::task::spawn_blocking(descargar_modelo_1_7)
         .await
         .map_err(|e| format!("El hilo de descarga falló: {e}"))?;
-    println!("[YARVIS-CHAT] Descarga pedida para {model}: descargado = {descargado}");
+    tracing::info!("[YARVIS-CHAT] Descarga pedida para {model}: descargado = {descargado}");
 
     Ok(serde_json::json!({
         "status": "ok",
@@ -322,14 +338,14 @@ pub async fn send_chat_message(
                 });
             }
             Err(e) => {
-                println!("[YARVIS-CHAT] Error proveedor ({provider}): {e}");
+                tracing::warn!("[YARVIS-CHAT] Error proveedor ({provider}): {e}");
                 return _chat_local(messages, db_path, auth.es_empleado()).await;
             }
         }
     }
 
     // Modo local: Qwen 1.7B nativo de Rust.
-    println!(
+    tracing::info!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
     _chat_local(messages, db_path, auth.es_empleado()).await
@@ -349,6 +365,7 @@ pub async fn send_chat_stream(
     api_key: Option<String>,
 ) -> Result<String, String> {
     auth.require_operator()?;
+    STREAM_CANCELADO.store(false, std::sync::atomic::Ordering::Relaxed); // nueva generación: cancelación limpia
     let provider = provider.unwrap_or_default();
     let db_path = db_path_de(&state);
 
@@ -360,14 +377,14 @@ pub async fn send_chat_stream(
         match _stream_cloud(&app, &provider, &api_key, &model, chat, &db_path, es_empleado, 0).await {
             Ok(respuesta) => return Ok(respuesta),
             Err(e) => {
-                println!("[YARVIS-CHAT] Error proveedor ({provider}), fallback local: {e}");
+                tracing::warn!("[YARVIS-CHAT] Error proveedor ({provider}), fallback local: {e}");
                 return _stream_local(&app, messages, db_path, es_empleado).await;
             }
         }
     }
 
     // ---- Modo local: Qwen 1.7B nativo de Rust. ----
-    println!(
+    tracing::info!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
     _stream_local(&app, messages, db_path, auth.es_empleado()).await
@@ -394,6 +411,10 @@ async fn _stream_cloud(
     let mut model_used = String::from("unknown");
 
     while let Some(item) = stream.next().await {
+        if stream_cancelado() {
+            tracing::info!("[YARVIS-CHAT] stream cancelado por el usuario");
+            return Ok(full_response); // nada más se emite tras el stop
+        }
         match item {
             Ok(Evento::Texto { texto, modelo }) => {
                 if model_used == "unknown" {
@@ -460,8 +481,11 @@ async fn _stream_cloud(
 
     // ¿El stream pidió herramientas? Ejecutarlas y re-generar en silencio;
     // la respuesta final (sin tool_calls) se emite troceada al usuario.
-    if tools::detectar_tool_call(&full_response).is_some() && ronda < tools::MAX_RONDAS_TOOLS {
-        println!("[YARVIS-TOOLS] cloud pidió tool en ronda {ronda}");
+    if !stream_cancelado()
+        && tools::detectar_tool_call(&full_response).is_some()
+        && ronda < tools::MAX_RONDAS_TOOLS
+    {
+        tracing::info!("[YARVIS-TOOLS] cloud pidió tool en ronda {ronda}");
         let mut generador: Generador = Box::new({
             let provider = provider.to_string();
             let api_key = api_key.to_string();
@@ -497,6 +521,10 @@ fn _emitir_como_stream(
 ) -> Result<String, String> {
     let mut seg = String::new();
     for c in texto.chars() {
+        if stream_cancelado() {
+            tracing::info!("[YARVIS-CHAT] emisión cancelada por el usuario");
+            return Ok(String::new());
+        }
         seg.push(c);
         if seg.chars().count() >= 40 {
             let _ = app.emit("chat-token", serde_json::json!({ "token": seg, "model": modelo }));
@@ -530,7 +558,7 @@ async fn _chat_local(
 
     for _ in 0..tools::MAX_RONDAS_TOOLS {
         let Some((nombre, args)) = tools::detectar_tool_call(&respuesta) else { break };
-        println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
+        tracing::info!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
         let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
         historial.push(Mensaje::new("assistant", respuesta));
         historial.push(Mensaje::new("tool", json_res));
@@ -571,7 +599,7 @@ async fn _stream_local(
     // Ciclo de herramientas ANTES de emitir nada a la UI.
     for _ in 0..tools::MAX_RONDAS_TOOLS {
         let Some((nombre, args)) = tools::detectar_tool_call(&cleaned) else { break };
-        println!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
+        tracing::info!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
         let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
         historial.push(Mensaje::new("assistant", cleaned));
         historial.push(Mensaje::new("tool", json_res));
@@ -588,6 +616,10 @@ async fn _stream_local(
     let mut seg = String::new();
     let mut n = 0;
     for c in cleaned.chars() {
+        if stream_cancelado() {
+            tracing::info!("[YARVIS-CHAT] emisión local cancelada por el usuario");
+            return Ok(String::new());
+        }
         seg.push(c);
         n += 1;
         if n >= 40 {

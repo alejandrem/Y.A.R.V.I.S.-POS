@@ -193,12 +193,22 @@ pub async fn generar_alertas_automaticas_impl(
         let cajero: String = corte.get("nombre");
         let fecha_apertura: String = corte.get("fecha_apertura");
 
+        // Fecha de apertura VALIDADA: si viene malformada (DB corrupta o
+        // formato inesperado) se salta este corte con registro, no crashea
+        // el job entero de alertas.
+        let apertura_parseada = match chrono::DateTime::parse_from_str(
+            &fecha_apertura,
+            "%Y-%m-%d %H:%M:%S",
+        ) {
+            Ok(f) => f.with_timezone(&chrono::Local),
+            Err(e) => {
+                tracing::warn!("[ALERTAS] fecha_apertura inválida en corte {corte_id} ('{fecha_apertura}'): {e}");
+                continue;
+            }
+        };
+
         let horas_abierto = chrono::Local::now()
-            .signed_duration_since(
-                chrono::DateTime::parse_from_str(&fecha_apertura, "%Y-%m-%d %H:%M:%S")
-                    .unwrap()
-                    .with_timezone(&chrono::Local),
-            )
+            .signed_duration_since(apertura_parseada)
             .num_hours();
 
         let alerta_id = sqlx::query(

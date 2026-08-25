@@ -8,23 +8,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
+import type { EmpleadoProfile } from "../../../services/empleado";
 import { ModalShell, Campo, inputCls, ICONO_TARGET, ICONO_CHECK, ICONO_USUARIO, ICONO_MAS, ICONO_PREMIO, ICONO_BORRAR, ICONO_TRENDING, ICONO_RELOJ } from "../../../components/ui";
-
-interface EmpleadoProfile {
-  id: number;
-  nombre: string;
-  estado: string;
-  turno: string;
-  horario_inicio: string;
-  horario_fin: string;
-  salario_semanal: number;
-  salario_diario: number;
-  dias_semana: number;
-  meta_mensual: number;
-  bono: number;
-  registrado_en: string | null;
-  ultimo_login: string | null;
-}
 
 interface EmployeeGoal {
   id: number;

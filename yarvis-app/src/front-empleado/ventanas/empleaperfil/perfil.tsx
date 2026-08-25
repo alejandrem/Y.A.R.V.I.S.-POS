@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import { ICONO_RELOJ } from "../../../components/ui";
+import { notificarError } from "../../../components/notificaciones";
 import {
   geometriaBarra, fmtHM, MiniBarraDia,
   type MiTurno, type DiaExtra,
@@ -76,8 +77,8 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
 
   useEffect(() => {
     if (activeTab === "perfil") {
-      invoke<MiTurno>("get_mi_turno").then(setTurno).catch((e) => console.error("Error al cargar turno:", e));
-      invoke<DiaExtra[]>("get_mis_horas_extra").then(setExtras).catch((e) => console.error("Error al cargar extras:", e));
+      invoke<MiTurno>("get_mi_turno").then(setTurno).catch((e) => { console.error("Error al cargar turno:", e); notificarError("No se pudo cargar tu turno", e); });
+      invoke<DiaExtra[]>("get_mis_horas_extra").then(setExtras).catch((e) => { console.error("Error al cargar extras:", e); notificarError("No se pudieron cargar tus horas extra", e); });
     }
   }, [activeTab]);
 
@@ -98,6 +99,7 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
       setData(result);
     } catch (error) {
       console.error("Error al cargar perfil:", error);
+      notificarError("No se pudo cargar tu perfil", error);
     }
   };
 

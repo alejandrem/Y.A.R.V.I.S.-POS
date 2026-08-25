@@ -67,7 +67,7 @@ pub(super) fn resolver_totales_venta(items: &[Item], reales: &TotalesTicket) -> 
             } else {
                 0.0
             };
-            println!(
+            tracing::warn!(
                 "[YARVIS] Total real del ticket ({real_total:.2}) difiere {porciento:.2}% del calculado ({total_calc:.2}); se usa el del ticket"
             );
         }

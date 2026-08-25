@@ -42,7 +42,7 @@ pub fn detectar_tool_call(respuesta: &str) -> Option<(String, String)> {
             if let Ok(v) = serde_json::from_str::<Value>(objeto) {
                 if let Some(nombre) = v.get("name").and_then(|n| n.as_str()) {
                     if !nombre.is_empty() {
-                        println!("[YARVIS-TOOLS] JSON sin etiquetas detectado (fallback)");
+                        tracing::info!("[YARVIS-TOOLS] JSON sin etiquetas detectado (fallback)");
                         let args = v.get("arguments").cloned().unwrap_or(Value::Object(Default::default()));
                         return Some((nombre.to_string(), args.to_string()));
                     }

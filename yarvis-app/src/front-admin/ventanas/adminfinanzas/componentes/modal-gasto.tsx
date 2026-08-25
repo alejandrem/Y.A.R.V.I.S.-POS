@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ModalShell, Campo, inputCls, ICONO_CALCULADORA } from "../../../../components/ui";
+import { notificarError } from "../../../../components/notificaciones";
 import type { GastoRecurrente, CrearGastoRequest } from "../../../types";
 import { inputFecha } from "../nucleo/constantes";
 
@@ -42,6 +43,7 @@ export default function ModalGasto({ gasto, onCerrar, onGuardado }: { gasto?: Ga
       onGuardado();
     } catch (e) {
       console.error("Error guardando gasto:", e);
+      notificarError("No se pudo guardar el gasto", e);
     } finally {
       setGuardando(false);
     }

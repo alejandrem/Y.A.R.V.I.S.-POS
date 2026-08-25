@@ -16,6 +16,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
+            // Logging estructurado: respeta RUST_LOG, default "info"
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                )
+                .init();
+
             let (pool, db_path_str) = backventanas::db::db::initialize_db(app.handle());
 
             // Job de fondo de finanzas: cada hora genera alertas automáticas

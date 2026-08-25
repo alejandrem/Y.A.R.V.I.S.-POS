@@ -217,9 +217,13 @@ pub async fn get_resumen_periodo(
 
     // Calcular punto de equilibrio (break-even)
     // Gastos fijos mensuales promedio = gastos_operativos / días en periodo * 30
-    let dias_periodo = (NaiveDate::parse_from_str(&fecha_fin, "%Y-%m-%d").unwrap()
-        - NaiveDate::parse_from_str(&fecha_inicio, "%Y-%m-%d").unwrap())
-    .num_days() as f64;
+    // Fechas VALIDADAS: un input malformado del front devuelve error claro,
+    // no un crash (antes había unwrap() sobre el parseo).
+    let fecha_fin_parseada = NaiveDate::parse_from_str(&fecha_fin, "%Y-%m-%d")
+        .map_err(|_| format!("Fecha de fin inválida: '{fecha_fin}' (se espera YYYY-MM-DD)"))?;
+    let fecha_inicio_parseada = NaiveDate::parse_from_str(&fecha_inicio, "%Y-%m-%d")
+        .map_err(|_| format!("Fecha de inicio inválida: '{fecha_inicio}' (se espera YYYY-MM-DD)"))?;
+    let dias_periodo = (fecha_fin_parseada - fecha_inicio_parseada).num_days() as f64;
     let gastos_fijos_mensuales = if dias_periodo > 0.0 {
         (gastos_operativos / dias_periodo) * 30.0
     } else {

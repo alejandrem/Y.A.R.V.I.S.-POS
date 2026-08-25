@@ -59,7 +59,7 @@ pub async fn descargar_modelos(
     tauri::async_runtime::spawn_blocking(|| {
         let descargados = src_ia::rutas::descargar_modelos();
         let msg = format!("{descargados} modelo(s) descargado(s) de VRAM");
-        println!("[YARVIS-IA] {msg}");
+        tracing::info!("[YARVIS-IA] {msg}");
         serde_json::json!({ "status": "ok", "descargados": descargados, "mensaje": msg })
     })
     .await

@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
+import { obtenerInventario, type InventoryItem } from "../../../services/inventario";
 import ModalVenta from "./modalventa";
 import ModalTicket from "./modalticket";
 import {
@@ -28,19 +29,6 @@ const nuevaVentaNav = {
     </svg>
   ),
 };
-
-interface InventoryItem {
-  id?: number;
-  nombre: string;
-  descripcion?: string;
-  precio_costo: number;
-  precio_venta: number;
-  stock: number;
-  stock_minimo: number;
-  vendido: number;
-  codigo_barras?: string;
-  categoria?: string;
-}
 
 interface CartItem {
   id?: number;
@@ -104,7 +92,7 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
 
   const loadInventory = async () => {
     try {
-      const items = await invoke<InventoryItem[]>("get_inventory");
+      const items = await obtenerInventario();
       setInventory(items);
     } catch (error) {
       console.error("Error al cargar inventario:", error);

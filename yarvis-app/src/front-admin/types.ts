@@ -100,6 +100,14 @@ export interface CorteCaja {
   observaciones: string | null;
 }
 
+export interface CierreCorte {
+  total_ventas: number;
+  total_efectivo: number;
+  total_tarjeta: number;
+  total_transferencia: number;
+  diferencia: number;
+}
+
 export interface MovimientoCaja {
   id: number;
   corte_id: number;

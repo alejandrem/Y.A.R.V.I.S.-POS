@@ -27,6 +27,8 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-util = "0.3"
 async-stream = "0.3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
+# Logging estructurado (las macros son no-op sin subscriber)
+tracing = "0.1"
 
 [profile.dev]
 opt-level = 1

@@ -13,6 +13,7 @@ import {
   ICONO_BILLETE, ICONO_EDITAR, ICONO_BORRAR, ICONO_CALCULADORA,
 } from "../../../../components/ui";
 import type { GastoRecurrente } from "../../../types";
+import { notificarError } from "../../../../components/notificaciones";
 import { moneda } from "../nucleo/utilidades";
 import { EmptyLargo } from "./ui-finanzas";
 
@@ -99,7 +100,7 @@ export default function SeccionGastos({ gastos, onNuevo, onEditar, onPago, onRec
                           <MorphIcon icon={ICONO_EDITAR} size={13} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
                         </button>
                         <button
-                          onClick={async () => { try { await invoke("eliminar_gasto", { id: g.id }); onRecargar(); } catch (e) { console.error("Error eliminando gasto:", e); } }}
+                          onClick={async () => { try { await invoke("eliminar_gasto", { id: g.id }); onRecargar(); } catch (e) { console.error("Error eliminando gasto:", e); notificarError("No se pudo eliminar el gasto", e); } }}
                           className="p-2 bg-neutral-100 text-neutral-400 rounded-xl hover:text-red-500 hover:bg-red-50 transition-all"
                           title="Eliminar"
                         >

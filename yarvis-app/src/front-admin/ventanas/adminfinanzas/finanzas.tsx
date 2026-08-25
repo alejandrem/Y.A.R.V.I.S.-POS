@@ -13,6 +13,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import { BotonAnimado, ICONO_REINICIAR, ICONO_CHECK, ICONO_GRAFICA } from "../../../components/ui";
+import { notificarError } from "../../../components/notificaciones";
 import type {
   ResumenPeriodo, DatoGraficaPL, DatoGraficaGastosCategoria, DatoGraficaCortesZ,
   PuntoEquilibrio, AlertaFinanciera, GastoRecurrente, CorteCaja, MetricasUtilidad,
@@ -61,6 +62,7 @@ export default function AdminFinanzas() {
       setResumen(r);
     } catch (e) {
       console.error("[FINANZAS] Error en get_resumen_periodo:", e);
+      notificarError("No se pudo cargar el resumen financiero", e);
     }
   }, [rango]);
 
@@ -70,6 +72,7 @@ export default function AdminFinanzas() {
       setPuntoEq(pe);
     } catch (e) {
       console.error("[FINANZAS] Error en get_punto_equilibrio:", e);
+      notificarError("No se pudo cargar el punto de equilibrio", e);
     }
   }, []);
 
@@ -79,24 +82,28 @@ export default function AdminFinanzas() {
       setPlData(pl);
     } catch (e) {
       console.error("[FINANZAS] Error en get_datos_grafica_pl:", e);
+      notificarError("No se pudo cargar la gráfica de pérdidas y ganancias", e);
     }
     try {
       const gc = await invoke<DatoGraficaGastosCategoria[]>("get_gastos_por_categoria", { fechaInicio: rango.inicio, fechaFin: rango.fin });
       setGastosCat(gc);
     } catch (e) {
       console.error("[FINANZAS] Error en get_gastos_por_categoria:", e);
+      notificarError("No se pudo cargar el desglose de gastos por categoría", e);
     }
     try {
       const vz = await invoke<DatoGraficaPL[]>("get_ventas_vs_gastos_mensual", { meses: 6 });
       setVentasGastos(vz);
     } catch (e) {
       console.error("[FINANZAS] Error en get_ventas_vs_gastos_mensual:", e);
+      notificarError("No se pudo cargar la comparativa de ventas vs gastos", e);
     }
     try {
       const cz = await invoke<DatoGraficaCortesZ[]>("get_tendencia_cortes_z", { fechaInicio: rango.inicio, fechaFin: rango.fin });
       setCortesZ(cz);
     } catch (e) {
       console.error("[FINANZAS] Error en get_tendencia_cortes_z:", e);
+      notificarError("No se pudo cargar la tendencia de cortes Z", e);
     }
   }, [rango]);
 
@@ -106,6 +113,7 @@ export default function AdminFinanzas() {
       setPredicciones(res.data ?? []);
     } catch (e) {
       console.error("[FINANZAS] Error en cargarPredicciones:", e);
+      notificarError("No se pudieron cargar las predicciones financieras", e);
     }
   }, [diasPrediccion]);
 
@@ -115,6 +123,7 @@ export default function AdminFinanzas() {
       setGastos(g);
     } catch (e) {
       console.error("[FINANZAS] Error en cargarGastos:", e);
+      notificarError("No se pudo cargar la lista de gastos", e);
     }
   }, []);
 
@@ -126,6 +135,7 @@ export default function AdminFinanzas() {
       setCortes(c);
     } catch (e) {
       console.error("[FINANZAS] Error en cargarCortes:", e);
+      notificarError("No se pudo cargar el historial de cortes de caja", e);
     }
   }, [rango]);
 
@@ -136,6 +146,7 @@ export default function AdminFinanzas() {
       setAlertas(a);
     } catch (e) {
       console.error("[FINANZAS] Error en cargarAlertas:", e);
+      notificarError("No se pudieron cargar las alertas financieras", e);
     }
   }, []);
 
@@ -145,6 +156,7 @@ export default function AdminFinanzas() {
       setMetricas(m);
     } catch (e) {
       console.error("[FINANZAS] Error en cargarMetricas:", e);
+      notificarError("No se pudieron cargar las métricas diarias", e);
     }
   }, [rango]);
 
@@ -172,6 +184,7 @@ export default function AdminFinanzas() {
       cargarAlertas();
     } catch (e) {
       console.error("[FINANZAS] Error marcando alerta:", e);
+      notificarError("No se pudo marcar la alerta como leída", e);
     }
   };
 
@@ -286,7 +299,11 @@ export default function AdminFinanzas() {
         <ModalPagoGasto gasto={modalPagoGasto} onCerrar={() => setModalPagoGasto(undefined)} onGuardado={() => { setModalPagoGasto(undefined); recargarGastos(); }} />
       )}
       {modalDetalleCorte && (
-        <ModalDetalleCorte corte={modalDetalleCorte} onCerrar={() => setModalDetalleCorte(undefined)} />
+        <ModalDetalleCorte
+          corte={modalDetalleCorte}
+          onCerrar={() => { setModalDetalleCorte(undefined); cargarCortes(); }}
+          onActualizado={cargarCortes}
+        />
       )}
     </div>
   );

@@ -104,7 +104,7 @@ pub fn generar_stream<'a>(
             let siguiente = cola.get(idx + 1);
 
             if let Some(sig) = siguiente {
-                println!(
+                tracing::warn!(
                     "[YARVIS] {modelo} saturado (429), cambiando a {sig} (espera {espera}s)"
                 );
                 tokio::time::sleep(Duration::from_secs(espera)).await;
@@ -112,7 +112,7 @@ pub fn generar_stream<'a>(
             }
 
             // Último modelo: un respiro y un último intento real.
-            println!("[YARVIS] {modelo} saturado (429), último intento tras {espera}s");
+            tracing::warn!("[YARVIS] {modelo} saturado (429), último intento tras {espera}s");
             tokio::time::sleep(Duration::from_secs(espera)).await;
             let inner2 = stream_modelo(cfg, &client, api_key, &modelo, &messages).await;
             futures_util::pin_mut!(inner2);

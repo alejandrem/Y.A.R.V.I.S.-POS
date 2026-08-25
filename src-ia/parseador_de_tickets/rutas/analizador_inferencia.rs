@@ -144,7 +144,9 @@ pub(crate) fn ejecutar_analisis(
         .lines()
         .filter(|l| !l.trim().is_empty())
         .collect();
-    let texto_analizar = lineas[..lineas.len().min(20)].join("\n");
+    let total_lineas = lineas.len();
+    const MAX_LINEAS_ENVIADAS: usize = 20;
+    let texto_analizar = lineas[..total_lineas.min(MAX_LINEAS_ENVIADAS)].join("\n");
 
     let user_prompt = format!(
         "TICKET A ANALIZAR:\n---\n{texto_analizar}\n---\n\nAnaliza este ticket y responde SOLAMENTE con el JSON válido."
@@ -163,5 +165,14 @@ pub(crate) fn ejecutar_analisis(
     // La inferencia está serializada por el lock global (llama-cpp-python igual).
     let _lock = INFERENCIA_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let contenido = generar(modelo, &prompt, MAX_TOKENS_PARSEO).ok()?;
-    extraer_json(&contenido)
+    let mut json = extraer_json(&contenido)?;
+
+    // El recorte NUNCA es silencioso: si el ticket era más grande, la
+    // advertencia viaja en el resultado para que la UI la muestre al usuario.
+    if total_lineas > MAX_LINEAS_ENVIADAS {
+        json["advertencia_recorte"] = serde_json::json!(format!(
+            "El ticket tiene {total_lineas} líneas pero solo se analizaron las primeras {MAX_LINEAS_ENVIADAS}: los items restantes NO fueron procesados."
+        ));
+    }
+    Some(json)
 }

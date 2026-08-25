@@ -210,6 +210,8 @@ pub async fn analizar_muestras_carpeta(
         let mut votos: HashMap<String, (serde_json::Value, usize)> = HashMap::new();
         let mut exitosos = 0usize;
         let mut muestras = Vec::with_capacity(total);
+        // Advertencias de recorte (ticket > 20 líneas): NUNCA silencio.
+        let mut advertencias: Vec<serde_json::Value> = Vec::new();
 
         for (indice, archivo) in archivos.iter().enumerate() {
             let nombre = path::Path::new(archivo)
@@ -235,10 +237,19 @@ pub async fn analizar_muestras_carpeta(
                 let entrada = votos.entry(clave).or_insert_with(|| (mapeo.clone(), 0));
                 entrada.1 += 1;
                 exitosos += 1;
-                muestras.push(serde_json::json!({
-                    "archivo": nombre,
-                    "estado": "ok"
-                }));
+                if let Some(aviso) = resultado.get("advertencia_recorte").and_then(|a| a.as_str()) {
+                    muestras.push(serde_json::json!({
+                        "archivo": nombre,
+                        "estado": "recortado",
+                        "advertencia": aviso
+                    }));
+                    advertencias.push(serde_json::json!({ "archivo": nombre, "mensaje": aviso }));
+                } else {
+                    muestras.push(serde_json::json!({
+                        "archivo": nombre,
+                        "estado": "ok"
+                    }));
+                }
                 let _ = app_handle.emit("parser-training-progress", serde_json::json!({
                     "indice": indice + 1,
                     "total": total,
@@ -277,7 +288,10 @@ pub async fn analizar_muestras_carpeta(
             "muestras": muestras,
             "analizados": exitosos,
             "total_muestras": total,
-            "votos_ganadores": votos_ganadores
+            "votos_ganadores": votos_ganadores,
+            // Tickets recortados (>20 líneas enviadas al modelo): la UI los
+            // notifica vía toasts — el recorte jamás es silencioso.
+            "advertencias": advertencias
         }))
     })
     .await

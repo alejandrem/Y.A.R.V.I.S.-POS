@@ -41,6 +41,9 @@ url = "2"
 reqwest = { version = "0.12", features = ["json"] }
 # Núcleo de IA migrado a Rust (strangler fig): parseador, catálogos y vinculador
 src-ia = { path = "../../src-ia", features = ["llm-local"] }
+# Logging estructurado
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # ═══════════════════════════════════════════════════════════════════
 # Tests de backend — 1 binario por módulo (carpetas: funcionamiento/ y estres/)
@@ -65,6 +68,10 @@ path = "test/funcionamiento/empleados.rs"
 [[test]]
 name = "func_auth"
 path = "test/funcionamiento/auth.rs"
+
+[[test]]
+name = "func_rate_limit"
+path = "test/funcionamiento/rate_limit.rs"
 
 [[test]]
 name = "func_tickets"

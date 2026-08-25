@@ -2,6 +2,7 @@
 // Guarda el estado y el flujo completos de tickets; cortes es provisional.
 // El contenido de tickets vive en ./tickets y el de cortes en ./cortes.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { notificarError } from "../../../components/notificaciones";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -139,6 +140,17 @@ const Parseador = () => {
       unlistenTraining.current?.();
       unlistenTraining.current = null;
       setTrainingResult(calibration);
+
+      // El recorte a 20 líneas del análisis LLM NUNCA es silencioso.
+      const recortadas = (calibration.muestras ?? []).filter(
+        (m) => m.estado === "recortado" && m.advertencia,
+      );
+      if (recortadas.length > 0) {
+        notificarError(
+          `Tickets recortados (${recortadas.length})`,
+          "Solo se analizaron las primeras 20 líneas de cada uno; los items restantes NO fueron procesados. Revísalos manualmente.",
+        );
+      }
 
       setPhase("procesando");
       let completeReceived = false;

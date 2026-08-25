@@ -11,6 +11,7 @@ import {
   geometriaBarra, fmtHM, type MiTurno,
 } from "../components/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
+import { notificarError } from "../components/notificaciones";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
 import { ticketsNav } from "./ventanas/empleaticket/ticket";
 import { clientesNav } from "./ventanas/empleaclientes/clientes";
@@ -69,7 +70,7 @@ const EmployeeDashboard = ({
   const [ahora, setAhora] = useState(() => new Date());
 
   useEffect(() => {
-    invoke<MiTurno>("get_mi_turno").then(setTurno).catch(() => {});
+    invoke<MiTurno>("get_mi_turno").then(setTurno).catch((e) => { console.error("Error al cargar turno:", e); notificarError("No se pudo cargar la información de tu turno", e); });
     const t = window.setInterval(() => setAhora(new Date()), 30000);
     return () => window.clearInterval(t);
   }, []);

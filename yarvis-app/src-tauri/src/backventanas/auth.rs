@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// Rol de la sesión activa dentro de la aplicación.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,18 +16,103 @@ pub struct Session {
     pub name: String,
 }
 
+/// Rate limiter del login en memoria: máximo de FALLOS por ventana móvil.
+/// Mitiga fuerza bruta offline iterando hashes de empleados (el login es
+/// solo por contraseña). En éxito se resetea el contador.
+pub struct LoginRateLimiter {
+    max_intentos: u32,
+    ventana: Duration,
+    fallos: Mutex<HashMap<String, (u32, Instant)>>,
+}
+
+/// Clave única del limitador: en esta app el login no distingue usuario
+/// antes de autenticar (es solo contraseña), así que se limita global.
+const CLAVE_LOGIN: &str = "login";
+
+impl LoginRateLimiter {
+    pub fn new(max_intentos: u32, ventana: Duration) -> Self {
+        Self {
+            max_intentos,
+            ventana,
+            fallos: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// ¿Se permite otro intento? `segundos_espera` indica cuánto falta
+    /// para reintentar cuando la respuesta es false.
+    pub fn verificar(&self) -> Result<(), u64> {
+        let mut mapa = self
+            .fallos
+            .lock()
+            .map_err(|_| self.ventana.as_secs().max(1))?;
+        if let Some((count, desde)) = mapa.get(CLAVE_LOGIN) {
+            let transcurrido = desde.elapsed();
+            if transcurrido < self.ventana && *count >= self.max_intentos {
+                let resta = (self.ventana - transcurrido).as_secs().max(1);
+                return Err(resta);
+            }
+            if transcurrido >= self.ventana {
+                mapa.remove(CLAVE_LOGIN); // ventana expirada: limpiar
+            }
+        }
+        Ok(())
+    }
+
+    /// Registra un fallo de login.
+    pub fn registrar_fallo(&self) {
+        if let Ok(mut mapa) = self.fallos.lock() {
+            match mapa.get_mut(CLAVE_LOGIN) {
+                Some((conteo, desde)) => {
+                    if desde.elapsed() >= self.ventana {
+                        // La ventana expiró entre verificar y fallar: reinicia.
+                        *desde = Instant::now();
+                        *conteo = 1;
+                    } else {
+                        *conteo += 1;
+                    }
+                }
+                None => {
+                    mapa.insert(CLAVE_LOGIN.to_string(), (1, Instant::now()));
+                }
+            }
+        }
+    }
+
+    /// Login exitoso: limpia el historial de fallos.
+    pub fn registrar_exito(&self) {
+        if let Ok(mut mapa) = self.fallos.lock() {
+            mapa.remove(CLAVE_LOGIN);
+        }
+    }
+}
+
+#[cfg(test)]
+impl LoginRateLimiter {
+    /// Constructor de prueba pre-cargado con `count` fallos.
+    pub fn con_fallos(count: u32, max: u32) -> Self {
+        let l = Self::new(max, Duration::from_secs(3600));
+        for _ in 0..count {
+            l.registrar_fallo();
+        }
+        l
+    }
+}
+
 /// Estado de autenticación en memoria.
 ///
 /// Tauri conserva este estado en el proceso nativo; el frontend no puede
 /// cambiar el rol enviando un parámetro arbitrario a cada comando.
 pub struct AuthState {
     session: Mutex<Option<Session>>,
+    pub rate_limiter: LoginRateLimiter,
 }
 
 impl Default for AuthState {
     fn default() -> Self {
+        // OWASP: 5 intentos fallidos → bloqueo ~5 minutos (ventana deslizante).
         Self {
             session: Mutex::new(None),
+            rate_limiter: LoginRateLimiter::new(5, Duration::from_secs(300)),
         }
     }
 }

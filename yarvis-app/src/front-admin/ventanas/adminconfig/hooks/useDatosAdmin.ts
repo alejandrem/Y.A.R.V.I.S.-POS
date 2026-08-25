@@ -3,6 +3,7 @@
 
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { notificarError } from "../../../../components/notificaciones";
 
 export const PASS_PLACEHOLDER = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 
@@ -44,7 +45,7 @@ export function useDatosAdmin(
       showSuccess("Contraseña actualizada exitosamente");
     } catch (error) {
       console.error("Error al actualizar:", error);
-      alert("Hubo una falla al guardar los datos.");
+      notificarError("Hubo una falla al guardar los datos.", error);
     }
   }, [currentAdminName, currentStoreName, currentPass, passwordChanged, location, cp, showSuccess]);
 
@@ -61,7 +62,7 @@ export function useDatosAdmin(
       showSuccess("Cambios guardados exitosamente");
     } catch (error) {
       console.error("Error al guardar datos de identidad:", error);
-      alert("Hubo una falla al guardar los datos.");
+      notificarError("Hubo una falla al guardar los datos.", error);
     }
   }, [currentAdminName, currentStoreName, location, cp, showSuccess]);
 

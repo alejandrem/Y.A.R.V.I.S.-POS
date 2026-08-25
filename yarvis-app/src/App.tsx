@@ -8,6 +8,7 @@ import { ICONO_CHECK, ICONO_FLECHA, ICONO_OJO, ICONO_OJO_OCULTO } from "./icons"
 import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
+import { Toaster, notificarError } from "./components/notificaciones";
 import "./App.css";
 
 const ICONOS_LOGO: IconInput[] = [
@@ -44,6 +45,15 @@ function LogoMorphing() {
 }
 
 function App() {
+  return (
+    <>
+      <Toaster />
+      <AppInner />
+    </>
+  );
+}
+
+function AppInner() {
   // 0 = Registro Inicial, 1 = Login, 2 = Dashboard Administrador, 3 = Dashboard Empleado
   const [step, setStep] = useState<number | null>(null);
   const [setupFinished, setSetupFinished] = useState<boolean>(false);
@@ -84,6 +94,7 @@ function App() {
         setStep(setupDone ? 1 : 0);
       } catch (error) {
         console.error("Error checking setup:", error);
+        notificarError("Error al verificar el estado inicial del sistema", error);
         setStep(0);
       }
     };
@@ -97,7 +108,7 @@ function App() {
   const handleSaveAdmin = async () => {
     if (adminName && storeName && password && password === confirmPassword) {
       if (!isPasswordValid(password)) {
-        alert("La contraseña debe tener al menos 6 caracteres, incluyendo letras y números.");
+        notificarError("La contraseña debe tener al menos 6 caracteres, incluyendo letras y números.");
         return;
       }
 
@@ -113,10 +124,10 @@ function App() {
         setStep(1);
       } catch (error) {
         console.error("Error al guardar admin:", error);
-        alert("Error al guardar en la base de datos");
+        notificarError("Error al guardar en la base de datos", error);
       }
     } else {
-      alert("Por favor rellena todos los campos correctamente");
+      notificarError("Por favor rellena todos los campos correctamente");
     }
   };
 
@@ -137,17 +148,17 @@ function App() {
         }
         setStep(2);
       } else {
-        alert("Contraseña incorrecta. Inténtalo de nuevo.");
+        notificarError("Contraseña incorrecta. Inténtalo de nuevo.");
       }
     } catch (error) {
       console.error("Error en login:", error);
-      alert("Error al conectar con la base de datos");
+      notificarError("Error al conectar con la base de datos", error);
     }
   };
 
   const handleSaveEmployee = async () => {
     if (!isPasswordValid(newEmployeePass)) {
-      alert("La contraseña del empleado debe tener letras y números.");
+      notificarError("La contraseña del empleado debe tener letras y números.");
       return;
     }
 
@@ -160,7 +171,7 @@ function App() {
         setShowAddEmployeeForm(false);
       } catch (error) {
         console.error("Error al guardar empleado:", error);
-        alert("Error al guardar empleado en la DB");
+        notificarError("Error al guardar empleado en la base de datos", error);
       }
     }
   };
@@ -174,11 +185,11 @@ function App() {
         setActiveTab("nueva_venta");
         setEmployeeLoginPass("");
       } else {
-        alert("Contraseña de empleado incorrecta.");
+        notificarError("Contraseña de empleado incorrecta.");
       }
     } catch (error) {
       console.error("Error en login empleado:", error);
-      alert("Error al conectar con la base de datos");
+      notificarError("Error al conectar con la base de datos", error);
     }
   };
 
@@ -187,6 +198,7 @@ function App() {
       await invoke("cerrar_sesion");
     } catch (error) {
       console.error("Error al cerrar sesión nativa:", error);
+      notificarError("No se pudo cerrar la sesión en el servidor", error);
     } finally {
       setStep(1);
       setSelectedRole(null);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { obtenerInventario, type InventoryItem } from "../../../services/inventario";
 
 const inventarioNav = {
   id: "inventario",
@@ -13,19 +13,6 @@ const inventarioNav = {
     </svg>
   ),
 };
-
-interface InventoryItem {
-  id?: number;
-  nombre: string;
-  descripcion?: string;
-  precio_costo: number;
-  precio_venta: number;
-  stock: number;
-  stock_minimo: number;
-  vendido: number;
-  codigo_barras?: string;
-  categoria?: string;
-}
 
 interface InventarioProps {
   activeTab: string;
@@ -44,7 +31,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
 
   const loadInventory = async () => {
     try {
-      const items = await invoke<InventoryItem[]>("get_inventory");
+      const items = await obtenerInventario();
       setInventory(items);
     } catch (error) {
       console.error("Error al cargar inventario:", error);

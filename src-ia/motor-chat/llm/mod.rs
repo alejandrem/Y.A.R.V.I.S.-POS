@@ -24,6 +24,70 @@ pub const MODELO_CHAT: &str = "1.7B";
 /// Contexto seguro por defecto para modelos locales cargados por llama.cpp.
 pub const CONTEXTO_LOCAL: u64 = 4096;
 
+/// Estimación conservadora: 1 token ≈ 4 caracteres en español.
+const CHARS_POR_TOKEN: usize = 4;
+/// Espacio reservado a la SALIDA del modelo dentro del contexto.
+const RESERVA_SALIDA_TOKENS: usize = 1024;
+/// Margen para el overhead del chat template (roles, marcadores).
+const MARGEN_TEMPLATE_TOKENS: usize = 128;
+
+/// Recorta el historial del chat local para que quepa en `CONTEXTO_LOCAL`.
+///
+/// Antes un chat largo moría con "El prompt excede n_ctx" sin recuperación.
+/// Estrategia: los mensajes SYSTEM jamás se recortan (identidad + tools);
+/// del resto se conservan los MÁS RECIENTES que quepan en el presupuesto.
+/// Si ni siquiera el último mensaje del usuario cabe, se conserva su cola
+/// (la parte más cercana a la pregunta actual). Es una estimación por
+/// caracteres, no tokenización exacta: deliberadamente conservadora.
+pub fn recortar_historial(messages: &[Mensaje]) -> Vec<Mensaje> {
+    let presupuesto_chars = ((CONTEXTO_LOCAL as usize)
+        .saturating_sub(RESERVA_SALIDA_TOKENS)
+        .saturating_sub(MARGEN_TEMPLATE_TOKENS))
+        .saturating_mul(CHARS_POR_TOKEN);
+
+    let sistema: Vec<Mensaje> =
+        messages.iter().filter(|m| m.role == "system").cloned().collect();
+    let conversacion: Vec<Mensaje> =
+        messages.iter().filter(|m| m.role != "system").cloned().collect();
+
+    let chars_sistema: usize = sistema.iter().map(|m| m.content.chars().count()).sum();
+    let mut disponibles = presupuesto_chars.saturating_sub(chars_sistema);
+
+    let mut elegidos: Vec<Mensaje> = Vec::new();
+    for m in conversacion.iter().rev() {
+        let costo = m.content.chars().count() + 8; // + overhead de rol/template
+        if costo > disponibles {
+            if elegidos.is_empty() && m.role == "user" {
+                // El último mensaje del usuario es innegociable: se conserva
+                // su cola completa en caracteres (sin partir multibyte).
+                let tomar = disponibles.saturating_sub(16);
+                let cola: String = m
+                    .content
+                    .chars()
+                    .rev()
+                    .take(tomar)
+                    .collect::<Vec<char>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                elegidos.push(Mensaje::new("user", cola));
+            }
+            break; // todo lo más viejo ya no cabe
+        }
+        disponibles -= costo;
+        elegidos.push(m.clone());
+    }
+    elegidos.reverse();
+
+    if sistema.len() + elegidos.len() == messages.len() {
+        return messages.to_vec(); // cupo completo: sin cambios
+    }
+
+    let mut out = sistema;
+    out.extend(elegidos);
+    out
+}
+
 /// Ruta efectiva del GGUF usado por el parser y el chat local.
 pub fn ruta_modelo_local() -> PathBuf {
     crate::rutas::ruta_modelo(MODELO_CHAT)
@@ -110,6 +174,10 @@ fn generar_1_7(messages: &[Mensaje]) -> Result<String, String> {
     use llama_cpp_4::prelude::LlamaChatMessage;
 
     let chat = construir_mensajes_locales(messages);
+    // El historial se ajusta al contexto ANTES de tokenizar: chats largos
+    // se truncán por el final (se pierde lo viejo, nunca la pregunta actual)
+    // en lugar de fallar con "El prompt excede n_ctx".
+    let chat = recortar_historial(&chat);
     let modelo = cargar_modelo(MODELO_CHAT)?;
 
     let mut llm_messages = Vec::with_capacity(chat.len());
@@ -248,6 +316,48 @@ mod tests {
             assert!(chat_1_7(&[]).is_err());
             assert!(chat_1_7_raw(&[]).is_err());
         }
+    }
+
+    #[test]
+    fn historial_corto_no_se_toca() {
+        let msgs = vec![
+            Mensaje::new("system", "eres yarvis"),
+            Mensaje::new("user", "hola"),
+            Mensaje::new("assistant", "qué onda"),
+            Mensaje::new("user", "cuánto vendí hoy"),
+        ];
+        assert_eq!(recortar_historial(&msgs), msgs);
+    }
+
+    #[test]
+    fn historial_largo_conserva_recientes_y_sistema() {
+        let mut msgs = vec![Mensaje::new("system", "S")]; // system corto
+        // 40 mensajes viejos de ~1000 caracteres cada uno ≈ 40k chars >> 11.7k
+        for i in 0..40 {
+            msgs.push(Mensaje::new("user", format!("viejo {i}: {}", "x".repeat(1000))));
+            msgs.push(Mensaje::new("assistant", "ok"));
+        }
+        let ultima = "¿cuánto vendí HOY?";
+        msgs.push(Mensaje::new("user", ultima));
+
+        let recortado = recortar_historial(&msgs);
+        assert!(recortado.len() < msgs.len(), "debió recortar");
+        assert_eq!(recortado[0].role, "system", "el system jamás se recorta");
+        let ultima_msg = recortado.last().unwrap();
+        assert_eq!(ultima_msg.role, "user");
+        assert!(ultima_msg.content.ends_with(ultima), "la pregunta actual va completa");
+    }
+
+    #[test]
+    fn usuario_gigante_se_trunca_por_el_final_sin_partir_multibyte() {
+        let msgs = vec![
+            Mensaje::new("system", "s"),
+            Mensaje::new("user", "ñ".repeat(50_000) + "PREGUNTA FINAL ñ"),
+        ];
+        let r = recortar_historial(&msgs);
+        let ultima = r.last().unwrap();
+        // 'ñ' es multibyte: si el corte partiera un carácter, ends_with fallaría.
+        assert!(ultima.content.ends_with("PREGUNTA FINAL ñ"));
     }
 
     #[cfg(feature = "llm-local")]

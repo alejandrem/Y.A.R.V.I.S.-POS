@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { MorphIcon, type IconInput } from "morphicons/react";
+import { notificarError } from "../../../components/notificaciones";
 import ChatWidget, {
   type ChatModelSelection,
   type CloudModel,
@@ -87,7 +88,7 @@ const YarvisEmpleado = ({ active = true }: YarvisEmpleadoProps) => {
   useEffect(() => {
     invoke<Record<string, string>>("leer_api_keys")
       .then((keys) => { if (Object.keys(keys).length > 0) { setApiKeys(keys); setApiKeysCache(keys); } })
-      .catch((e) => console.error("[YARVIS] no se pudieron leer las API keys:", e));
+      .catch((e) => { console.error("[YARVIS] no se pudieron leer las API keys:", e); notificarError("No se pudieron leer las API keys guardadas", e); });
   }, []);
   const [cloudModelsLoading, setCloudModelsLoading] = useState<Record<string, boolean>>({});
   const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({ "1.7B": false });
@@ -145,7 +146,7 @@ const YarvisEmpleado = ({ active = true }: YarvisEmpleadoProps) => {
   useEffect(() => {
     const storedPath = localStorage.getItem("yarvis_local_model_path");
     if (storedPath) {
-      invoke("set_local_model_path", { path: storedPath }).catch(() => {});
+      invoke("set_local_model_path", { path: storedPath }).catch((e) => { console.error("[YARVIS] no se pudo restaurar la ruta del modelo local:", e); notificarError("No se pudo restaurar el modelo local configurado", e); });
     }
   }, []);
 

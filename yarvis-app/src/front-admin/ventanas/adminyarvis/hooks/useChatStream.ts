@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ICONO_CHECK, ICONO_ENVIAR, ICONO_PAUSA } from "../../../../icons";
+import { notificarError } from "../../../../components/notificaciones";
 import { useIconSequence } from "./useIconSequence";
 import type { ChatModelSelection, ChatSession, Message } from "../ChatWidget";
 
@@ -190,7 +191,7 @@ export function useChatStream({
         { icon: ICONO_CHECK, delay: 0 },
         { icon: ICONO_ENVIAR, delay: 1000 },
       ]);
-      invoke("stop_chat_stream").catch(() => {});
+      invoke("stop_chat_stream").catch((e) => { console.error("[YARVIS] no se pudo detener el stream:", e); notificarError("No se pudo detener la respuesta del asistente", e); });
     };
     stopRef.current = stop;
     timeoutId = window.setTimeout(() => fail("El motor tardó demasiado en responder. Inténtalo de nuevo."), STREAM_TIMEOUT_MS);

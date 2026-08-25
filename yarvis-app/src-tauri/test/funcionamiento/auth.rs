@@ -92,3 +92,54 @@ fn password_sin_hash_es_rechazada_regresion() {
     let hash = hash_password("clave-segura");
     assert!(verify_password("clave-segura", &hash));
 }
+
+/// TOCTOU de guardar_admin: dos configuraciones iniciales simultáneas no
+/// deben crear DOS admins.
+///
+/// NOTA: `guardar_admin` recibe `tauri::State<'_, SqlitePool>` y
+/// `tauri::State<'_, AuthState>`, que no pueden construirse fuera del
+/// runtime de Tauri, así que NO es invocable directamente desde tests.
+/// La atomicidad se verifica al nivel SQL replicando EXACTAMENTE la única
+/// sentencia que usa la implementación actual (INSERT..SELECT..WHERE COUNT=0,
+/// ver adminconfig/auth.rs líneas 64-67) ejecutándola DOS veces en paralelo
+/// sobre una DB limpia. Si alguien reintroduce el patrón COUNT-then-INSERT
+/// de dos sentencias, este test deja de representar el código real.
+#[tokio::test]
+async fn toctou_dos_guardar_admin_concurrentes_crean_un_solo_admin() {
+    let pool = db().await;
+
+    let sentencia = |nombre: &'static str| {
+        sqlx::query(
+            "INSERT INTO usuarios (nombre, tienda, password, rol)
+             SELECT ?, ?, ?, 'admin'
+             WHERE (SELECT COUNT(*) FROM usuarios WHERE rol = 'admin') = 0",
+        )
+        .bind(nombre)
+        .bind("Tienda")
+        .bind("hash-falso")
+    };
+
+    // Ambas llamadas comparten el pool (como los dos commands concurrentes).
+    let (r1, r2) = tokio::join!(
+        sentencia("Admin A").execute(&pool),
+        sentencia("Admin B").execute(&pool),
+    );
+
+    let afectadas_1 = r1.unwrap().rows_affected();
+    let afectadas_2 = r2.unwrap().rows_affected();
+
+    // Exactamente UNO gana; el otro obtiene rows_affected == 0, que en
+    // guardar_admin se traduce en Err("La configuración inicial ya fue completada").
+    assert_eq!(
+        (afectadas_1 + afectadas_2) as usize, 1,
+        "la sentencia atómica debe admitir UN solo admin concurrente"
+    );
+    assert!(afectadas_1 == 1 || afectadas_2 == 1);
+
+    let admins: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM usuarios WHERE rol = 'admin'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(admins, 1, "TOCTOU roto: hay más de un admin");
+}

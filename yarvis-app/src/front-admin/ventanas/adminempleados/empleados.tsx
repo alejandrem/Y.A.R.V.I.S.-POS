@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import { geometriaBarra, fmtHM, MiniBarraDia, type MiTurno, type DiaExtra } from "../../../components/turno";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon, type IconInput } from "morphicons/react";
+import type { EmpleadoProfile } from "../../../services/empleado";
 import ModalEmpleados from "./modalEmpleados";
 import ModalMetas from "./modalMetas";
 import {
@@ -26,29 +27,6 @@ import {
   BotonAnimado,
   IconoMorph,
 } from "../../../components/ui";
-
-interface HorarioBloque {
-  dias: number[]; // Convención L=0 .. D=6
-  hora_inicio: string;
-  hora_fin: string;
-}
-
-interface EmpleadoProfile {
-  id: number;
-  nombre: string;
-  estado: string;
-  turno: string;
-  horario_inicio: string;
-  horario_fin: string;
-  salario_semanal: number;
-  salario_diario: number;
-  dias_semana: number;
-  meta_mensual: number;
-  bono: number;
-  registrado_en: string | null;
-  ultimo_login: string | null;
-  horarios: HorarioBloque[];
-}
 
 interface EmpleadoVentas {
   empleado_id: number;

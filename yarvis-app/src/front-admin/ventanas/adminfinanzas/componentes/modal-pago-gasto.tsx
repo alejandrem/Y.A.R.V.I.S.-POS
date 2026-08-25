@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ModalShell, Campo, inputCls, ICONO_BILLETE } from "../../../../components/ui";
+import { notificarError } from "../../../../components/notificaciones";
 import type { GastoRecurrente } from "../../../types";
 
 export default function ModalPagoGasto({ gasto, onCerrar, onGuardado }: { gasto: GastoRecurrente; onCerrar: () => void; onGuardado: () => void }) {
@@ -33,6 +34,7 @@ export default function ModalPagoGasto({ gasto, onCerrar, onGuardado }: { gasto:
       onGuardado();
     } catch (e) {
       console.error("Error registrando pago:", e);
+      notificarError("No se pudo registrar el pago", e);
     } finally {
       setGuardando(false);
     }

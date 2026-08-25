@@ -139,7 +139,7 @@ pub fn cargar_modelo(clave: &str) -> Resultado<Arc<ModeloChat>> {
         .find(|(k, _)| *k == clave)
         .map(|(_, n)| *n)
         .unwrap_or(clave);
-    println!("[YARVIS-IA] Cargando {nombre} para parseo de tickets...");
+    tracing::info!("[YARVIS-IA] Cargando {nombre} para parseo de tickets...");
     let inicio = std::time::Instant::now();
 
     let backend = backend_global()?;
@@ -147,7 +147,7 @@ pub fn cargar_modelo(clave: &str) -> Resultado<Arc<ModeloChat>> {
     let model = LlamaModel::load_from_file(backend, &ruta, &params)
         .map_err(|e| format!("No se pudo cargar {} ({e})", ruta.display()))?;
 
-    println!(
+    tracing::info!(
         "[YARVIS-IA] {nombre} listo. Carga: {:.1}s, hilos: {}.",
         inicio.elapsed().as_secs_f32(),
         n_threads_llm()
@@ -170,7 +170,7 @@ pub fn descargar_modelos() -> usize {
         })
         .unwrap_or(0);
     if count > 0 {
-        println!("[YARVIS-IA] {count} modelo(s) descargado(s) de VRAM.");
+        tracing::info!("[YARVIS-IA] {count} modelo(s) descargado(s) de VRAM.");
     }
     count
 }
@@ -203,7 +203,7 @@ pub fn descargar_modelo(clave: &str) -> bool {
         })
         .unwrap_or(false);
     if quitado {
-        println!("[YARVIS-IA] Modelo {clave} descargado de RAM/VRAM.");
+        tracing::info!("[YARVIS-IA] Modelo {clave} descargado de RAM/VRAM.");
     }
     quitado
 }

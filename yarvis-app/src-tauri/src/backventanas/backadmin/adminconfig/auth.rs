@@ -53,24 +53,29 @@ pub async fn guardar_admin(
     auth: tauri::State<'_, AuthState>,
     data: AdminData,
 ) -> Result<String, String> {
-    let admins: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM usuarios WHERE rol = 'admin'")
-        .fetch_one(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
-    if admins.0 > 0 || auth.require_authenticated().is_ok() {
+    if auth.require_authenticated().is_ok() {
         return Err("La configuración inicial ya fue completada".to_string());
     }
 
+    // FIX TOCTOU: antes era COUNT seguido de INSERT (dos sentencias) — dos
+    // llamadas simultáneas antes del primer admin podían crear DOS admins.
+    // Ahora la verificación y el alta son UNA sola sentencia atómica.
     let hashed = hash_password(&data.pass);
+    let result = sqlx::query(
+        "INSERT INTO usuarios (nombre, tienda, password, rol)
+         SELECT ?, ?, ?, 'admin'
+         WHERE (SELECT COUNT(*) FROM usuarios WHERE rol = 'admin') = 0",
+    )
+    .bind(&data.name)
+    .bind(&data.store)
+    .bind(&hashed)
+    .execute(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    sqlx::query("INSERT INTO usuarios (nombre, tienda, password, rol) VALUES (?, ?, ?, ?)")
-        .bind(&data.name)
-        .bind(&data.store)
-        .bind(&hashed)
-        .bind("admin")
-        .execute(&*state)
-        .await
-        .map_err(|e| e.to_string())?;
+    if result.rows_affected() == 0 {
+        return Err("La configuración inicial ya fue completada".to_string());
+    }
 
     Ok("Admin guardado correctamente".into())
 }
@@ -82,6 +87,9 @@ pub async fn validar_login_admin(
     pass: String,
 ) -> Result<bool, String> {
     auth.logout();
+    auth.rate_limiter.verificar().map_err(|segundos| {
+        format!("Demasiados intentos fallidos. Espera {segundos} segundos antes de reintentar.")
+    })?;
     let result = sqlx::query_as::<_, (i64, String, String)>(
         "SELECT id, nombre, password FROM usuarios WHERE rol = 'admin' LIMIT 1",
     )
@@ -92,10 +100,14 @@ pub async fn validar_login_admin(
     if let Some(row) = result {
         let valid = verify_password(&pass, &row.2);
         if valid {
+            auth.rate_limiter.registrar_exito();
             auth.login(row.0, Role::Admin, row.1);
+        } else {
+            auth.rate_limiter.registrar_fallo();
         }
         Ok(valid)
     } else {
+        auth.rate_limiter.registrar_fallo();
         Ok(false)
     }
 }
@@ -286,6 +298,9 @@ pub async fn validar_login_empleado(
     pass: String,
 ) -> Result<Option<String>, String> {
     auth.logout();
+    auth.rate_limiter.verificar().map_err(|segundos| {
+        format!("Demasiados intentos fallidos. Espera {segundos} segundos antes de reintentar.")
+    })?;
     let rows = sqlx::query_as::<_, (String, String, i64)>(
         "SELECT nombre, password, id FROM usuarios WHERE rol = 'empleado' AND estado = 'activo'",
     )
@@ -295,6 +310,7 @@ pub async fn validar_login_empleado(
 
     for (nombre, hash, id) in rows {
         if verify_password(&pass, &hash) {
+            auth.rate_limiter.registrar_exito();
             let _ = sqlx::query(
                 "UPDATE usuarios SET ultimo_login = datetime('now', 'localtime') WHERE id = ?",
             )
@@ -306,13 +322,15 @@ pub async fn validar_login_empleado(
             if let Err(e) =
                 crate::backventanas::backempleado::empleaperfil::asistencia::registrar_asistencia(&state, id).await
             {
-                eprintln!("[ASISTENCIA] no se pudo registrar el login del empleado {id}: {e}");
+                tracing::warn!("[ASISTENCIA] no se pudo registrar el login del empleado {id}: {e}");
             }
             auth.login(id, Role::Employee, nombre.clone());
             return Ok(Some(nombre));
         }
     }
 
+    // Ningún hash coincidió: fallo contable para el rate limiter.
+    auth.rate_limiter.registrar_fallo();
     Ok(None)
 }
 

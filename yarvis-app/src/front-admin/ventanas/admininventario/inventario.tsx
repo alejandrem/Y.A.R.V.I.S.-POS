@@ -1,18 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
-
-export interface InventoryItem {
-  id?: number;
-  nombre: string;
-  descripcion?: string;
-  precio_costo: number;
-  precio_venta: number;
-  stock: number;
-  stock_minimo: number;
-  vendido: number;
-  codigo_barras?: string;
-  categoria?: string;
-}
+import {
+  obtenerInventario,
+  agregarProductoInventario,
+  actualizarProductoInventario,
+  eliminarProductoInventario,
+  type InventoryItem,
+} from "../../../services/inventario";
 
 interface InventarioProps {
   activeTab: string;
@@ -45,7 +38,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
 
   const loadInventory = async () => {
     try {
-      const items = await invoke<InventoryItem[]>("get_inventory");
+      const items = await obtenerInventario();
       setInventory(items);
     } catch (error) {
       console.error("Error al cargar inventario:", error);
@@ -88,9 +81,9 @@ const Inventario = ({ activeTab }: InventarioProps) => {
       };
 
       if (cleanedItem.id) {
-        await invoke("update_inventory_item", { item: cleanedItem });
+        await actualizarProductoInventario(cleanedItem);
       } else {
-        await invoke("add_inventory_item", { item: cleanedItem });
+        await agregarProductoInventario(cleanedItem);
       }
       
       alert("¡Producto guardado con éxito!");
@@ -105,7 +98,7 @@ const Inventario = ({ activeTab }: InventarioProps) => {
   const handleDeleteItem = async (id: number) => {
     if (confirm("¿Estás seguro de eliminar este producto?")) {
       try {
-        await invoke("delete_inventory_item", { id });
+        await eliminarProductoInventario(id);
         loadInventory();
       } catch (error) {
         console.error("Error al eliminar producto:", error);

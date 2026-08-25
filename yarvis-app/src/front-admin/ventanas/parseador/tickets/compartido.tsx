@@ -49,6 +49,9 @@ export interface CalibrationResult {
   analizados: number;
   total_muestras: number;
   votos_ganadores: number;
+  /** Muestras cuyo ticket superó 20 líneas: análisis LLM recortado (visible en UI). */
+  muestras?: Array<{ archivo?: string; estado?: string; advertencia?: string }>;
+  advertencias?: Array<{ archivo: string; mensaje: string }>;
 }
 
 export type Phase = "catalogo" | "carpeta" | "calibrando" | "procesando" | "completo";

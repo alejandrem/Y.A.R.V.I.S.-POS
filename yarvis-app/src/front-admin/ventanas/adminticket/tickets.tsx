@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { notificarError } from "../../../components/notificaciones";
 import Graficas from "./graficas";
 
 interface TicketDb {
@@ -39,6 +40,7 @@ const Tickets = ({ active = true }: TicketsProps) => {
       setCortes(resCortes as CorteDb[]);
     } catch (error) {
       console.error("Error al cargar datos:", error);
+      notificarError("No se pudieron cargar los tickets y cortes", error);
     }
   };
 

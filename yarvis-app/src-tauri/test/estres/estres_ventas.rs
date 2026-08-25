@@ -89,3 +89,52 @@ async fn cincuenta_ventas_concurrentes_sin_perdidas() {
     ).fetch_one(&pool).await.unwrap();
     assert_eq!(con_una_venta, 50);
 }
+
+/// RACE sobre UN SOLO producto con stock exacto: 25 cobros concurrentes de
+/// cantidad 1 compiten por un stock de 10. La cláusula `stock >= ?` +
+/// `rows_affected() == 0` dentro de la transacción debe garantizar que
+/// exactamente 10 tienen éxito y 15 fallan, sin oversell ni ventas parciales.
+#[tokio::test]
+async fn veinticinco_cobros_concurrentes_mismo_producto_stock_exacto_diez() {
+    let pool = db().await;
+    let p = seed_producto(&pool, "Unico", 10.0, 5.0).await;
+    let pid = p as i32;
+
+    let t0 = std::time::Instant::now();
+    let mut handles = Vec::new();
+    for _ in 0..25 {
+        let pool_ref = pool.clone();
+        handles.push(tokio::spawn(async move {
+            completar_venta_impl(&pool_ref, &venta_de(pid, 5.0), "c".into(), 1).await.is_ok()
+        }));
+    }
+
+    let mut exitos = 0usize;
+    let mut fallos = 0usize;
+    for h in handles {
+        if h.await.unwrap_or_else(|e| panic!("task paniqueó: {e}")) {
+            exitos += 1;
+        } else {
+            fallos += 1;
+        }
+    }
+    let ms = t0.elapsed().as_millis();
+    println!("[estres] race mismo producto: 25 ventas concurrentes en {} ms", ms);
+
+    // Contabilidad exacta: nada se pierde ni se duplica.
+    assert_eq!(exitos + fallos, 25);
+    assert_eq!(exitos, 10);
+    assert_eq!(fallos, 15);
+
+    // Stock y vendido exactos: jamás negativo, jamás oversell.
+    let fila = sqlx::query("SELECT stock, vendido FROM productos WHERE id = ?")
+        .bind(p).fetch_one(&pool).await.unwrap();
+    assert_eq!(fila.get::<f64,_>("stock"), 0.0);
+    assert_eq!(fila.get::<f64,_>("vendido"), 10.0);
+
+    // NINGUNA venta parcial: cada venta tiene su grupo de detalle completo.
+    let ventas: i64 = escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await;
+    let detalles: i64 = escalar_i64(&pool, "SELECT COUNT(DISTINCT venta_id) FROM detalle_ventas").await;
+    assert_eq!(ventas, detalles, "hay ventas sin detalle (parciales)");
+    assert_eq!(ventas, 10);
+}
