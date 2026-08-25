@@ -164,6 +164,10 @@ pub fn ejecutar_tool(nombre: &str, args_json: &str, db_path: &str) -> Result<Str
         "forecast_sales" => forecast_sales(&conn, &args),
         "get_product_info" => get_product_info(&conn, &args),
         "get_restock_analysis" => get_restock_analysis(&conn, &args),
+        // Navegación de inventario (lectura, todos los roles)
+        "search_products" => search_products(&conn, &args),
+        "list_categories" => list_categories(&conn, &args),
+        "get_products_by_category" => get_products_by_category(&conn, &args),
         otro => Ok(serde_json::json!({ "error": format!("herramienta desconocida: {otro}") })),
     };
     resultado.map(|v| v.to_string())
@@ -465,6 +469,107 @@ fn get_product_info(conn: &Connection, args: &Value) -> Result<Value, String> {
     .map_err(|e| format!("producto no encontrado: {e}"))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tools de navegación de inventario (solo lectura, compartidas por todos los
+// proveedores cloud). Permiten buscar, explorar categorías y hojear el
+// catálogo: convertir al asistente en un apoyo real de mostrador.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Búsqueda parcial por nombre: devuelve TODAS las coincidencias con precio,
+/// stock y categoría. Es el "buscador" del asistente (a diferencia de
+/// get_product_info, que devuelve un solo producto).
+fn search_products(conn: &Connection, args: &Value) -> Result<Value, String> {
+    let query = str_arg(args, "query", "");
+    if query.trim().is_empty() {
+        return Ok(serde_json::json!({ "error": "falta 'query': texto a buscar en el nombre del producto" }));
+    }
+    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(15).clamp(1, 50);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT nombre, precio_venta, stock, categoria FROM productos
+             WHERE nombre LIKE '%' || ?1 || '%' ESCAPE '\\'
+             ORDER BY vendido DESC LIMIT ?2",
+        )
+        .map_err(|e| e.to_string())?;
+    let filas = stmt
+        .query_map(rusqlite::params![escape_like(query.trim()), limit], |r| {
+            let precio_centavos: f64 = r.get(1)?;
+            Ok(serde_json::json!({
+                "nombre": r.get::<_, String>(0)?,
+                "precio_venta": centavos_a_pesos(precio_centavos),
+                "stock": r.get::<_, f64>(2)?,
+                "categoria": r.get::<_, Option<String>>(3)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let productos: Vec<Value> = filas.filter_map(|f| f.ok()).collect();
+    let encontrados = productos.len();
+    Ok(serde_json::json!({
+        "consulta": query.trim(),
+        "total_encontrados": encontrados,
+        "productos": productos,
+    }))
+}
+
+/// Lista las categorías existentes con cuántos productos tiene cada una y su
+/// stock conjunto. Es el punto de partida para "navegar" el inventario.
+fn list_categories(conn: &Connection, _args: &Value) -> Result<Value, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT COALESCE(categoria, 'Sin categoría'), COUNT(*), SUM(stock)
+             FROM productos GROUP BY COALESCE(categoria, 'Sin categoría') ORDER BY 2 DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let filas = stmt
+        .query_map([], |r| {
+            Ok(serde_json::json!({
+                "categoria": r.get::<_, String>(0)?,
+                "productos": r.get::<_, i64>(1)?,
+                "stock_total": r.get::<_, f64>(2)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let categorias: Vec<Value> = filas.filter_map(|f| f.ok()).collect();
+    Ok(serde_json::json!({ "categorias": categorias }))
+}
+
+/// Hojea los productos de UNA categoría (o todo el catálogo si se omite),
+/// ordenados por más vendidos. Para recorrer el inventario por bloques.
+fn get_products_by_category(conn: &Connection, args: &Value) -> Result<Value, String> {
+    let categoria = str_arg(args, "category", "").trim().to_string();
+    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).clamp(1, 50);
+
+    // Filtro opcional en un solo SQL (?2 vacío = todas las categorías):
+    // evita dos ramas con closures de tipos distintos.
+    let sql = "SELECT nombre, precio_venta, stock, COALESCE(categoria,'Sin categoría')
+               FROM productos
+               WHERE (?2 = '' OR LOWER(COALESCE(categoria,'Sin categoría')) = LOWER(?2))
+               ORDER BY vendido DESC LIMIT ?1";
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let filas = stmt
+        .query_map(rusqlite::params![limit, categoria], |r| {
+            let precio_centavos: f64 = r.get(1)?;
+            Ok(serde_json::json!({
+                "nombre": r.get::<_, String>(0)?,
+                "precio_venta": centavos_a_pesos(precio_centavos),
+                "stock": r.get::<_, f64>(2)?,
+                "categoria": r.get::<_, String>(3)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let productos: Vec<Value> = filas.filter_map(|f| f.ok()).collect();
+    Ok(serde_json::json!({
+        "categoria": if categoria.is_empty() { "todas" } else { categoria.as_str() },
+        "total_mostrados": productos.len(),
+        "productos": productos,
+    }))
+}
+
 fn get_restock_analysis(conn: &Connection, args: &Value) -> Result<Value, String> {
     let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10).clamp(1, 30);
     // Productos con venta reciente ordenados por urgencia (stock más bajo).
@@ -619,9 +724,68 @@ mod tests {
 
     #[test]
     fn herramienta_desconocida_da_error_legible() {
-        let conn = db_prueba();
+        // ejecutar_tool abre su propia conexión read-only (:memory:).
         let r = ejecutar_tool("hackear_nasa", "{}", ":memory:");
         assert!(r.is_ok()); // nunca rompe el chat
         assert!(r.unwrap().contains("desconocida"));
+    }
+
+    // ── Navegación de inventario: search / categories / by_category ──
+
+    #[test]
+    fn search_products_encuentra_parciales_con_precios_en_pesos() {
+        let conn = db_prueba();
+        // Búsqueda parcial y sin mayúsculas: "coca" debe hallar Coca-Cola.
+        let v = search_products(&conn, &serde_json::json!({"query": "coca"})).unwrap();
+        assert_eq!(v["total_encontrados"], 1);
+        let p = &v["productos"][0];
+        assert_eq!(p["nombre"], "Coca-Cola");
+        assert_eq!(p["precio_venta"], 25.0); // 2500 centavos → pesos
+        assert_eq!(p["stock"], 2.0);
+        assert_eq!(p["categoria"], "Bebidas");
+    }
+
+    #[test]
+    fn search_products_escapea_comodines_del_input() {
+        let conn = db_prueba();
+        // Un "%" del LLM NO debe convertirse en comodín: buscaría todo.
+        let v = search_products(&conn, &serde_json::json!({"query": "%"})).unwrap();
+        assert_eq!(v["total_encontrados"], 0);
+        // Y sin query no truena: devuelve error legible para el modelo.
+        let v2 = search_products(&conn, &serde_json::json!({})).unwrap();
+        assert!(v2.get("error").is_some());
+    }
+
+    #[test]
+    fn list_categories_cuenta_productos_y_stock() {
+        let conn = db_prueba();
+        let v = list_categories(&conn, &serde_json::json!({})).unwrap();
+        let cats = v["categorias"].as_array().unwrap();
+        assert_eq!(cats.len(), 2);
+        let nombres: Vec<&str> = cats.iter().map(|c| c["categoria"].as_str().unwrap()).collect();
+        assert!(nombres.contains(&"Bebidas"));
+        assert!(nombres.contains(&"Panadería"));
+        for c in cats {
+            assert_eq!(c["productos"], 1);
+        }
+    }
+
+    #[test]
+    fn products_by_category_filtra_case_insensitive_y_ordena_por_vendido() {
+        let conn = db_prueba();
+        let v = get_products_by_category(
+            &conn,
+            &serde_json::json!({"category": "bebidas"}), // minúsculas: debe encontrar 'Bebidas'
+        )
+        .unwrap();
+        let lista = v["productos"].as_array().unwrap();
+        assert_eq!(lista.len(), 1);
+        assert_eq!(lista[0]["nombre"], "Coca-Cola");
+
+        // Sin categoría → catálogo completo ordenado por más vendidos.
+        let v2 = get_products_by_category(&conn, &serde_json::json!({})).unwrap();
+        let lista2 = v2["productos"].as_array().unwrap();
+        assert_eq!(lista2.len(), 2);
+        assert_eq!(lista2[0]["nombre"], "Coca-Cola"); // vendido 40 > 15
     }
 }
