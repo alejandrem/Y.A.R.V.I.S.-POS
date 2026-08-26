@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::inventario::{cargar_inventario, ProductoDb, ProductoInventario};
-use super::similitud::{cosine_similarity, normalizar, Embedder};
+use crate::embeddings::{cosine_similarity, normalizar, Embedder};
 
 /// Un producto parseado vinculado (tipo_match: "exacto" | "embedding").
 #[derive(Debug, Clone, serde::Serialize)]

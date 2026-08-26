@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use std::collections::HashMap;
 
-use super::similitud::{blob_a_embedding, normalizar};
+use crate::embeddings::{blob_a_embedding, normalizar};
 
 #[derive(Debug, Clone)]
 pub struct ProductoInventario {

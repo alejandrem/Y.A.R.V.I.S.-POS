@@ -41,7 +41,7 @@ const Configuracion = ({
   } = useDatosAdmin(adminName, storeName, initialLocation, initialCp);
 
   return (
-    <div className="flex-1 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl mx-auto w-full">
+    <div className="w-full max-w-[1200px] mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <EncabezadoConfiguracion successMessage={successMessage} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

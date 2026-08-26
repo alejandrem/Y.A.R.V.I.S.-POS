@@ -90,7 +90,7 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
   const { profile, goals } = data;
 
   return (
-    <div className="w-full mx-auto space-y-8">
+    <div className="w-full max-w-[1200px] mx-auto space-y-8">
       {/* HEADER */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

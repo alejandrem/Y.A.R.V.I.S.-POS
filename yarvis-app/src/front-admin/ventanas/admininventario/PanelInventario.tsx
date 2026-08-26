@@ -135,7 +135,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   };
 
   return (
-    <div className="max-w-6xl animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto space-y-12">
+    <div className="w-full max-w-[1200px] animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto space-y-12">
       <header className="flex justify-between items-end mb-8">
         <div>
           <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight mb-1">Inventario General</h2>

@@ -2,24 +2,26 @@
 // vinculador_inventario — Cruza productos parseados con el
 // inventario existente. Port de vinculador.py.
 //
-//   * similitud.rs   → normalización, embeddings y coseno
 //   * inventario.rs  → carga de productos + knowledge_base
 //   * vinculo.rs     → decisión del match (exacto + embedding)
 //   * persistencia.rs→ guardado de vinculaciones aprobadas
+//   * similitud.rs   → shim que re-exporta desde crate::embeddings
+//                      (canónico en src-ia/embeddings/mod.rs)
 //
-// El `texto_a_embedding` depende del modelo (FASE 4, ONNX): aquí se
+// El `texto_a_embedding` depende del modelo propio (Fase 4): aqui se
 // expone un trait `Embedder` para inyectarlo cuando exista; sin él,
 // solo funciona el match exacto y `por_embedding` queda en 0.
 // ============================================================
 
 mod inventario;
 mod persistencia;
-mod similitud;
+pub mod similitud;
 mod vinculo;
 
 pub use inventario::{cargar_inventario, ProductoDb, ProductoInventario};
 pub use persistencia::guardar_vinculacion;
-pub use similitud::{blob_a_embedding, cosine_similarity, normalizar, Embedder};
+// Re-export canónico + compat: ambas rutas resuelven al mismo trait/fns.
+pub use crate::embeddings::{blob_a_embedding, cosine_similarity, normalizar, Embedder};
 pub use vinculo::{
     vincular_con_inventario, EstadisticasVinculacion, Match, ResultadoVinculacion, SinVincular,
 };

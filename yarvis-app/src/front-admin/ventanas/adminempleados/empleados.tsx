@@ -139,7 +139,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-12">
+    <div className="w-full max-w-[1200px] mx-auto space-y-12">
       {/* HEADER */}
       <header className="flex justify-between items-end flex-wrap gap-6">
         <div>

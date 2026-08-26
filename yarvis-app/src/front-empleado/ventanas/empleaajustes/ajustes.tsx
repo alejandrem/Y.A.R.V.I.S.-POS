@@ -48,7 +48,7 @@ function Ajustes({ operatorName = "" }: AjustesProps) {
   }, []);
 
   return (
-    <div className="max-w-[1200px] mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+    <div className="w-full max-w-[1200px] mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
       {/* HEADER */}
       <header>
         <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight">Ajustes</h2>
