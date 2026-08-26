@@ -1,6 +1,6 @@
 # Lógica de Proceso / Spec de UI-UX — Y.A.R.V.I.S. POS
 
-> ⚠️ **NOTA DE ESTADO (2026-Ago):** este documento es el **spec de diseño UI/UX** que guió la implementación. La mayoría de los flujos ya están **implementados**: el primer inicio ahora también registra la **tienda** y permite agregar **empleados** (con contraseña), el login funciona por roles (Admin → correona, Empleado → espada), y existen los dashboards de admin y empleado con los menús descritos. Los mockups ASCII de abajo son referenciales (el diseño real usa Tailwind). Lo demás del documento sigue vigente como referencia de negocio y futuras iteraciones (impresión, facturación, auditorías, atajos F5–F8).
+> Nota de estado 2026-08-26: spec de diseno UI/UX que guio la implementacion. La mayoria de flujos ya estan implementados: PrimerInicio registra administrador + tienda + empleados, login por roles (Admin/Empleado), dashboards de admin y empleado con menus descritos. Los mockups ASCII son referenciales (diseno real en Tailwind). Predicciones Holt-Winters ya operativas; busqueda semantica vectorial pendiente con modelo propio; impresion termica y facturacion electronica pendientes; fine-tuning planificado a Qwen2.5-Coder 1.5B Instruct. Lo demas sigue vigente como referencia de negocio.
 
 ---
 

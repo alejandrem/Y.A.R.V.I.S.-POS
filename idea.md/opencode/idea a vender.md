@@ -1,32 +1,47 @@
-# Idea a vender del software
+# Idea a Vender del Software
 
-> **ESTADO ACTUAL (2026-Ago):** gran parte de esta visión ya está implementada (venta rápida, inventario, clientes, reportes/cortes, tickets, parseador local, chat). Pendientes: **predicciones de ventas** (`get_predictions`/`get_predicciones_financieras` = stubs), **búsqueda semántica/embeddings** (stubs), impresión térmica y facturación electrónica. Ver `../imple & docu/implementacion.md`.
+> Estado 2026-08-26: venta rapida, inventario, clientes, reportes/cortes, tickets, parseador local, chat con tools y predicciones Holt-Winters ya implementados. Pendientes: busqueda semantica con modelo de embeddings propio, impresion termica y facturacion electronica, y fine-tuning final de Qwen2.5-Coder 1.5B Instruct. Ver implementacion.md.
 
+## Venta Ultra-Rapida
 
-**Venta Ultra-Rápida:** El cajero no puede esperar. Debe soportar escáner de códigos de barras, búsqueda rápida por teclado y múltiples métodos de pago (efectivo, tarjeta, transferencia).
+El cajero no puede esperar. Debe soportar escaner de codigos de barras, busqueda rapida por teclado y multiples metodos de pago (efectivo, tarjeta, transferencia). La caja nunca depende de la IA: si el modelo no esta cargado, el cobro sigue funcionando.
 
-**Control de Inventario Real:** Entradas, salidas, alertas de "stock bajo" y prediccion de comrpas (como sugerir que comprar en base a tus ventas y fechas festivas, temporadas.) y auditorías (inventario físico vs. sistema).
+## Control de Inventario Real
 
-**Gestión de Clientes frecuentes por contrato (CRM Básico):** Quién me compra, cuánto me compra, cuanto me genera  y cuándo fue su última visita.
+Entradas, salidas, alertas de stock bajo y prediccion de compras (sugerir que comprar en base a ventas y estacionalidad) y auditorias (inventario fisico vs sistema). Importacion masiva de catalogos con hash anti-duplicado y transaccion todo-o-nada.
 
-**Reportes Financieros:** Corte de caja (X y Z) Utilidad bruta, Utilidad Operativa, Utilidad Neta, Utilidad Marginal. aqui mostraremos, aqui tambien se muestran graficas para mayor impacto visual de cada utilidad.
+## Gestion de Clientes (CRM Basico)
 
-**Tickets y Facturación:** Impresión térmica usaremos los drivers de windows para poder mandar la señal de impresion y, preferiblemente, facturación electrónica legal.
+Quien compra, cuanto compra, cuanto genera y cuando fue su ultima visita. Pedidos por cliente con metodo de pago, productos, descuentos y tipo de ganancia.
 
-**Predicción de ventas:** El sistema debe aprender de tus ventas y decirte cuanto vas a vender el proximo fin de semana, mes etc. con un margen de error, el sistema presente las predicciones con Intervalos de Confianza
+## Reportes Financieros
 
-**Asistente Natural para el Dueño:** chat bot y Detección de Anomalías: muchos reembolsos de un mismo cajero o ventas a precios inusuales y lanza una alerta.
+Corte de caja X y Z, utilidad bruta, operativa, neta y marginal. Graficas por utilidad con impacto visual. Todo en centavos enteros para evitar errores de redondeo.
 
-el consultor de datos en tiempo real. si el dueño no esta en la tienda o no tiene tiempo de revisar 200 tickets a mano le pregunta al chat bot ¿"hubo algo raro hoy?" la IA podria contestar "si entre las 4 y las 5 pm se hicieron 4 rembolsos seguidos del mismo producto por el cajero de juan esto es inusual para un martes" detectando posibles robos o errores humanos al instante
+## Tickets y Facturacion
 
-si la tienda es medianamente grande o tiene muchos productos, ¿que productos para el cabello no tienen sal? la IA podria responder "tienes el shampoo marca X y el acondicionador Y" ayuda a los empleados nuevos a dar una atencion al cliente nivel experto desde el primer dia
+Impresion termica via drivers del sistema (ESC/POS, pendiente) y facturacion electronica legal (XML/PAC, pendiente). Historial de tickets y cortes con promedios y graficas de rendimiento.
 
-contador cuando un dueño le da flojera o no sabe usar graficas complejas puede preguntarle al chat bot "¿cuanto gane libre hoy quitando el costo de los productos?" el chat bot podria responder tu utilidad neta hoy fue de 2,543 mxn es un 15% mas que el promedio de los miercoles" toma decisiones rapidas sin tener que ser un experto de finanzas
+## Prediccion de Ventas
 
-predicciones de inventario le podrias preguntar "que deberia comprar para el fin de semana" la IA contestaria que viene un frente frio historicamente tus ventas de cafe y pan suben un 30% en estos dias te sugiero aumentar un "15-20%" mas en el pedido del pan evitando perder ventas por falta de stock o tirar el dinero en productos que no se van a vender
+El sistema aprende de las ventas y dice cuanto se vendera el proximo fin de semana o mes, con intervalos de confianza al 95%. Implementado localmente con Holt-Winters triple aditivo (src-ia/predicciones): estacionalidad semanal (m=7), ajuste por grid de 343 combos y banda que crece con raiz del horizonte. Sin Prophet ni servicios externos.
 
-**parseador de tickets de la tienda**: cuando llegas a una tienda muchas veces ya usan un punto de venta, y con este parseador de tickets puedes subir tus miles de tickets max unos 12,000 tickets para que podamos predecir de manera exacta fututras ventas y para no tener que ingresar manualmente tus productos y tus empleados. **Importación Inteligente Local**: Ya no se usan servidores IA externos para el onboarding, todo ocurre localmente mediante procesamiento masivo en lotes sin asfixiar la computadora.
+## Asistente Natural para el Dueno
 
-**sistema portable y auto sostenible** no tiene por que tener fallas debe ser portable el sistema pesara unos 5gb posiblemente. El sistema detecta dinámicamente la memoria de la PC: si hay pocos recursos, activa el "Modo Ligero" (Qwen 0.5B), si hay recursos moderados activa el "Modo Intermedio" (Qwen 0.8B) y para las PCs más potentes carga el "Modo Inteligente" (Qwen 1.7B). Todo asegurando que el software del cliente nunca colapse.
+Chatbot y deteccion de anomalias: muchos reembolsos de un mismo cajero o ventas a precios inusuales disparan alertas. El dueno pregunta "hubo algo raro hoy?" y la IA responde con datos reales via tools: "entre las 16 y 17h hubo 4 reembolsos del mismo producto por el cajero Juan, inusual para un martes".
 
-modelo local con opcion de conectarse a internet. 
+Busqueda experta: "que productos para el cabello no tienen sal?" -> "tienes el shampoo marca X y el acondicionador Y". Un empleado nuevo da atencion experta desde el primer dia via search_products / list_categories / get_products_by_category.
+
+Contador conversacional: "cuanto gane libre hoy quitando el costo?" -> "tu utilidad neta hoy fue de 2,543 MXN, 15% mas que el promedio de los miercoles". Predicciones de inventario: "que deberia comprar para el fin de semana?" -> "viene frente frio, tus ventas de cafe y pan suben 30% historicamente, aumenta 15-20% el pedido de pan".
+
+El chat usa 10 tools de solo lectura, SQL parametrizado y roles (admin ve finanzas/nomina, empleado solo mostrador). Estrategia: fine-tuning de Qwen + ejecutor de tools, sin RAG.
+
+## Parseador de Tickets de la Tienda
+
+Cuando una tienda ya usa otro POS, sube hasta 12,000 tickets en TXT/CSV/Excel y YARVIS aprende su historia sin carga manual de productos o empleados. Importacion inteligente local: todo ocurre en el equipo por procesamiento masivo en lotes con streaming y transaccion por archivo, sin asfixiar la computadora.
+
+## Sistema Portable y Auto-Sostenible
+
+Un ejecutable, una base de datos, cero dependencias obligatorias. Peso estimado del bundle con modelo: ~5 GB. El sistema verifica RAM disponible antes de cargar el modelo local (RAM_GB_MINIMA_1_5_CODER = 1.0 GB en src-ia/motor-chat/llm/mod.rs:212); si no alcanza, responde por cloud o con error claro. No hay escalado automatico 0.5B/0.8B/1.5B Coder en esta version: hay un unico modelo local (Qwen2.5-Coder 1.5B Instruct fine-tuneado).
+
+Modelo local con opcion de conectarse a internet. Si la nube falla (429 u otro), el chat hace fallback a local. El usuario siempre recibe respuesta.
