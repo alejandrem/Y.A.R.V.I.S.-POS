@@ -1,3 +1,17 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// AJUSTES DEL EMPLEADO — Pantalla de configuración personal.
+// Tarea única: orquestar las secciones (datos de sesión, apariencia) y
+// cargar el contexto desde el backend. El contenido crecerá por secciones;
+// debajo de Apariencia queda espacio deliberadamente libre.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useTheme } from "../../../hooks/useTheme";
+import { notificarError } from "../../../components/notificaciones";
+import PastillaTema from "./componentes/pastilla-tema";
+import DatosSesion from "./componentes/datos-sesion";
+
 const ajustesNav = {
   id: "ajustes",
   label: "AJUSTES",
@@ -9,12 +23,64 @@ const ajustesNav = {
   ),
 };
 
-export default function Ajustes() {
+/** Forma del comando get_tienda_info (backend: models::TiendaInfo). */
+interface TiendaInfoBackend {
+  nombre: string | null;
+  ubicacion: string | null;
+  cp: string | null;
+}
+
+interface AjustesProps {
+  operatorName?: string;
+}
+
+function Ajustes({ operatorName = "" }: AjustesProps) {
+  const { theme, setTheme } = useTheme();
+  const [tiendaInfo, setTiendaInfo] = useState<TiendaInfoBackend | null>(null);
+
+  useEffect(() => {
+    invoke<TiendaInfoBackend>("get_tienda_info")
+      .then(setTiendaInfo)
+      .catch((e) => {
+        console.error("[AJUSTES] no se pudo cargar la información de la tienda:", e);
+        notificarError("No se pudo cargar la información de la tienda", e);
+      });
+  }, []);
+
   return (
-    <div>
-      <h1>Ajustes</h1>
+    <div className="max-w-[1200px] mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      {/* HEADER */}
+      <header>
+        <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight">Ajustes</h2>
+        <p className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mt-1">
+          Preferencias de tu cuenta en este punto de venta
+        </p>
+      </header>
+
+      <div className="grid grid-cols-2 gap-5 items-start">
+        <DatosSesion
+          nombreEmpleado={operatorName}
+          tienda={tiendaInfo?.nombre ?? null}
+          ubicacion={tiendaInfo?.ubicacion ?? null}
+          cp={tiendaInfo?.cp ?? null}
+        />
+
+        {/* APARIENCIA */}
+        <section className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm p-6 sm:p-8">
+          <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-1">
+            Apariencia
+          </p>
+          <p className="text-[11px] font-bold text-neutral-500 mb-5">
+            Elige cómo se ve Y.A.R.V.I.S. "Sistema" sigue la preferencia de tu equipo.
+          </p>
+          <PastillaTema tema={theme} onCambiar={setTheme} />
+        </section>
+      </div>
+
+      {/* Espacio reservado para futuras secciones */}
     </div>
   );
 }
 
+export default Ajustes;
 export { ajustesNav };

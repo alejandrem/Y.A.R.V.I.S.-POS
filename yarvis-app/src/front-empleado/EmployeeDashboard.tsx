@@ -26,6 +26,7 @@ import {
 import NuevaVenta from "./ventanas/emplea_new_venta/nueva_venta";
 import Inventario from "./ventanas/empleainventario/inventario";
 import Perfil from "./ventanas/empleaperfil/perfil";
+import Ajustes from "./ventanas/empleaajustes/ajustes";
 import YarvisEmpleado from "./ventanas/empleayarvis/yarvis";
 
 interface EmployeeDashboardProps {
@@ -81,6 +82,8 @@ const EmployeeDashboard = ({
         return <Inventario activeTab={activeTab} />;
       case "perfil":
         return <Perfil activeTab={activeTab} operatorName={operatorName} />;
+      case "ajustes":
+        return <Ajustes operatorName={operatorName} />;
       case "nueva_venta":
         return <NuevaVenta activeTab={activeTab} />;
       case "yarvis":
