@@ -11,6 +11,7 @@ import { useTheme } from "../../../hooks/useTheme";
 import { notificarError } from "../../../components/notificaciones";
 import PastillaTema from "./componentes/pastilla-tema";
 import DatosSesion from "./componentes/datos-sesion";
+import Libro from "./datos inutiles/Libro";
 
 const ajustesNav = {
   id: "ajustes",
@@ -76,6 +77,9 @@ function Ajustes({ operatorName = "" }: AjustesProps) {
           <PastillaTema tema={theme} onCambiar={setTheme} />
         </section>
       </div>
+
+      {/* LIBRO - DATOS INUTILES */}
+      <Libro />
 
       {/* Espacio reservado para futuras secciones */}
     </div>
