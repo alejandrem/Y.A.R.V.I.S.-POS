@@ -1,5 +1,6 @@
 [package]
 name = "src-ia"
+license = "GPL-3.0-or-later"
 # Los tests de integración se declaran explícitos abajo: los módulos hermanos
 # de `estres` (soporte/fuzzing/masivo) NO deben autodescubrirse como targets.
 autotests = false

@@ -1,5 +1,6 @@
 [package]
 name = "yarvis-app"
+license = "GPL-3.0-or-later"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
