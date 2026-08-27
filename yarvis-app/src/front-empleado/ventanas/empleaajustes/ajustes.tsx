@@ -5,13 +5,14 @@
 // debajo de Apariencia queda espacio deliberadamente libre.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../../hooks/useTheme";
 import { notificarError } from "../../../components/notificaciones";
 import PastillaTema from "./componentes/pastilla-tema";
 import DatosSesion from "./componentes/datos-sesion";
-import Libro from "./datos inutiles/Libro";
+
+const Libro = lazy(() => import("./datos inutiles/Libro"));
 
 const ajustesNav = {
   id: "ajustes",
@@ -78,8 +79,18 @@ function Ajustes({ operatorName = "" }: AjustesProps) {
         </section>
       </div>
 
-      {/* LIBRO - DATOS INUTILES */}
-      <Libro />
+      {/* LIBRO - DATOS INUTILES (lazy: no infla el bundle de venta) */}
+      <Suspense
+        fallback={
+          <div className="w-full max-w-[1200px] h-[620px] bg-white border-2 border-neutral-200 rounded-[1.8rem] animate-pulse flex items-center justify-center">
+            <span className="font-mono text-[11px] font-black tracking-widest text-neutral-400">
+              CARGANDO MANUAL...
+            </span>
+          </div>
+        }
+      >
+        <Libro />
+      </Suspense>
 
       {/* Espacio reservado para futuras secciones */}
     </div>

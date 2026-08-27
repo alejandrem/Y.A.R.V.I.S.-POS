@@ -1,6 +1,5 @@
-// Shim de compatibilidad: el modulo canónico ahora vive en `src-ia/embeddings/mod.rs`.
-// Se mantiene este archivo para no romper imports viejos ni cachés de binarios que
-// aún resuelvan `crate::cerebro::vinculador_inventario::similitud`.
-// Todos los símbolos se re-exportan desde `crate::embeddings`.
-
-pub use crate::embeddings::{blob_a_embedding, cosine_similarity, normalizar, Embedder};
+// Shim de compatibilidad: el modulo canónico vive en `src-ia/embeddings/mod.rs`.
+// NO agregues lógica aquí. Todo lo de embeddings va en `src-ia/embeddings/`.
+pub use crate::embeddings::{
+    blob_a_embedding, cosine_similarity, embedding_a_blob, normalizar, Embedder, HashEmbedder, DIM,
+};
