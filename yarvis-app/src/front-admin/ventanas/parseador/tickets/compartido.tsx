@@ -54,7 +54,7 @@ export interface CalibrationResult {
   advertencias?: Array<{ archivo: string; mensaje: string }>;
 }
 
-export type Phase = "catalogo" | "carpeta" | "calibrando" | "procesando" | "completo";
+export type Phase = "catalogo" | "carpeta" | "calibrando" | "procesando" | "completo" | "historial";
 
 export const toNumber = (value: unknown, fallback = 0) => {
   const number = Number(value);
@@ -91,17 +91,39 @@ export const ProgressCard = ({ title, subtitle, current, total, percent, childre
   </section>
 );
 
-export const PasosGrid = ({ phase }: { phase: Phase }) => (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8">
-    {[
-      ["01", "Catálogo maestro", phase !== "catalogo"],
-      ["02", "Carpeta de tickets", ["calibrando", "procesando", "completo"].includes(phase)],
-      ["03", "Análisis y parseo", phase === "completo" || phase === "procesando" || phase === "calibrando"],
-    ].map(([number, label, done]) => (
-      <div key={String(number)} className={`rounded-2xl border p-4 flex items-center gap-3 ${done ? "bg-neutral-950 text-neutral-50 border-neutral-950" : "bg-white border-neutral-100 text-neutral-400"}`}>
-        <span className="text-xs font-black opacity-60">{number}</span>
-        <span className="text-[10px] font-black uppercase tracking-widest">{label}</span>
-      </div>
-    ))}
-  </div>
-);
+export const PasosGrid = ({ phase, onPhaseChange }: { phase: Phase; onPhaseChange?: (phase: Phase) => void }) => {
+  const steps: Array<{ number: string; label: string; phaseKey: Phase; done: boolean; enabled: boolean }> = [
+    { number: "01", label: "Catálogo maestro", phaseKey: "catalogo", done: phase !== "catalogo", enabled: true },
+    { number: "02", label: "Carpeta de tickets", phaseKey: "carpeta", done: ["calibrando", "procesando", "completo", "historial"].includes(phase), enabled: true },
+    { number: "03", label: "Historial", phaseKey: "historial", done: phase === "historial", enabled: true },
+  ];
+  const activeIndex = phase === "catalogo" ? 0 : phase === "historial" ? 2 : 1;
+  return (
+    <div className="mb-8 flex justify-center">
+      <nav className="relative flex w-full max-w-[640px] rounded-full border border-neutral-200 bg-neutral-100 p-1.5" aria-label="Pasos del parseador">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-1.5 left-1.5 w-[calc(33.333%-4px)] rounded-full bg-neutral-950 shadow-lg transition-transform duration-300 ease-out"
+          style={{ transform: `translateX(${activeIndex * 100}%)` }}
+        />
+        {steps.map((step, index) => {
+          const isActive = index === activeIndex;
+          return (
+            <button
+              key={step.number}
+              onClick={() => {
+                if (!step.enabled || !onPhaseChange) return;
+                onPhaseChange(step.phaseKey);
+              }}
+              disabled={!step.enabled}
+              className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-colors duration-300 ${isActive ? "text-white" : step.enabled ? "text-neutral-900 hover:text-neutral-600" : "text-neutral-400 cursor-not-allowed"}`}
+            >
+              <span className="text-[10px] sm:text-xs opacity-60">{step.number}</span>
+              {step.label}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+};

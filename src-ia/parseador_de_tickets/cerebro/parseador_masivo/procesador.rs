@@ -131,7 +131,13 @@ pub fn procesar_archivos(
                 if productos_vistos.contains(&dup_key) {
                     existentes += 1;
                 } else {
-                    productos_vistos.insert(dup_key);
+                    productos_vistos.insert(dup_key.clone());
+                    // Sin catálogo maestro: crear el producto en inventario con lo extraído del ticket
+                    // (nombre, precio_venta, cantidad vendida). Stock 0, costo 0, mínimo 5.
+                    let _ = conn.execute(
+                        "INSERT INTO productos (nombre, precio_venta, precio_costo, stock, stock_minimo, vendido, categoria) VALUES (?1, ?2, ?3, 0, 5, ?4, '')",
+                        rusqlite::params![item.producto.clone(), a_centavos(item.precio_unitario), a_centavos(0.0), item.cantidad],
+                    );
                     nuevos_seg.push(ProductoNuevo {
                         nombre: item.producto.clone(),
                         precio: item.precio_unitario,

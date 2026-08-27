@@ -12,6 +12,7 @@ import Catalogo from "./tickets/catalogo";
 import Carpeta from "./tickets/carpeta";
 import Progreso from "./tickets/progreso";
 import Completo from "./tickets/completo";
+import Historial from "./tickets/historial";
 import Cortes from "./cortes/cortes";
 
 type View = "tickets" | "cortes";
@@ -100,7 +101,15 @@ const Parseador = () => {
       setCatalogImported(true);
       setPhase("carpeta");
     } catch (importError) {
-      setError(`No se pudo importar el catálogo: ${errorMessage(importError)}`);
+      const msg = errorMessage(importError);
+      if (msg.includes("ya fue importado")) {
+        setError(`Este catálogo ya fue parseado anteriormente: ${catalogPath.split("/").pop()} — ya está en inventario. Puedes subir uno nuevo o continuar a Carpeta de tickets.`);
+        setCatalogImported(true);
+        // No bloquea: permitir saltar a carpeta aunque sea duplicado
+        setTimeout(() => setPhase("carpeta"), 800);
+      } else {
+        setError(`No se pudo importar el catálogo: ${msg}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -123,7 +132,7 @@ const Parseador = () => {
   };
 
   const startFlow = async () => {
-    if (!catalogImported || !folderPath || !ticketFiles.length) return;
+    if (!folderPath || !ticketFiles.length) return;
     setBusy(true);
     setError("");
     setTraining([]);
@@ -181,6 +190,47 @@ const Parseador = () => {
     }
   };
 
+  const handlePhaseChange = (next: Phase) => {
+    if (next === "catalogo") {
+      setPhase("catalogo");
+      setError("");
+      return;
+    }
+    if (next === "carpeta") {
+      // Permitir saltar el catálogo: si ya está importado o si el usuario quiere ir directo a tickets
+      setPhase("carpeta");
+      setError("");
+      return;
+    }
+    if (next === "calibrando") {
+      // Solo si ya hay carpeta seleccionada
+      if (folderPath && ticketFiles.length) {
+        setPhase("carpeta");
+      }
+      return;
+    }
+    if (next === "historial") {
+      setPhase("historial");
+      setError("");
+      return;
+    }
+    if (next === "completo") {
+      setPhase("completo");
+      setError("");
+      return;
+    }
+  };
+
+  const handleSkipCatalog = () => {
+    setPhase("carpeta");
+    setError("");
+    // Aviso: sin catálogo, los productos de los tickets se crearán en inventario automáticamente
+    if (!catalogImported) {
+      setError("Continuando sin catálogo maestro: los productos de los tickets se crearán en inventario con su precio y cantidad vendida.");
+      setTimeout(() => setError(""), 4000);
+    }
+  };
+
   const reset = () => {
     cleanupListeners();
     setPhase("catalogo");
@@ -234,11 +284,22 @@ const Parseador = () => {
       {view === "tickets" ? (
         <>
           {error && <div className="mb-6 rounded-2xl bg-red-50 border border-red-100 text-red-700 px-5 py-4 text-sm font-bold">{error}</div>}
-          <PasosGrid phase={phase} />
-          {phase === "catalogo" && <Catalogo catalogPath={catalogPath} catalogItems={catalogItems} busy={busy} onSelectCatalog={selectCatalog} onImportCatalog={importCatalog} />}
-          {phase === "carpeta" && <Carpeta folderPath={folderPath} ticketFiles={ticketFiles} busy={busy} onSelectFolder={selectFolder} onStartFlow={startFlow} />}
+          <PasosGrid phase={phase} onPhaseChange={handlePhaseChange} />
+          {phase === "catalogo" && (
+            <>
+              <Catalogo catalogPath={catalogPath} catalogItems={catalogItems} busy={busy} onSelectCatalog={selectCatalog} onImportCatalog={importCatalog} />
+              <div className="mt-4 flex justify-center">
+                <button onClick={handleSkipCatalog} className="text-[11px] font-black uppercase tracking-widest text-neutral-500 hover:text-neutral-900 underline decoration-dotted">
+                  Saltar catálogo y subir carpeta de tickets directamente →
+                </button>
+              </div>
+              <p className="text-center text-[10px] text-neutral-400 mt-2">Si subes 30 tickets sin catálogo, cada producto extraído (nombre, precio, cantidad vendida) se creará en inventario automáticamente.</p>
+            </>
+          )}
+          {phase === "carpeta" && <Carpeta folderPath={folderPath} ticketFiles={ticketFiles} busy={busy} catalogImported={catalogImported} onSelectFolder={selectFolder} onStartFlow={startFlow} />}
           {(phase === "calibrando" || phase === "procesando") && <Progreso phase={phase} training={training} trainingDone={trainingDone} trainingTotal={trainingTotal} trainingPercent={trainingPercent} batch={batch} batchTotal={batchTotal} batchPercent={batchPercent} />}
           {phase === "completo" && <Completo batch={batch} ticketFiles={ticketFiles} trainingResult={trainingResult} onReset={reset} />}
+          {phase === "historial" && <Historial />}
         </>
       ) : (
         <Cortes />
