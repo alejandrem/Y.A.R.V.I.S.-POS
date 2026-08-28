@@ -11,7 +11,8 @@ Reglas:
 - Los precios siempre tienen $ o están en formato decimal (15.00)
 - La cantidad siempre es un número entero al inicio de la línea
 - El total es siempre la última columna numérica
-- El nombre del producto es texto entre la cantidad y los precios
+- El nombre del producto es TODO el texto entre la cantidad y los precios (puede ocupar VARIAS columnas, ej. "FANTA NARANJA 600ML" son 3 columnas)
+- Si el producto ocupa varias columnas, usa RANGO [INICIO, FIN] (ej. [1,3]), no un solo índice
 - Detecta si hay descuentos, impuestos (IVA), o notas extra
 - BUSCA la fecha del ticket: puede estar en formatos como "15/03/2024", "2024-03-15",
   "15 de marzo de 2024", "Mar 15 2024", "Fecha: 15/03/24", "15-03-2024", etc.
@@ -21,13 +22,16 @@ Reglas:
 
 Responde SOLO con JSON válido, sin explicaciones.
 
+EJEMPLO para "2 FANTA NARANJA 600ML 32.00":
+  cantidad=0, producto=[1,3], precio_unitario=4, total=4
+
 FORMATO DE RESPUESTA:
 {
   "mapeo": {
     "formato_detectado": "CANTIDAD PRODUCTO PRECIO TOTAL",
     "columnas": {
       "cantidad": INDICE,
-      "producto": INDICE,
+      "producto": [INDICE_INICIO, INDICE_FIN] o INDICE si es una sola columna,
       "precio_unitario": INDICE,
       "total": INDICE,
       "descuento": INDICE_O_NULL

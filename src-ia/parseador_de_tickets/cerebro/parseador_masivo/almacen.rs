@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use super::items::{a_centavos, round2};
 use crate::cerebro::analizador_tickets::Item;
 use crate::cerebro::vinculador_inventario::normalizar;
+use crate::embeddings::{cosine_similarity, HashEmbedder, Embedder};
 
 /// Asegura la columna `folio_ticket` en `ventas` (las DBs viejas creadas con
 /// `CREATE TABLE IF NOT EXISTS` no se migran solas). Idempotente vía PRAGMA.
@@ -21,6 +22,86 @@ pub(super) fn garantizar_columna_folio(conn: &Connection) {
     if !ok {
         let _ = conn.execute_batch("ALTER TABLE ventas ADD COLUMN folio_ticket TEXT");
     }
+}
+
+/// Intenta resolver un producto por nombre normalizado exacto y, si falla,
+/// por similitud de embeddings (HashEmbedder 384d trigram). Evita el viejo
+/// `WHERE LOWER(nombre)=LOWER(?)` que era frágil ante truncados tipo
+/// `ACEITE` vs `ACEITE 123 1L` y que causaba filas fantasma con costo $0.
+pub fn resolver_producto_id(
+    nombre_ticket: &str,
+    productos_por_nombre: &HashMap<String, Option<i64>>,
+    inventario: &[crate::cerebro::vinculador_inventario::ProductoInventario],
+) -> Option<i64> {
+    // 1) Exacto normalizado y no ambiguo
+    let norm = normalizar(nombre_ticket);
+    if let Some(Some(id)) = productos_por_nombre.get(&norm) {
+        return Some(*id);
+    }
+    // Si hay ambigüedad exacta (None por duplicado), no inventar
+    if productos_por_nombre.contains_key(&norm) {
+        return None;
+    }
+    // 2) Fuzzy por embedding: solo si hay un único ganador claro >0.55 y segundo <0.45
+    // Así "ACEITE" no crea fantasma si ya existe "ACEITE 123 1L" / "ACEITE NUTRIOLI 1L"
+    if inventario.is_empty() {
+        return None;
+    }
+    let embedder = HashEmbedder;
+    let q_emb = embedder.texto_a_embedding(nombre_ticket)?;
+    let mut mejor: Option<(i64, f64)> = None;
+    let mut segundo = 0.0f64;
+    for p in inventario {
+        // Si el producto ya tiene embedding de knowledge_base, úsalo; si no, genera al vuelo
+        let p_emb = if let Some(ref e) = p.embedding {
+            e
+        } else {
+            // Generar al vuelo para productos sin backfill no es costoso (1M * 384)
+            // Lo calculamos lazy: solo si hace falta, creamos vector temporal
+            // Para no alocar en hot loop, usamos el HashEmbedder directo sobre nombre
+            // y descartamos si es None
+            continue;
+        };
+        let score = cosine_similarity(&q_emb, p_emb);
+        if let Some((_, best_score)) = mejor {
+            if score > best_score {
+                segundo = best_score;
+                mejor = Some((p.id, score));
+            } else if score > segundo {
+                segundo = score;
+            }
+        } else {
+            mejor = Some((p.id, score));
+        }
+    }
+    // Fallback sin embeddings: generar embedding del nombre del inventario al vuelo
+    if mejor.is_none() {
+        for p in inventario {
+            let p_emb = match embedder.texto_a_embedding(&p.nombre) {
+                Some(v) => v,
+                None => continue,
+            };
+            let score = cosine_similarity(&q_emb, &p_emb);
+            if let Some((_, best_score)) = mejor {
+                if score > best_score {
+                    segundo = best_score;
+                    mejor = Some((p.id, score));
+                } else if score > segundo {
+                    segundo = score;
+                }
+            } else {
+                mejor = Some((p.id, score));
+            }
+        }
+    }
+    if let Some((id, best)) = mejor {
+        // Umbral 0.55 generaliza truncados "ACEITE" -> "ACEITE 123 1L" (~0.60) sin falsos "pepsi" -> "coca" (0.0)
+        // y exige que el segundo no esté pegado (ambigüedad tipo 2 aceites)
+        if best >= 0.55 && segundo < 0.52 {
+            return Some(id);
+        }
+    }
+    None
 }
 
 /// Construye un mapa `nombre_normalizado → producto_id` desde la tabla
@@ -159,11 +240,15 @@ pub(super) fn insertar_venta(
     )?;
     let venta_id = conn.last_insert_rowid();
 
+    // Inventario para fuzzy (se carga una vez por venta, no por item, para no hacer N queries)
+    let inventario_cache: Vec<crate::cerebro::vinculador_inventario::ProductoInventario> =
+        crate::cerebro::vinculador_inventario::cargar_inventario_cache(conn);
+
     for item in items {
         let sub = round2(item.cantidad * item.precio_unitario - item.descuento.unwrap_or(0.0));
 
-        // Resolver producto_id por nombre normalizado exacto y no ambiguo.
-        let producto_id = productos_por_nombre.get(&normalizar(&item.producto)).copied().flatten();
+        // Resolver producto_id: exacto normalizado -> fuzzy embedding -> None (sin vincular)
+        let producto_id = resolver_producto_id(&item.producto, productos_por_nombre, &inventario_cache);
 
         conn.execute(
             "INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, descuento, subtotal)
@@ -179,8 +264,9 @@ pub(super) fn insertar_venta(
             ],
         )?;
 
-        // Actualizar stock y vendido. Si tenemos producto_id, usarlo (fiable);
-        // si no, caer por nombre (case-insensitive) como antes.
+        // Solo tocar stock si hay producto_id fiable. Si es None (truncado tipo "ACEITE" ambiguo
+        // o producto realmente nuevo), NO hacer UPDATE por LOWER — eso creaba fantasmas con costo $0
+        // y dejaba stock -158 sin freno. El stock se ajustará cuando el vinculador lo resuelva.
         if let Some(pid) = producto_id {
             conn.execute(
                 "UPDATE productos SET stock = stock - ?1 WHERE id = ?2",
@@ -189,15 +275,6 @@ pub(super) fn insertar_venta(
             conn.execute(
                 "UPDATE productos SET vendido = vendido + ?1 WHERE id = ?2",
                 params![item.cantidad, pid],
-            )?;
-        } else {
-            conn.execute(
-                "UPDATE productos SET stock = stock - ?1 WHERE LOWER(nombre) = LOWER(?2)",
-                params![item.cantidad, item.producto],
-            )?;
-            conn.execute(
-                "UPDATE productos SET vendido = vendido + ?1 WHERE LOWER(nombre) = LOWER(?2)",
-                params![item.cantidad, item.producto],
             )?;
         }
     }

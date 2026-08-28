@@ -17,6 +17,16 @@ pub fn extraer_json(respuesta: &str) -> Option<serde_json::Value> {
     let mut mejor: Option<serde_json::Value> = None;
     for (i, c) in respuesta.char_indices() {
         if c == '{' {
+            // Un '{' después del último '}' no puede formar JSON válido;
+            // antes hacía panic "byte range starts at X but ends at Y".
+            if i > fin {
+                continue;
+            }
+            // rfind y char_indices devuelven índices de byte en ASCII ('{' y '}' son 1 byte),
+            // pero por si el modelo mete multi-byte, solo intentamos si ambos son char boundaries.
+            if !respuesta.is_char_boundary(i) || !respuesta.is_char_boundary(fin + 1) {
+                continue;
+            }
             let v: serde_json::Value = match serde_json::from_str(&respuesta[i..=fin]) {
                 Ok(v) => v,
                 Err(_) => continue,

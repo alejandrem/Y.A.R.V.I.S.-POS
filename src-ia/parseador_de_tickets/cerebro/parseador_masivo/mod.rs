@@ -11,7 +11,7 @@
 // Sin HTTP: expone funciones puras consumibles desde Tauri.
 // ============================================================
 
-mod almacen;
+pub(crate) mod almacen;
 mod archivos;
 mod items;
 mod procesador;

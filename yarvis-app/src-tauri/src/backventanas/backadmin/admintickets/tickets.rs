@@ -3,7 +3,9 @@ use crate::backventanas::db::db::DbPath;
 use crate::dinero::a_centavos;
 use crate::models::{CorteDb, TicketDb, TicketItem};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use src_ia::embeddings::{cosine_similarity, normalizar, HashEmbedder, Embedder};
 
 #[tauri::command]
 pub async fn get_tickets(
@@ -134,16 +136,72 @@ pub async fn guardar_ticket_parseado_impl(
     let venta_id = result.last_insert_rowid();
     let total_items = items.len();
 
-    // Items cuyo nombre no coincide con ningún producto del inventario.
-    // Es un caso legítimo al importar histórico (el producto ya no existe),
-    // pero debe ser VISIBLE en el resultado, nunca silenciado.
+    // Precargar inventario para matching normalizado + fuzzy (evita LOWER frágil)
+    // LOWER("ACEITE") nunca matchea "ACEITE 123 1L" y causaba fantasmas en el pasado.
+    let rows_prod: Vec<(i64, String)> = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id, nombre FROM productos",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut mapa_norm: HashMap<String, Vec<i64>> = HashMap::new();
+    for (id, nombre) in &rows_prod {
+        mapa_norm
+            .entry(normalizar(nombre))
+            .or_default()
+            .push(*id);
+    }
+    // Mapa exacto no ambiguo
+    let mut productos_por_nombre: HashMap<String, Option<i64>> = HashMap::new();
+    for (k, ids) in mapa_norm {
+        productos_por_nombre.insert(k, if ids.len() == 1 { Some(ids[0]) } else { None });
+    }
+    // Cache de productos para fuzzy
+    let inventario: Vec<(i64, String)> = rows_prod.clone();
+    let embedder = HashEmbedder;
+
     let mut sin_vincular: usize = 0;
 
     for item in items {
-        // Insertar en detalle_ventas
+        // Resolver producto_id: exacto -> fuzzy embedding -> None
+        let norm = normalizar(&item.producto);
+        let mut producto_id: Option<i64> = productos_por_nombre.get(&norm).copied().flatten();
+
+        if producto_id.is_none() && !inventario.is_empty() {
+            // Solo fuzzy si no hay exacto y no es ambiguo
+            if !productos_por_nombre.contains_key(&norm) {
+                if let Some(q_emb) = embedder.texto_a_embedding(&item.producto) {
+                    let mut mejor: Option<(i64, f64)> = None;
+                    let mut segundo = 0.0;
+                    for (pid, nombre) in &inventario {
+                        if let Some(p_emb) = embedder.texto_a_embedding(nombre) {
+                            let score = cosine_similarity(&q_emb, &p_emb);
+                            if let Some((_, best)) = mejor {
+                                if score > best {
+                                    segundo = best;
+                                    mejor = Some((*pid, score));
+                                } else if score > segundo {
+                                    segundo = score;
+                                }
+                            } else {
+                                mejor = Some((*pid, score));
+                            }
+                        }
+                    }
+                    if let Some((pid, best)) = mejor {
+                        if best >= 0.55 && segundo < 0.52 {
+                            producto_id = Some(pid);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Insertar detalle con producto_id resuelto (puede ser None = sin vincular, sin fantasma)
         sqlx::query("INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(venta_id)
-            .bind(None::<i32>)
+            .bind(producto_id)
             .bind(&item.producto)
             .bind(item.cantidad)
             .bind(a_centavos(item.precio))
@@ -152,20 +210,17 @@ pub async fn guardar_ticket_parseado_impl(
             .await
             .map_err(|e| e.to_string())?;
 
-        // Ajustar stock y vendido en UN solo UPDATE. Si el nombre no hace
-        // match con el inventario (0 filas afectadas) se contabiliza para
-        // reportarlo; ya no se traga el error ni se pierde a medias.
-        let actualizados = sqlx::query(
-            "UPDATE productos SET stock = stock - ?, vendido = vendido + ? WHERE LOWER(nombre) = LOWER(?)",
-        )
-        .bind(item.cantidad)
-        .bind(item.cantidad)
-        .bind(&item.producto)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        if actualizados.rows_affected() == 0 {
+        // Solo tocar stock si hay producto_id fiable. Si es None (truncado "ACEITE" ambiguo
+        // o producto nuevo real), NO hacer UPDATE por LOWER — eso creaba stock -158 sin freno.
+        if let Some(pid) = producto_id {
+            sqlx::query("UPDATE productos SET stock = stock - ?, vendido = vendido + ? WHERE id = ?")
+                .bind(item.cantidad)
+                .bind(item.cantidad)
+                .bind(pid)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        } else {
             sin_vincular += 1;
         }
     }

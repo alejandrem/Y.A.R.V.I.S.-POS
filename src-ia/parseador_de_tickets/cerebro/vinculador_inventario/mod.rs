@@ -18,7 +18,7 @@ mod persistencia;
 pub mod similitud;
 mod vinculo;
 
-pub use inventario::{cargar_inventario, ProductoDb, ProductoInventario};
+pub use inventario::{cargar_inventario, cargar_inventario_cache, ProductoDb, ProductoInventario};
 pub use persistencia::guardar_vinculacion;
 // Re-export canónico + compat: ambas rutas resuelven al mismo trait/fns.
 pub use crate::embeddings::{blob_a_embedding, cosine_similarity, normalizar, Embedder};

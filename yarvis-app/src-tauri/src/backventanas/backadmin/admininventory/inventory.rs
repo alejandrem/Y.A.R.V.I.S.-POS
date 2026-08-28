@@ -29,6 +29,7 @@ where
     Ok(result > 0)
 }
 
+#[allow(dead_code)] // Se usa vía INSERT directo en importar_catalogo para obtener el id
 /// Registra un catálogo como importado (dentro de la transacción de importación).
 async fn registrar_catalogo_importado<'a, E>(
     executor: E,
@@ -200,10 +201,10 @@ pub async fn importar_catalogo(
     contenido_archivo: Option<String>,
 ) -> Result<String, String> {
     auth.require_admin()?;
-    // 1. Verificar si el catálogo ya fue importado (por hash)
-    if let Some(ref contenido) = contenido_archivo {
-        let hash = calcular_hash_catalogo(contenido);
-        if catalogo_ya_importado(&*state, &hash)
+    // 1. Verificar si el catálogo ya fue importado (por hash) — hash se calcula UNA vez (BUG-10)
+    let hash_opt = contenido_archivo.as_ref().map(|c| calcular_hash_catalogo(c));
+    if let Some(ref hash) = hash_opt {
+        if catalogo_ya_importado(&*state, hash)
             .await
             .map_err(|e| e.to_string())?
         {
@@ -214,30 +215,41 @@ pub async fn importar_catalogo(
         }
     }
 
-    // 2. Importar productos con deduplicación (máximo 2 con mismo nombre).
-    // TRANSACCIÓN todo-o-nada: si CUALQUIER INSERT falla, se revierte la
-    // importación completa. Antes los errores de INSERT se tragaban con
-    // `if let Ok(_r)` y podían quedar catálogos a medias sin aviso alguno.
     let mut tx = state.begin().await.map_err(|e| e.to_string())?;
 
+    // 2. Registrar catálogo primero para obtener su id y poder vincular productos (BUG-02)
+    let catalogo_id: Option<i64> = if let Some(hash) = hash_opt.as_deref() {
+        let ruta = ruta_archivo.clone().unwrap_or_default();
+        // Insert con total provisional 0, se actualizará al final si hace falta
+        let res = sqlx::query(
+            "INSERT INTO catalogos_importados (hash, ruta_archivo, total_productos) VALUES (?, ?, 0)",
+        )
+        .bind(hash)
+        .bind(&ruta)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        Some(res.last_insert_rowid())
+    } else {
+        None
+    };
+
+    // 3. Importar productos con deduplicación (máximo 2 con mismo nombre) y vinculados al catálogo
     let mut count = 0;
     let mut omitidos = 0;
 
     for item in items {
-        // Verificar cuántos productos con este nombre ya existen
         let existentes = contar_productos_por_nombre(&mut *tx, &item.nombre)
             .await
             .map_err(|e| e.to_string())?;
 
         if existentes >= 2 {
-            // Ya hay 2 o más productos con este nombre → omitir (regla de
-            // negocio consciente, se reporta en el mensaje final)
             omitidos += 1;
             continue;
         }
 
-        // Insertar producto — un fallo aquí aborta y revierte TODO
-        sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        // Intentar con catalogo_id (migración 0006), fallback sin él para DBs viejas sin migrar
+        let res = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, codigo_barras, categoria, catalogo_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(&item.nombre)
             .bind(&item.descripcion)
             .bind(crate::dinero::a_centavos(item.precio_costo))
@@ -246,20 +258,39 @@ pub async fn importar_catalogo(
             .bind(item.stock_minimo)
             .bind(&item.codigo_barras)
             .bind(&item.categoria)
+            .bind(catalogo_id)
             .execute(&mut *tx)
-            .await
-            .map_err(|e| format!("Error insertando '{}': {}", item.nombre, e))?;
+            .await;
+
+        let res = match res {
+            Ok(r) => Ok(r),
+            Err(e) if e.to_string().contains("no such column") || e.to_string().contains("has no column") => {
+                sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                    .bind(&item.nombre)
+                    .bind(&item.descripcion)
+                    .bind(crate::dinero::a_centavos(item.precio_costo))
+                    .bind(crate::dinero::a_centavos(item.precio_venta))
+                    .bind(item.stock)
+                    .bind(item.stock_minimo)
+                    .bind(&item.codigo_barras)
+                    .bind(&item.categoria)
+                    .execute(&mut *tx)
+                    .await
+            }
+            Err(e) => Err(e),
+        };
+
+        res.map_err(|e| format!("Error insertando '{}': {}", item.nombre, e))?;
 
         count += 1;
     }
 
-    // 3. Registrar el catálogo como importado DENTRO de la misma transacción:
-    // si el registro del hash fallara, los productos ya insertados también
-    // se revierten (evita re-importaciones duplicadas ante un fallo a medias).
-    if let Some(ref contenido) = contenido_archivo {
-        let hash = calcular_hash_catalogo(contenido);
-        let ruta = ruta_archivo.unwrap_or_default();
-        registrar_catalogo_importado(&mut *tx, &hash, &ruta, count)
+    // 4. Actualizar total_productos del catálogo ya insertado
+    if let Some(cid) = catalogo_id {
+        sqlx::query("UPDATE catalogos_importados SET total_productos = ? WHERE id = ?")
+            .bind(count)
+            .bind(cid)
+            .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -359,12 +390,12 @@ pub async fn buscar_producto_similar(
                 if score < 0.15 {
                     continue;
                 }
-                // contenido es "nombre | ..." -> extraer nombre
+                // contenido es "nombre | ..." -> extraer nombre. Si no hay match exacto en productos (ej. nombre editado),
+                // NO usar fallback _kb_id (id de knowledge_base ≠ id de productos) — mejor descartar y dejar que el fallback de productos lo resuelva.
                 let nombre = contenido.split('|').next().unwrap_or(&contenido).trim();
-                let pid = prod_map
-                    .get(&src_ia::embeddings::normalizar(nombre))
-                    .copied()
-                    .unwrap_or(_kb_id);
+                let Some(pid) = prod_map.get(&src_ia::embeddings::normalizar(nombre)).copied() else {
+                    continue;
+                };
                 candidatos.push((pid, contenido, cat, score));
             }
         }
@@ -450,24 +481,40 @@ pub async fn backfill_embeddings(
             return Err("No hay productos para indexar".to_string());
         }
 
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
-        // Limpiar index previo para evitar duplicados (contenido no es UNIQUE)
-        tx.execute("DELETE FROM knowledge_base", [])
-            .map_err(|e| e.to_string())?;
-
-        let mut inserted = 0usize;
-        for (_id, nombre, categoria) in &productos {
+        // Construir embeddings primero ANTES de borrar, para no dejar KB vacía si todo falla (BUG-01)
+        let mut pending: Vec<(i64, String, String, Vec<u8>)> = Vec::with_capacity(productos.len());
+        for (pid, nombre, categoria) in &productos {
             let emb = match embedder.texto_a_embedding(nombre) {
                 Some(v) => v,
                 None => continue,
             };
             let blob = embedding_a_blob(&emb);
             let contenido = format!("{} | categoria:{}", nombre, categoria);
-            tx.execute(
-                "INSERT INTO knowledge_base (contenido, categoria, embedding) VALUES (?1, ?2, ?3)",
-                rusqlite::params![contenido, categoria, blob],
-            )
+            pending.push((*pid, contenido, categoria.clone(), blob));
+        }
+
+        if pending.is_empty() {
+            return Err("No se generaron embeddings (textos vacíos tras normalizar). Índice no modificado.".to_string());
+        }
+
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM knowledge_base", [])
             .map_err(|e| e.to_string())?;
+
+        let mut inserted = 0usize;
+        for (pid, contenido, categoria, blob) in pending {
+            // Intentar con producto_id (migración 0006), fallback sin él para DBs viejas sin migrar
+            let res = tx.execute(
+                "INSERT INTO knowledge_base (contenido, categoria, embedding, producto_id) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![contenido, categoria, blob, pid],
+            );
+            if res.is_err() {
+                tx.execute(
+                    "INSERT INTO knowledge_base (contenido, categoria, embedding) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![contenido, categoria, blob],
+                )
+                .map_err(|e| e.to_string())?;
+            }
             inserted += 1;
         }
         tx.commit().map_err(|e| e.to_string())?;
@@ -517,16 +564,25 @@ pub async fn get_catalogos_importados(
 pub async fn get_productos_por_catalogo(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
-    _catalogo_id: i64,
+    catalogo_id: i64,
 ) -> Result<Vec<InventoryItem>, String> {
     auth.require_admin()?;
-    // Por ahora retornamos todos los productos recientes
-    let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
-        "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos ORDER BY creado_en DESC LIMIT 100"
-    )
-    .fetch_all(&*state)
-    .await
-    .map_err(|e| e.to_string())?;
+    let rows = if catalogo_id > 0 {
+        sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
+            "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos WHERE catalogo_id = ? ORDER BY creado_en DESC LIMIT 100"
+        )
+        .bind(catalogo_id)
+        .fetch_all(&*state)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
+            "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos ORDER BY creado_en DESC LIMIT 100"
+        )
+        .fetch_all(&*state)
+        .await
+        .map_err(|e| e.to_string())?
+    };
 
     let items = rows
         .into_iter()

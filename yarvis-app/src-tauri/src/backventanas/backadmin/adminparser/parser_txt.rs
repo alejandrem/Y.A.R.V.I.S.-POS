@@ -223,7 +223,17 @@ pub async fn analizar_muestras_carpeta(
             let resultado = match fs::read(archivo) {
                 Ok(bytes) => {
                     let texto = String::from_utf8_lossy(&bytes);
-                    src_ia::rutas::analizar_ticket(&texto)
+                    // El modelo puede hacer panic en casos raros (ej. byte range invertido por JSON mal formado).
+                    // Lo atrapamos para que UN ticket no tumbe TODA la calibración y el cliente vea un mensaje entendible.
+                    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        src_ia::rutas::analizar_ticket(&texto)
+                    })) {
+                        Ok(v) => v,
+                        Err(_) => serde_json::json!({
+                            "status": "error",
+                            "error": "Formato no reconocido: este ticket necesita revisión manual. Agrupa tickets del mismo formato en la misma carpeta."
+                        }),
+                    }
                 }
                 Err(error) => serde_json::json!({
                     "status": "error",
@@ -295,7 +305,14 @@ pub async fn analizar_muestras_carpeta(
         }))
     })
     .await
-    .map_err(|e| format!("Error en la calibración de tickets: {e}"))?
+    .map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("panicked") || msg.contains("panic") {
+            "No se pudo completar el análisis: un ticket tiene un formato que necesita revisión manual. Separa los tickets por formato similar (ej. todos los de 'ABARROTES LA ESQUINA' juntos) y vuelve a intentar.".to_string()
+        } else {
+            format!("No se pudo completar el análisis: {msg}. Intenta con otra carpeta o revisa que los archivos sean .txt válidos.")
+        }
+    })?
 }
 
 fn normalizar_mapeo_analisis(resultado: &serde_json::Value) -> Option<serde_json::Value> {
