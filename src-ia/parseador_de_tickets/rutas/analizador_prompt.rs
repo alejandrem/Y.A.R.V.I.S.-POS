@@ -12,7 +12,7 @@ Reglas:
 - La cantidad siempre es un número entero al inicio de la línea
 - El total es siempre la última columna numérica
 - El nombre del producto es TODO el texto entre la cantidad y los precios (puede ocupar VARIAS columnas, ej. "FANTA NARANJA 600ML" son 3 columnas)
-- Si el producto ocupa varias columnas, usa RANGO [INICIO, FIN] (ej. [1,3]), no un solo índice
+- Si el producto ocupa varias columnas, usa RANGO [INICIO, FIN] con negativos si es hasta el final (ej. [1,-2] para "desde 1 hasta penúltima"), no un solo índice
 - Detecta si hay descuentos, impuestos (IVA), o notas extra
 - BUSCA la fecha del ticket: puede estar en formatos como "15/03/2024", "2024-03-15",
   "15 de marzo de 2024", "Mar 15 2024", "Fecha: 15/03/24", "15-03-2024", etc.
@@ -22,8 +22,9 @@ Reglas:
 
 Responde SOLO con JSON válido, sin explicaciones.
 
-EJEMPLO para "2 FANTA NARANJA 600ML 32.00":
-  cantidad=0, producto=[1,3], precio_unitario=4, total=4
+EJEMPLO para "2 FANTA NARANJA 600ML 32.00" (5 columnas) y "1 PILAS DURACELL AA 2PZ 25.00" (6 columnas):
+  cantidad=0, producto=[1,-2] (desde después de cantidad hasta antes del precio), precio_unitario=-1, total=-1
+  Usa ÍNDICES NEGATIVOS para el final: -1=última, -2=penúltima. Así sirve para cualquier largo de producto.
 
 FORMATO DE RESPUESTA:
 {

@@ -2,7 +2,10 @@ use rusqlite::Connection;
 use std::collections::HashSet;
 use std::sync::mpsc::Sender;
 
-use super::almacen::{cargar_estado, cargar_productos_por_nombre, garantizar_columna_folio, insertar_venta};
+use super::almacen::{
+    cargar_estado, cargar_folios_existentes, cargar_productos_por_nombre,
+    garantizar_columna_folio, insertar_venta,
+};
 use super::archivos::{leer_archivo_tolerante, nombre_de_archivo};
 use super::items::{a_centavos, resolver_totales_venta};
 use super::resumen::{
@@ -40,6 +43,10 @@ pub fn procesar_archivos(
     let productos_por_nombre = cargar_productos_por_nombre(&conn);
     // Cache para fuzzy matching (evita fantasmas tipo "ACEITE" vs "ACEITE 123 1L")
     let inventario_fuzzy = crate::cerebro::vinculador_inventario::cargar_inventario_cache(&conn);
+    // Idempotencia: folios YA importados (de corridas anteriores). Un ticket
+    // con folio conocido se omite entero: re-importar la misma carpeta ya no
+    // duplica ventas, ni vuelve a descontar stock.
+    let mut folios_importados = cargar_folios_existentes(&conn);
 
     for archivo in archivos {
         let nombre_archivo = nombre_de_archivo(archivo);
@@ -85,6 +92,7 @@ pub fn procesar_archivos(
         let mut items_totales = 0usize;
         let mut duplicados_totales = 0usize;
         let mut existentes_totales = 0usize;
+        let mut omitidas_totales = 0usize;
         let mut nuevos_archivo: Vec<ProductoNuevo> = Vec::new();
         let mut ventas_info: Vec<ResumenVenta> = Vec::new();
         let mut total_archivo = 0.0;
@@ -108,6 +116,16 @@ pub fn procesar_archivos(
         let mut error_db: Option<String> = None;
 
         for segmento in &segmentos {
+            // Folio ya importado (esta u otra corrida): se omite el ticket
+            // ENTERO — sin parseo de items, sin productos, sin venta, sin
+            // tocar stock. La venta ya existe con sus mismos efectos.
+            if let Some(folio) = segmento.folio.as_deref() {
+                if folios_importados.contains(folio.trim()) {
+                    omitidas_totales += 1;
+                    continue;
+                }
+            }
+
             let mut items: Vec<Item> = Vec::new();
             // Dedupe POR TICKET: productos repetidos entre tickets distintos
             // de un mismo archivo ya no se pierden.
@@ -217,6 +235,11 @@ pub fn procesar_archivos(
                 &productos_por_nombre,
             ) {
                 Ok(venta_id) => {
+                    // Registrar el folio: dos archivos con el mismo ticket en
+                    // la MISMA corrida tampoco se duplican entre sí.
+                    if let Some(folio) = segmento.folio.as_deref() {
+                        folios_importados.insert(folio.trim().to_string());
+                    }
                     items_totales += items.len();
                     duplicados_totales += duplicados;
                     existentes_totales += existentes;
@@ -246,17 +269,29 @@ pub fn procesar_archivos(
             res.duplicados = duplicados_totales;
             res.nuevos = nuevos_archivo;
             res.existentes = existentes_totales;
+            res.ventas_omitidas = omitidas_totales;
             let _ = tx.send(res);
             continue;
         }
 
         if ventas_info.is_empty() {
             let _ = conn.execute_batch("ROLLBACK");
-            let mut res = ArchivoResultado::info(
-                false,
-                Some("ningún producto reconocido con el mapeo actual".to_string()),
-            );
+            // Re-importación: no es error que NADA sea nuevo; se informa.
+            let mut res = if omitidas_totales > 0 {
+                ArchivoResultado::info(
+                    true,
+                    Some(format!(
+                        "{omitidas_totales} ticket(s) ya importados; no se duplicaron"
+                    )),
+                )
+            } else {
+                ArchivoResultado::info(
+                    false,
+                    Some("ningún producto reconocido con el mapeo actual".to_string()),
+                )
+            };
             res.archivo = nombre_archivo;
+            res.ventas_omitidas = omitidas_totales;
             let _ = tx.send(res);
             continue;
         }
@@ -268,6 +303,7 @@ pub fn procesar_archivos(
         res.duplicados = duplicados_totales;
         res.nuevos = nuevos_archivo;
         res.existentes = existentes_totales;
+        res.ventas_omitidas = omitidas_totales;
         res.ventas = ventas_info.len();
         res.venta_id = ventas_info.first().and_then(|v| v.venta_id);
         res.total = total_archivo;
@@ -301,6 +337,7 @@ pub fn procesar_carpeta_impl(
         if res.ok {
             stats.exitosos += 1;
             stats.ventas_creadas += res.ventas;
+            stats.ventas_omitidas += res.ventas_omitidas;
             stats.items_insertados += res.items;
             stats.duplicados_detectados += res.duplicados;
             stats.productos_existentes += res.existentes;

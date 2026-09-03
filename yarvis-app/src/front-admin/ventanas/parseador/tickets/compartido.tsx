@@ -38,6 +38,8 @@ export interface BatchProgress {
   exitosos: number;
   errores: number;
   ventas_creadas?: number;
+  /** Tickets omitidos porque su folio ya estaba importado (re-importación segura). */
+  ventas_omitidas?: number;
   items_insertados?: number;
   productos_nuevos?: number;
   productos_existentes?: number;

@@ -25,6 +25,9 @@ pub struct ArchivoResultado {
     pub total: f64,
     /// Venta(s) creadas a partir de ESTE archivo (1 por ticket detectado).
     pub ventas: usize,
+    /// Tickets omitidos porque su folio ya estaba importado (idempotencia:
+    /// re-correr la misma carpeta no duplica ventas).
+    pub ventas_omitidas: usize,
     /// Detalle por venta creada (folio/fecha/hora/items/total por ticket).
     pub ventas_info: Vec<ResumenVenta>,
 }
@@ -42,6 +45,7 @@ impl ArchivoResultado {
             venta_id: None,
             total: 0.0,
             ventas: 0,
+            ventas_omitidas: 0,
             ventas_info: Vec::new(),
         }
     }
@@ -70,6 +74,8 @@ pub struct EstadisticasCarpeta {
     pub exitosos: usize,
     pub errores: usize,
     pub ventas_creadas: usize,
+    /// Tickets omitidos por folio ya importado en TODA la corrida.
+    pub ventas_omitidas: usize,
     pub items_insertados: usize,
     pub productos_nuevos: usize,
     pub productos_existentes: usize,

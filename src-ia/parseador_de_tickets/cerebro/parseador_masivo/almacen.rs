@@ -144,6 +144,27 @@ pub(super) fn cargar_productos_por_nombre(conn: &Connection) -> HashMap<String, 
         .collect()
 }
 
+/// Precarga los folios de tickets YA importados (`ventas.folio_ticket`).
+/// Idempotencia de la importación masiva: un segmento con folio conocido se
+/// omite por completo, así re-correr la misma carpeta no duplica ventas ni
+/// vuelve a descontar stock. Requiere `garantizar_columna_folio` ya corrido.
+pub(super) fn cargar_folios_existentes(conn: &Connection) -> HashSet<String> {
+    let mut folios = HashSet::new();
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT folio_ticket FROM ventas WHERE folio_ticket IS NOT NULL")
+    {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+            for folio in rows.flatten() {
+                let folio = folio.trim();
+                if !folio.is_empty() {
+                    folios.insert(folio.to_string());
+                }
+            }
+        }
+    }
+    folios
+}
+
 /// Precarga el set de claves `NOMBRE|precio_en_centavos` ya existentes en
 /// `productos`. La clave usa el precio en CENTAVOS enteros (no `{:.2}` de un
 /// f64) para que sea estable: debe construirse igual que `dup_key` en

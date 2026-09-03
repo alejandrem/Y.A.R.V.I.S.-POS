@@ -267,6 +267,57 @@ Forma de pago: EFECTIVO
     }
 
     #[test]
+    fn reimportar_la_misma_carpeta_no_duplica_ventas_ni_stock() {
+        let dir = tmp_workspace("idempotente");
+        let db = crear_bd(&dir);
+        sembrar_producto(&db, "TAZAS", 60.0, 100.0);
+        sembrar_producto(&db, "PLATO", 80.0, 0.0);
+
+        let ticket_f = |folio: &str| {
+            format!("FOLIO: {folio}\n12/05/2026\n2 TAZAS $60.00 $120.00\n1 PLATO $80.00 $80.00\nTOTAL $200.00\n")
+        };
+        let a = escribir(&dir, "t1.txt", &ticket_f("0001"));
+        let b = escribir(&dir, "t2.txt", &ticket_f("0002"));
+        // `c` es una COPIA de `a` (mismo ticket, otro nombre de archivo).
+        let c = escribir(&dir, "t1_copia.txt", &ticket_f("0001"));
+
+        // Primera corrida: 2 folios nuevos; la copia de `a` se omite AHÍ MISMO.
+        let stats1 = procesar_carpeta_impl(
+            vec![a.clone(), b, c],
+            mapeo(),
+            db.clone(),
+        );
+        assert_eq!(stats1.ventas_creadas, 2);
+        assert_eq!(stats1.ventas_omitidas, 1, "copia del folio 0001 no se omitió");
+        assert_eq!(stats1.errores, 0, "una omisión total no es un error");
+
+        // Segunda corrida: re-importar lo mismo NO crea nada.
+        let stats2 = procesar_carpeta_impl(vec![a], mapeo(), db.clone());
+        assert_eq!(stats2.ventas_creadas, 0);
+        assert_eq!(stats2.ventas_omitidas, 1);
+        assert_eq!(stats2.exitosos, 1, "omitido completo se informa como ok");
+        assert_eq!(stats2.errores, 0);
+
+        // La DB queda intacta: dos ventas, cuatro detalles, stock ×1.
+        assert_eq!(contar(&db, "ventas"), 2);
+        assert_eq!(contar(&db, "detalle_ventas"), 4);
+        let conn = Connection::open(&db).unwrap();
+        let (stock, vendido): (f64, f64) = conn
+            .query_row(
+                "SELECT stock, vendido FROM productos WHERE nombre = 'TAZAS'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        // Cada venta descuenta 2 TAZAS: 2 ventas × 2 = 4 (la copia y la
+        // re-importación NO volvieron a descontar).
+        assert_eq!(stock, 96.0, "el stock se descontó de más");
+        assert_eq!(vendido, 4.0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn fallo_en_un_archivo_no_afecta_a_los_demas() {
         let dir = tmp_workspace("mixto");
         let db = crear_bd(&dir);
