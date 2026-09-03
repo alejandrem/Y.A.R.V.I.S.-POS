@@ -13,6 +13,7 @@
 // `filtrador::limpiar_producto`.
 // ============================================================
 
+mod detector;
 mod encabezado;
 mod esquema;
 mod fechas;
@@ -21,6 +22,7 @@ mod parser;
 mod segmentador;
 mod totales;
 
+pub use detector::{detectar_mapeo, DeteccionMapeo};
 pub use encabezado::extraer_cajero;
 pub use esquema::{resolver_indice, Item, MapeoColumnas};
 pub use fechas::{extraer_fecha_hora_regex, tiene_fecha};

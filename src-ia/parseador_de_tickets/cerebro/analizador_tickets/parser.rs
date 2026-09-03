@@ -26,7 +26,7 @@ static RE_TOKEN_NUM: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\$?[\d,]+(?:\.\d+)?$").expect("regex token numerico"));
 
 /// True si el token parece número/precio (patrón `^\$?[\d,]+(?:\.\d+)?$`).
-fn es_token_numero(token: &str) -> bool {
+pub(crate) fn es_token_numero(token: &str) -> bool {
     let sin_dolar = token.replacen('$', "", 1);
     RE_TOKEN_NUM.is_match(&sin_dolar)
 }
@@ -153,9 +153,27 @@ pub fn es_linea_util(linea: &str) -> bool {
 static RE_DOLAR_ESPACIO: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$\s+(\d)").expect("regex dolar espacio"));
 
-/// Une "$" con el número siguiente: "$ 25" -> "$25".
-fn preprocesar_linea(linea: &str) -> String {
-    RE_DOLAR_ESPACIO.replace_all(linea, "$$1").into_owned()
+static RE_CANTIDAD_X: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^(\d+)x$").expect("regex cantidad Nx"));
+
+/// Une "$" con el número siguiente: "$ 25" -> "$25". También normaliza la
+/// cantidad compacta de muchas impresoras: "2x" -> "2" (solo el token
+/// exacto Nx; medidas como "30x30" NO se tocan).
+pub(crate) fn preprocesar_linea(linea: &str) -> String {
+    // OJO con la sintaxis de reemplazo: `$$` es un $ literal y `${1}` el
+    // grupo 1. Antes era `"$$1"` → "$ 25.00" salía como "$15.00" (¡precio
+    // corrupto!): `$$` + "1" literal.
+    let unida = RE_DOLAR_ESPACIO.replace_all(linea, "$$$1");
+    unida
+        .split_whitespace()
+        .map(|token| {
+            RE_CANTIDAD_X
+                .captures(token)
+                .map(|c| c[1].to_string())
+                .unwrap_or_else(|| token.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn round(x: f64, escala: u32) -> f64 {
@@ -244,7 +262,7 @@ pub fn parsear_linea(linea: &str, mapeo: &MapeoColumnas, _total_cols: usize) -> 
     })
 }
 
-fn es_porcentaje(token: &str) -> Option<f64> {
+pub(crate) fn es_porcentaje(token: &str) -> Option<f64> {
     let valor = token.trim().strip_suffix('%')?.replace(',', ".");
     let porcentaje = valor.parse::<f64>().ok()?;
     (porcentaje >= 0.0 && porcentaje <= 100.0).then_some(porcentaje)

@@ -2,11 +2,10 @@
 // Guarda el estado y el flujo completos de tickets; cortes es provisional.
 // El contenido de tickets vive en ./tickets y el de cortes en ./cortes.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { notificarError } from "../../../components/notificaciones";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { ArchivoTicket, BatchProgress, CalibrationResult, CatalogItem, Phase, TrainingProgress } from "./tickets/compartido";
+import type { ArchivoTicket, BatchProgress, CatalogItem, DeteccionMapeo, Phase } from "./tickets/compartido";
 import { PasosGrid, errorMessage, normalizeCatalogItem } from "./tickets/compartido";
 import Catalogo from "./tickets/catalogo";
 import Carpeta from "./tickets/carpeta";
@@ -31,18 +30,14 @@ const Parseador = () => {
   const [catalogImported, setCatalogImported] = useState(false);
   const [folderPath, setFolderPath] = useState("");
   const [ticketFiles, setTicketFiles] = useState<ArchivoTicket[]>([]);
-  const [training, setTraining] = useState<TrainingProgress[]>([]);
-  const [trainingResult, setTrainingResult] = useState<CalibrationResult | null>(null);
+  const [deteccion, setDeteccion] = useState<DeteccionMapeo | null>(null);
   const [batch, setBatch] = useState<BatchProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const unlistenTraining = useRef<(() => void) | null>(null);
   const unlistenBatch = useRef<(() => void) | null>(null);
 
   const cleanupListeners = useCallback(() => {
-    unlistenTraining.current?.();
     unlistenBatch.current?.();
-    unlistenTraining.current = null;
     unlistenBatch.current = null;
   }, []);
 
@@ -135,32 +130,19 @@ const Parseador = () => {
     if (!folderPath || !ticketFiles.length) return;
     setBusy(true);
     setError("");
-    setTraining([]);
-    setTrainingResult(null);
+    setDeteccion(null);
     setBatch(null);
     cleanupListeners();
 
     try {
-      setPhase("calibrando");
-      unlistenTraining.current = await listen<TrainingProgress>("parser-training-progress", (event) => {
-        setTraining((current) => [...current, event.payload]);
-      });
-      const calibration = await invoke<CalibrationResult>("analizar_muestras_carpeta", { carpeta: folderPath });
-      unlistenTraining.current?.();
-      unlistenTraining.current = null;
-      setTrainingResult(calibration);
+      // 1. Detección ESTADÍSTICA del formato (sin IA): el mapeo queda
+      //    verificado matemáticamente contra cantidad×precio≈total en una
+      //    muestra espaciada de la carpeta. Instantáneo, no carga modelos.
+      const deteccionResult = await invoke<DeteccionMapeo>("detectar_mapeo_estadistico", { carpeta: folderPath });
+      setDeteccion(deteccionResult);
 
-      // El recorte a 20 líneas del análisis LLM NUNCA es silencioso.
-      const recortadas = (calibration.muestras ?? []).filter(
-        (m) => m.estado === "recortado" && m.advertencia,
-      );
-      if (recortadas.length > 0) {
-        notificarError(
-          `Tickets recortados (${recortadas.length})`,
-          "Solo se analizaron las primeras 20 líneas de cada uno; los items restantes NO fueron procesados. Revísalos manualmente.",
-        );
-      }
-
+      // 2. Parseo del lote con ese mapeo (per-file fallback incluido en el
+      //    núcleo: archivos de otro formato se rescatan solos).
       setPhase("procesando");
       let completeReceived = false;
       unlistenBatch.current = await listen<BatchProgress>("batch-progress", (event) => {
@@ -171,7 +153,7 @@ const Parseador = () => {
       const dbPath = await invoke<string>("get_db_path");
       await invoke("parsear_carpeta_stream", {
         carpeta: folderPath,
-        mapeo: calibration.mapeo,
+        mapeo: deteccionResult.mapeo,
         dbPath,
       });
 
@@ -182,7 +164,7 @@ const Parseador = () => {
       unlistenBatch.current?.();
       unlistenBatch.current = null;
     } catch (flowError) {
-      setError(`El proceso se detuvo: ${errorMessage(flowError)}`);
+      setError(`No se pudo procesar: ${errorMessage(flowError)}`);
       setPhase("carpeta");
       cleanupListeners();
     } finally {
@@ -200,13 +182,6 @@ const Parseador = () => {
       // Permitir saltar el catálogo: si ya está importado o si el usuario quiere ir directo a tickets
       setPhase("carpeta");
       setError("");
-      return;
-    }
-    if (next === "calibrando") {
-      // Solo si ya hay carpeta seleccionada
-      if (folderPath && ticketFiles.length) {
-        setPhase("carpeta");
-      }
       return;
     }
     if (next === "historial") {
@@ -240,15 +215,11 @@ const Parseador = () => {
     setCatalogImported(false);
     setFolderPath("");
     setTicketFiles([]);
-    setTraining([]);
-    setTrainingResult(null);
+    setDeteccion(null);
     setBatch(null);
     setError("");
   };
 
-  const trainingTotal = trainingResult?.total_muestras ?? Math.min(ticketFiles.length, 5);
-  const trainingDone = training.length;
-  const trainingPercent = trainingTotal ? Math.min(100, Math.round((trainingDone / trainingTotal) * 100)) : 0;
   const batchTotal = batch?.total ?? batch?.total_archivos ?? ticketFiles.length;
   const batchPercent = batchTotal ? Math.min(100, Math.round(((batch?.procesados ?? 0) / batchTotal) * 100)) : 0;
 
@@ -297,8 +268,8 @@ const Parseador = () => {
             </>
           )}
           {phase === "carpeta" && <Carpeta folderPath={folderPath} ticketFiles={ticketFiles} busy={busy} catalogImported={catalogImported} onSelectFolder={selectFolder} onStartFlow={startFlow} />}
-          {(phase === "calibrando" || phase === "procesando") && <Progreso phase={phase} training={training} trainingDone={trainingDone} trainingTotal={trainingTotal} trainingPercent={trainingPercent} batch={batch} batchTotal={batchTotal} batchPercent={batchPercent} />}
-          {phase === "completo" && <Completo batch={batch} ticketFiles={ticketFiles} trainingResult={trainingResult} onReset={reset} />}
+          {phase === "procesando" && <Progreso batch={batch} batchTotal={batchTotal} batchPercent={batchPercent} />}
+          {phase === "completo" && <Completo batch={batch} ticketFiles={ticketFiles} deteccion={deteccion} onReset={reset} />}
           {phase === "historial" && <Historial />}
         </>
       ) : (

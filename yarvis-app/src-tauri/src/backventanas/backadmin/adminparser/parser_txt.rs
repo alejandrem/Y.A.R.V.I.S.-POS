@@ -4,12 +4,10 @@
 // vía llama.cpp dentro del feature `llm-local` de `src-ia`.
 use super::utils::sanitize_path;
 use crate::backventanas::auth::AuthState;
-use rand::seq::SliceRandom;
 use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};
 use src_ia::cerebro::parseador_masivo::{
     procesar_archivos, procesar_carpeta_impl, ArchivoResultado,
 };
-use std::collections::HashMap;
 use std::fs;
 use std::path;
 use tauri::Emitter;
@@ -133,212 +131,76 @@ pub fn parsear_catalogo_visual(
 }
 
 // ============================================================
-// Análisis de tickets con LLM
+// Detección estadística del mapeo de columnas — SIN IA.
+//
+// Reemplaza a la calibración con el modelo local (Qwen 1.7B): se toma
+// una muestra determinista y ESPACIADA de archivos de la carpeta y se
+// ensayan hipótesis de mapeo que deben verificar la ecuación
+// `cantidad × precio ≈ total` en las líneas reales. El mapeo ganador
+// está demostrado, no "adivinado" por un modelo.
 // ============================================================
 
-/// Convierte el JSON de `analizar_ticket` en `Result` (ok → Ok, error → Err).
-fn resultado_a_result(resultado: serde_json::Value) -> Result<serde_json::Value, String> {
-    if resultado.get("status").and_then(|s| s.as_str()) == Some("ok") {
-        Ok(resultado)
-    } else {
-        Err(resultado
-            .get("error")
-            .and_then(|e| e.as_str())
-            .unwrap_or("Ningún modelo pudo analizar el ticket")
-            .to_string())
-    }
-}
-
-/// Ejecuta la inferencia fuera del hilo principal. Los comandos síncronos de
-/// Tauri corren en el main thread: cargar el GGUF (mmap ~463 MB) y generar en
-/// CPU congela la ventana (WebKit queda "No responde" y pide forzar cierre).
-/// `spawn_blocking` la corre en otro hilo y la UI sigue viva durante el análisis.
-#[tauri::command]
-pub async fn analizar_ticket_llm(
-    auth: tauri::State<'_, AuthState>,
-    path: String,
-) -> Result<serde_json::Value, String> {
-    auth.require_admin()?;
-    let safe_path = sanitize_path(&path)?;
-    let contenido =
-        fs::read_to_string(&safe_path).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
-
-    tauri::async_runtime::spawn_blocking(move || {
-        resultado_a_result(src_ia::rutas::analizar_ticket(&contenido))
-    })
-    .await
-    .map_err(|e| format!("Tarea de análisis abortada: {}", e))?
-}
+/// Confianza mínima exigida para aceptar la detección (fracción de
+/// líneas de la muestra cuya ecuación cantidad×precio≈total cuadró).
+const UMBRAL_CONFIANZA_MAPEO: f64 = 0.55;
 
 #[tauri::command]
-pub async fn analizar_ticket_con_ia(
-    auth: tauri::State<'_, AuthState>,
-    texto: String,
-) -> Result<serde_json::Value, String> {
-    auth.require_admin()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        resultado_a_result(src_ia::rutas::analizar_ticket(&texto))
-    })
-    .await
-    .map_err(|e| format!("Tarea de análisis abortada: {}", e))?
-}
-
-/// Analiza hasta cinco tickets elegidos al azar y obtiene un mapeo estable
-/// para procesar automáticamente el resto de la carpeta.
-///
-/// Esto es calibración de estructura, no fine-tuning del modelo GGUF: el
-/// modelo actual es de inferencia y no modifica sus pesos. Se vota entre los
-/// mapeos válidos para evitar que un ticket anómalo defina toda la importación.
-#[tauri::command]
-pub async fn analizar_muestras_carpeta(
-    app_handle: tauri::AppHandle,
+pub fn detectar_mapeo_estadistico(
     auth: tauri::State<'_, AuthState>,
     carpeta: String,
 ) -> Result<serde_json::Value, String> {
     auth.require_admin()?;
 
-    let mut archivos = src_ia::cerebro::parseador_masivo::obtener_archivos_txt(&carpeta);
+    let archivos = src_ia::cerebro::parseador_masivo::obtener_archivos_txt(&carpeta);
     if archivos.is_empty() {
         return Err("No se encontraron archivos .txt en la carpeta".to_string());
     }
 
-    archivos.shuffle(&mut rand::thread_rng());
-    archivos.truncate(5);
+    // Muestra determinista: hasta 15 archivos ESPACIADOS en la lista
+    // (alfabética ≈ cronológica en la práctica), así cubrimos distintas
+    // épocas del lote sin depender del azar. Tope global de líneas.
+    const MAX_ARCHIVOS_MUESTRA: usize = 15;
+    const MAX_LINEAS_TOTAL: usize = 900;
+    const MAX_LINEAS_POR_ARCHIVO: usize = 60;
 
-    tauri::async_runtime::spawn_blocking(move || {
-        let total = archivos.len();
-        let mut votos: HashMap<String, (serde_json::Value, usize)> = HashMap::new();
-        let mut exitosos = 0usize;
-        let mut muestras = Vec::with_capacity(total);
-        // Advertencias de recorte (ticket > 20 líneas): NUNCA silencio.
-        let mut advertencias: Vec<serde_json::Value> = Vec::new();
-
-        for (indice, archivo) in archivos.iter().enumerate() {
-            let nombre = path::Path::new(archivo)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(archivo)
-                .to_string();
-
-            let resultado = match fs::read(archivo) {
-                Ok(bytes) => {
-                    let texto = String::from_utf8_lossy(&bytes);
-                    // El modelo puede hacer panic en casos raros (ej. byte range invertido por JSON mal formado).
-                    // Lo atrapamos para que UN ticket no tumbe TODA la calibración y el cliente vea un mensaje entendible.
-                    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        src_ia::rutas::analizar_ticket(&texto)
-                    })) {
-                        Ok(v) => v,
-                        Err(_) => serde_json::json!({
-                            "status": "error",
-                            "error": "Formato no reconocido: este ticket necesita revisión manual. Agrupa tickets del mismo formato en la misma carpeta."
-                        }),
-                    }
-                }
-                Err(error) => serde_json::json!({
-                    "status": "error",
-                    "error": format!("No se pudo leer el archivo: {error}")
-                }),
-            };
-
-            if let Some(mapeo) = normalizar_mapeo_analisis(&resultado) {
-                let clave = serde_json::to_string(&mapeo)
-                    .map_err(|e| format!("No se pudo serializar el mapeo: {e}"))?;
-                let entrada = votos.entry(clave).or_insert_with(|| (mapeo.clone(), 0));
-                entrada.1 += 1;
-                exitosos += 1;
-                if let Some(aviso) = resultado.get("advertencia_recorte").and_then(|a| a.as_str()) {
-                    muestras.push(serde_json::json!({
-                        "archivo": nombre,
-                        "estado": "recortado",
-                        "advertencia": aviso
-                    }));
-                    advertencias.push(serde_json::json!({ "archivo": nombre, "mensaje": aviso }));
-                } else {
-                    muestras.push(serde_json::json!({
-                        "archivo": nombre,
-                        "estado": "ok"
-                    }));
-                }
-                let _ = app_handle.emit("parser-training-progress", serde_json::json!({
-                    "indice": indice + 1,
-                    "total": total,
-                    "archivo": muestras.last().and_then(|m| m.get("archivo")).and_then(|v| v.as_str()).unwrap_or("ticket"),
-                    "estado": "ok",
-                    "mensaje": format!("Ticket {} de {} analizado", indice + 1, total)
-                }));
-            } else {
-                let error = resultado
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("El modelo no devolvió un mapeo válido");
-                muestras.push(serde_json::json!({
-                    "archivo": nombre,
-                    "estado": "error",
-                    "error": error
-                }));
-                let _ = app_handle.emit("parser-training-progress", serde_json::json!({
-                    "indice": indice + 1,
-                    "total": total,
-                    "archivo": muestras.last().and_then(|m| m.get("archivo")).and_then(|v| v.as_str()).unwrap_or("ticket"),
-                    "estado": "error",
-                    "mensaje": format!("Ticket {} de {} necesita revisión", indice + 1, total)
-                }));
-            }
+    let paso = (archivos.len() / MAX_ARCHIVOS_MUESTRA).max(1);
+    let mut lineas: Vec<String> = Vec::new();
+    let mut archivos_muestra = 0usize;
+    for archivo in archivos.iter().step_by(paso) {
+        let Ok(bytes) = fs::read(archivo) else {
+            continue;
+        };
+        archivos_muestra += 1;
+        let texto = String::from_utf8_lossy(&bytes);
+        lineas.extend(texto.lines().take(MAX_LINEAS_POR_ARCHIVO).map(str::to_string));
+        if lineas.len() >= MAX_LINEAS_TOTAL || archivos_muestra >= MAX_ARCHIVOS_MUESTRA {
+            break;
         }
-
-        let (_, (mapeo, votos_ganadores)) = votos
-            .into_iter()
-            .max_by_key(|(_, (_, cantidad))| *cantidad)
-            .ok_or_else(|| "Ninguno de los tickets de muestra produjo un mapeo válido".to_string())?;
-
-        Ok(serde_json::json!({
-            "status": "ok",
-            "mapeo": mapeo,
-            "muestras": muestras,
-            "analizados": exitosos,
-            "total_muestras": total,
-            "votos_ganadores": votos_ganadores,
-            // Tickets recortados (>20 líneas enviadas al modelo): la UI los
-            // notifica vía toasts — el recorte jamás es silencioso.
-            "advertencias": advertencias
-        }))
-    })
-    .await
-    .map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("panicked") || msg.contains("panic") {
-            "No se pudo completar el análisis: un ticket tiene un formato que necesita revisión manual. Separa los tickets por formato similar (ej. todos los de 'ABARROTES LA ESQUINA' juntos) y vuelve a intentar.".to_string()
-        } else {
-            format!("No se pudo completar el análisis: {msg}. Intenta con otra carpeta o revisa que los archivos sean .txt válidos.")
-        }
-    })?
-}
-
-fn normalizar_mapeo_analisis(resultado: &serde_json::Value) -> Option<serde_json::Value> {
-    let columnas = resultado.get("mapeo")?.get("columnas")?;
-    let cantidad = columnas.get("cantidad")?.as_i64()? as i32;
-    let precio_unitario = columnas.get("precio_unitario")?.as_i64()? as i32;
-    let total = columnas.get("total")?.as_i64()? as i32;
-    let producto = match columnas.get("producto")? {
-        serde_json::Value::Array(valores) => valores
-            .iter()
-            .filter_map(|valor| valor.as_i64().map(|v| v as i32))
-            .collect::<Vec<_>>(),
-        valor => vec![valor.as_i64()? as i32],
-    };
-
-    if producto.is_empty() {
-        return None;
     }
 
-    Some(serde_json::json!({
-        "cantidad": cantidad,
-        "producto": producto,
-        "precio_unitario": precio_unitario,
-        "total": total,
-        "descuento": columnas.get("descuento").and_then(|v| v.as_i64()).map(|v| v as i32)
-    }))
+    let refs: Vec<&str> = lineas.iter().map(String::as_str).collect();
+    match src_ia::cerebro::analizador_tickets::detectar_mapeo(&refs) {
+        Some(d) if d.confianza >= UMBRAL_CONFIANZA_MAPEO => Ok(serde_json::json!({
+            "status": "ok",
+            "mapeo": d.mapeo,
+            "confianza": d.confianza,
+            "lineas_evaluadas": d.lineas_evaluadas,
+            "lineas_validas": d.lineas_validas,
+            "archivos_muestra": archivos_muestra,
+        })),
+        Some(d) => Err(format!(
+            "Formato detectable con baja confianza ({:.0}% de líneas cuadran). \
+             Esto suele pasar cuando la carpeta mezcla formatos distintos: \
+             prueba agrupando tickets de la misma impresora/época juntos.",
+            d.confianza * 100.0
+        )),
+        None => Err(
+            "No se pudo detectar el formato: ninguna estructura de columnas cuadra \
+             con cantidad × precio = total en las líneas de la carpeta. ¿Son tickets \
+             de venta con cantidad, precio y total por línea?"
+                .to_string(),
+        ),
+    }
 }
 
 // ============================================================

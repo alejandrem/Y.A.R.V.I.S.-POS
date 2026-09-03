@@ -22,12 +22,15 @@ export interface ArchivoTicket {
   preview: string;
 }
 
-export interface TrainingProgress {
-  indice: number;
-  total: number;
-  archivo: string;
-  estado: "ok" | "error";
-  mensaje: string;
+/** Detección estadística del mapeo de columnas (sin IA): el mapeo queda
+ * VERIFICADO contra la ecuación cantidad×precio≈total de la muestra. */
+export interface DeteccionMapeo {
+  status: "ok";
+  mapeo: Record<string, unknown>;
+  confianza: number;
+  lineas_evaluadas: number;
+  lineas_validas: number;
+  archivos_muestra: number;
 }
 
 export interface BatchProgress {
@@ -40,23 +43,15 @@ export interface BatchProgress {
   ventas_creadas?: number;
   /** Tickets omitidos porque su folio ya estaba importado (re-importación segura). */
   ventas_omitidas?: number;
+  /** Archivos cuyo formato no era el del mapeo general y se rescataron con detección propia. */
+  archivos_formato_distinto?: number;
   items_insertados?: number;
   productos_nuevos?: number;
   productos_existentes?: number;
   duplicados_detectados?: number;
 }
 
-export interface CalibrationResult {
-  mapeo: Record<string, unknown>;
-  analizados: number;
-  total_muestras: number;
-  votos_ganadores: number;
-  /** Muestras cuyo ticket superó 20 líneas: análisis LLM recortado (visible en UI). */
-  muestras?: Array<{ archivo?: string; estado?: string; advertencia?: string }>;
-  advertencias?: Array<{ archivo: string; mensaje: string }>;
-}
-
-export type Phase = "catalogo" | "carpeta" | "calibrando" | "procesando" | "completo" | "historial";
+export type Phase = "catalogo" | "carpeta" | "procesando" | "completo" | "historial";
 
 export const toNumber = (value: unknown, fallback = 0) => {
   const number = Number(value);
@@ -96,7 +91,7 @@ export const ProgressCard = ({ title, subtitle, current, total, percent, childre
 export const PasosGrid = ({ phase, onPhaseChange }: { phase: Phase; onPhaseChange?: (phase: Phase) => void }) => {
   const steps: Array<{ number: string; label: string; phaseKey: Phase; done: boolean; enabled: boolean }> = [
     { number: "01", label: "Catálogo maestro", phaseKey: "catalogo", done: phase !== "catalogo", enabled: true },
-    { number: "02", label: "Carpeta de tickets", phaseKey: "carpeta", done: ["calibrando", "procesando", "completo", "historial"].includes(phase), enabled: true },
+    { number: "02", label: "Carpeta de tickets", phaseKey: "carpeta", done: ["procesando", "completo", "historial"].includes(phase), enabled: true },
     { number: "03", label: "Historial", phaseKey: "historial", done: phase === "historial", enabled: true },
   ];
   const activeIndex = phase === "catalogo" ? 0 : phase === "historial" ? 2 : 1;

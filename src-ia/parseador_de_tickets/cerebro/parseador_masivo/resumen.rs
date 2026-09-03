@@ -28,6 +28,9 @@ pub struct ArchivoResultado {
     /// Tickets omitidos porque su folio ya estaba importado (idempotencia:
     /// re-correr la misma carpeta no duplica ventas).
     pub ventas_omitidas: usize,
+    /// El archivo traía OTRO formato que el mapeo general y se le detectó
+    /// un mapeo propio (estadístico, verificado contra cant×precio≈total).
+    pub formato_distinto: bool,
     /// Detalle por venta creada (folio/fecha/hora/items/total por ticket).
     pub ventas_info: Vec<ResumenVenta>,
 }
@@ -46,6 +49,7 @@ impl ArchivoResultado {
             total: 0.0,
             ventas: 0,
             ventas_omitidas: 0,
+            formato_distinto: false,
             ventas_info: Vec::new(),
         }
     }
@@ -76,6 +80,8 @@ pub struct EstadisticasCarpeta {
     pub ventas_creadas: usize,
     /// Tickets omitidos por folio ya importado en TODA la corrida.
     pub ventas_omitidas: usize,
+    /// Archivos con formato distinto a los que se les detectó mapeo propio.
+    pub archivos_formato_distinto: usize,
     pub items_insertados: usize,
     pub productos_nuevos: usize,
     pub productos_existentes: usize,

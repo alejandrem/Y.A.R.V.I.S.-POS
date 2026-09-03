@@ -318,6 +318,49 @@ Forma de pago: EFECTIVO
     }
 
     #[test]
+    fn carpeta_con_formatos_mezclados_rescata_el_formato_distinto() {
+        let dir = tmp_workspace("formatos_mezclados");
+        let db = crear_bd(&dir);
+
+        // Formato A (el del mapeo "votado" para la carpeta).
+        let a = escribir(
+            &dir,
+            "formato_a.txt",
+            "FOLIO: 001\n12/05/2026\n2 TAZAS 60.00 120.00\n1 PLATO 80.00 80.00\n3 VASO 50.00 150.00\nTOTAL $350.00\n",
+        );
+        // Formato B (producto primero, cantidad en medio) — otra impresora.
+        let b = escribir(
+            &dir,
+            "formato_b.txt",
+            "FOLIO: 002\n13/05/2026\nPAN 3 12.00 36.00\nLECHE 1 22.50 22.50\nJABON 2 15.00 30.00\nTOTAL $88.50\n",
+        );
+
+        let stats = procesar_carpeta_impl(vec![a, b], mapeo(), db.clone());
+
+        // El archivo B no lo reconocía el mapeo global: se le detectó uno
+        // propio y AMBAS ventas entraron.
+        assert_eq!(stats.ventas_creadas, 2, "stats: {stats:?}");
+        assert_eq!(stats.archivos_formato_distinto, 1);
+        assert_eq!(contar(&db, "detalle_ventas"), 6);
+
+        // Y los nombres del formato B vienen bien ("PAN", no el número).
+        let conn = Connection::open(&db).unwrap();
+        let nombres: Vec<String> = conn
+            .prepare("SELECT producto_nombre FROM detalle_ventas ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            nombres,
+            vec!["TAZAS", "PLATO", "VASO", "PAN", "LECHE", "JABON"]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn fallo_en_un_archivo_no_afecta_a_los_demas() {
         let dir = tmp_workspace("mixto");
         let db = crear_bd(&dir);

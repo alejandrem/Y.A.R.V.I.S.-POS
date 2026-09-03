@@ -1,10 +1,22 @@
 # Documentacion de Parseo - Y.A.R.V.I.S. POS
 
-> Actualizado 2026-08-26: el parseador vive en Rust en el crate src-ia/parseador_de_tickets, expuesto al frontend via comandos Tauri (adminparser/parser_*.rs). No hay Python ni HTTP local.
+> Actualizado 2026-09-03: **EL PARSEO DE TICKETS YA NO USA LLM**. La estructura
+> de columnas la detecta el detector estadistico (`cerebro/analizador_tickets/detector.rs`)
+> verificando la ecuacion `cantidad x precio - descuento ≈ total` contra cientos de
+> lineas reales del lote; el mapeo ganador esta matematicamente demostrado, no
+> "adivinado" por un modelo. El Qwen 1.7B queda SOLO para el chat local.
+>
+> Ademas:
+> - **Idempotencia por folio** (2026-09): re-importar la misma carpeta no duplica
+>   ventas ni descuenta stock dos veces.
+> - **Fechas validadas** (2026-09): fechas imposibles ("99/99/9999") nunca entran a
+>   `ventas.fecha`; años de 2 digitos con pivote (98 → 1998, no 2098); horas validadas.
+> - **Mapeo por archivo**: si el mapeo general no reconoce un archivo (otra impresora
+>   / formato), se le detecta uno propio en caliente (carpetas de formatos mezclados).
 
 ## Resumen General
 
-Sistema de parseo de tickets y catalogos para el Modulo de Importacion Inteligente. Soporta TXT, CSV y Excel con analisis LLM local para interpretacion automatica de columnas, mas procesamiento por lotes con streaming y transaccion por archivo.
+Sistema de parseo de tickets y catalogos para el Modulo de Importacion Inteligente. Soporta TXT, CSV y Excel. La importacion masiva de tickets detecta el formato por VERIFICACION MATEMATICA (sin IA), con procesamiento por lotes en streaming y transaccion por archivo.
 
 ---
 
@@ -15,7 +27,8 @@ parseador_de_tickets/
 ├── lib.rs                          # Entry point: declara cerebro, formatos, rutas, motor_chat, predicciones.
 ├── cerebro/                        # Logica de negocio y procesamiento masivo (sin modelos).
 │   ├── analizador_tickets/         #   parser.rs, encabezado.rs, fechas.rs, pagos.rs,
-│   │                               #   segmentador.rs, totales.rs, esquema.rs
+│   │                               #   segmentador.rs, totales.rs, esquema.rs,
+│   │                               #   detector.rs (mapeo estadistico, SIN LLM)
 │   ├── filtrador/                  #   Filtro de lineas utiles (niveles 1/2/3).
 │   ├── parseador_masivo/           #   archivos.rs, procesador.rs, items.rs, resumen.rs, almacen.rs
 │   └── vinculador_inventario/      #   inventario.rs, similitud.rs (TF-IDF+fuzzy), vinculo.rs, persistencia.rs
@@ -23,12 +36,10 @@ parseador_de_tickets/
 │   ├── lector_csv.rs               #   CSV (auto-detect separador/header).
 │   ├── lector_excel.rs             #   Excel (calamine).
 │   └── lector_txt.rs               #   Tickets .txt y catalogo visual.
-└── rutas/                          # Resolucion de modelos + analisis LLM.
-    ├── analizador_ticket.rs        #   analizar_ticket (LLM local, Qwen2.5-Coder 1.5B Instruct actual).
-    ├── analizador_prompt.rs        #   SISTEMA_PROMPT.
-    ├── analizador_json.rs          #   extraer_json.
-    ├── analizador_modelos.rs       #   descargar/cargar/verificar modelos GGUF.
-    ├── analizador_inferencia.rs    #   generar_bajo_lock (llama.cpp).
+└── rutas/                          # Resolucion de modelos + generacion local. SOLO CHAT.
+    ├── analizador_json.rs          #   extraer_json (generico, sin uso en parseo).
+    ├── analizador_modelos.rs       #   descargar/cargar/verificar el GGUF del chat.
+    ├── analizador_inferencia.rs    #   generar_bajo_lock (llama.cpp) — chat.
     └── rutas_modelos_api|config|detect.rs   # API + config + deteccion (LM Studio en ~/.lmstudio/models).
 ```
 
@@ -36,10 +47,10 @@ parseador_de_tickets/
 
 | Archivo | Comandos que expone |
 |---|---|
-| parser_txt.rs | listar_archivos_carpeta, leer_archivo_raw, leer_archivo_bytes, parsear_catalogo_visual, analizar_ticket_llm, analizar_ticket_con_ia, parsear_con_mapeo, parsear_carpeta, parsear_carpeta_stream |
+| parser_txt.rs | listar_archivos_carpeta, leer_archivo_raw, leer_archivo_bytes, parsear_catalogo_visual, **detectar_mapeo_estadistico (SIN IA)**, parsear_con_mapeo, parsear_carpeta, parsear_carpeta_stream |
 | parser_csv.rs | parsear_catalogo_csv (auto-detect separador/header/columnas numericas) |
 | parser_excel.rs | parsear_excel |
-| parser_commands.rs | get_db_path, vincular_inventario, guardar_vinculacion, descargar_modelos, analizar_muestras_carpeta |
+| parser_commands.rs | get_db_path, vincular_inventario, guardar_vinculacion, descargar_modelos |
 | utils.rs | Utilidades compartidas (rutas, precio limpio) |
 
 ---
@@ -98,7 +109,7 @@ Antes existian "Aceptar Mapeo" + "Guardar Ticket Analizado" por separado; ahora 
 La gestion descargar_modelos() de Python (auto-unload en finally, endpoints /unload_llm) ya no existe como HTTP. Hoy:
 
 - El comando Tauri descargar_modelos existe por compatibilidad (adminparser/parser_commands.rs) y libera el modelo compartido si es necesario.
-- El analisis de tickets usa el LLM local bajo demanda (rutas/analizador_inferencia.rs con lock) y no deja cargado el modelo global a menos que el chat lo necesite. El chat local controla la carga via load_chat_model / unload_chat_model con verificacion de RAM.
+- El parseo de tickets ya NO toca el modelo: puro regex + verificacion matematica, instantaneo incluso en laptops viejas. El Qwen 1.7B solo lo carga el chat local, controlado via load_chat_model / unload_chat_model con verificacion de RAM.
 
 ---
 
@@ -118,16 +129,20 @@ La gestion descargar_modelos() de Python (auto-unload en finally, endpoints /unl
 
 ## 9. Flujos de Datos (estado actual)
 
-### Flujo de Parseo de Ticket
+### Flujo de Parseo de Tickets (importacion masiva, SIN IA)
 
 ```
-1. Usuario sube TXT/CSV/Excel en el Modulo de Importacion Inteligente.
-2. Frontend llama al comando correspondiente (analizar_ticket_con_ia / parsear_*).
-3. Rust (src-ia) lee el archivo con el lector de formatos correspondiente.
-4. El LLM (Qwen2.5-Coder 1.5B Instruct actual, futuro 1.5B Coder) o las reglas deducen columnas; retorna LLMAnalysis con ejemplo_parseado JSON.
-5. Se muestra preview en ColumnMapper; el usuario ajusta el mapeo.
-6. "Guardar Ticket" -> guarda mapeo + persiste en DB (Rust escribe SQLite).
-7. El modelo no se queda cargado en RAM salvo que el chat lo requiera.
+1. Usuario elige la CARPETA de tickets .txt.
+2. detectar_mapeo_estadistico toma una muestra determinista y espaciada
+   (hasta 15 archivos) y elige el mapeo que MAS lineas cuadra la ecuacion
+   cantidad x precio - descuento ≈ total. Devuelve confianza y conteos.
+   - Si la confianza es baja o ningun formato cuadra: error claro al usuario
+     ("agrupa tickets de la misma impresora"). Nada se escribe en la DB.
+3. parsear_carpeta_stream procesa cada archivo con mapeo + fallback por
+   archivo (el archivo cuyo formato no cuadra recibe deteccion propia).
+   - Idempotencia: tickets con folio ya importado se omiten enteros.
+4. El frontend muestra progreso en vivo y un resumen (ventas creadas,
+   omitidas por folio, archivos con formato distinto rescatados).
 ```
 
 ### Flujo de Parseo de Catalogo
@@ -185,4 +200,4 @@ interface Producto {
 - ColumnMapper inline: aparece dentro del Modulo de Importacion Inteligente (reutilizado en adminconfig/components/importmodule/).
 - Rust como escritor unico: el parseo lee archivos, pero la escritura en DB siempre pasa por comandos Tauri.
 - Idioma: espanol para Mexico (pesos mexicanos).
-- Modelo local: Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado para mapeo automatico y generacion de tools/SQL offline.
+- El mapeo de columnas es estadistico (ver seccion 9): el unico LLM del sistema es el CHAT (Qwen 3 1.7B local + cloud fallback), que nunca entra al pipeline de parseo.

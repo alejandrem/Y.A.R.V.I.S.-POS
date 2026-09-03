@@ -72,7 +72,11 @@ mod tests {
 
 /// Inserta `"status": "ok"` dentro del JSON del modelo (espejo de
 /// `{ "status": "ok", **resultado }` de Python; Rust no tiene spread en `json!`).
+///
+/// Conservado como utilidad genérica para respuestas del LLM del chat; el
+/// parseo de tickets ya no lo usa (detección estadística, sin modelo).
 #[cfg(feature = "llm-local")]
+#[allow(dead_code)]
 pub(crate) fn con_status_ok(mut valor: serde_json::Value) -> serde_json::Value {
     if let Some(obj) = valor.as_object_mut() {
         obj.insert("status".to_string(), serde_json::json!("ok"));

@@ -46,9 +46,5 @@ name = "test_chat_1_7_real"
 path = "tests/test_chat_1_7_real.rs"
 
 [[test]]
-name = "verificar_conexion"
-path = "tests/verificar_conexion.rs"
-
-[[test]]
 name = "verificar_modelos"
 path = "tests/verificar_modelos.rs"

@@ -38,7 +38,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **97 comandos Tauri** registrados en 21 módulos de backend.
 
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Parseador 100% Rust** — reglas + LLM local bajo demanda.
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Parseador 100% Rust, sin IA de por medio** — el formato del ticket se detecta verificando `cantidad × precio ≈ total` línea por línea. Instantáneo incluso en laptops viejas; el Qwen 1.7B queda solo para el chat.
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Dinero en centavos enteros** — toda columna monetaria es INTEGER (migración 0005); cero errores de redondeo flotante.
 
@@ -80,7 +80,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 ```text
 ├── src-ia/                  # Motor de IA en Rust (crate local)
-│   ├── parseador_de_tickets/  # Reglas + lectores + análisis LLM
+│   ├── parseador_de_tickets/  # Reglas + lectores + detector estadístico de formato
 │   ├── motor-chat/            # Chat cloud (SSE) y local (llama.cpp)
 │   └── tests/                 # Estrés del parseador, verificación de modelos
 ├── yarvis-app/

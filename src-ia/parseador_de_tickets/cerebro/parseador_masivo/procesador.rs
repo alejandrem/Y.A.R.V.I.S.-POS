@@ -12,7 +12,7 @@ use super::resumen::{
     ArchivoResultado, EstadisticasCarpeta, ProductoNuevo, ResumenVenta, TicketFallido,
 };
 use crate::cerebro::analizador_tickets::{
-    extraer_totales, parsear_linea, segmentar, Item, MapeoColumnas,
+    detectar_mapeo, extraer_totales, parsear_linea, segmentar, Item, MapeoColumnas,
 };
 use crate::embeddings::Embedder;
 
@@ -89,6 +89,38 @@ pub fn procesar_archivos(
         // Un archivo puede traer N tickets concatenados → N ventas.
         let segmentos = segmentar(&texto);
 
+        // MAPEO POR ARCHIVO (red de seguridad para carpetas con formatos
+        // mezclados): si el mapeo general NO reconoce este archivo —otra
+        // impresora, otra época, otra sucursal— se le detecta uno propio
+        // verificando cant×precio≈total en sus líneas.
+        //
+        // OJO con el gatillo: "que no parseé nada" no basta, porque un mapeo
+        // equivocado AÚN ASÍ "parsea" basura (cantidad=0 y producto="3"),
+        // que es exactamente como nacen los productos fantasma. El criterio
+        // real es: ¿el mapeo general extrae AL MENOS UN item con nombre
+        // alfabético? Si no, el archivo se intenta rescatar.
+        let items_sanos = |m: &MapeoColumnas| -> usize {
+            segmentos
+                .iter()
+                .flat_map(|s| &s.lineas)
+                .filter_map(|l| parsear_linea(l, m, total_cols))
+                .filter(|i| i.producto.chars().any(|c| c.is_alphabetic()))
+                .count()
+        };
+        let mut mapeo_propio: Option<MapeoColumnas> = None;
+        if items_sanos(mapeo) == 0 {
+            let refs: Vec<&str> = segmentos
+                .iter()
+                .flat_map(|s| s.lineas.iter().map(String::as_str))
+                .collect();
+            if let Some(det) = detectar_mapeo(&refs) {
+                if det.confianza >= 0.5 && items_sanos(&det.mapeo) > 0 {
+                    mapeo_propio = Some(det.mapeo);
+                }
+            }
+        }
+        let mapeo_usar: &MapeoColumnas = mapeo_propio.as_ref().unwrap_or(mapeo);
+
         let mut items_totales = 0usize;
         let mut duplicados_totales = 0usize;
         let mut existentes_totales = 0usize;
@@ -135,7 +167,7 @@ pub fn procesar_archivos(
             let mut nuevos_seg: Vec<ProductoNuevo> = Vec::new();
 
             for linea in &segmento.lineas {
-                let Some(item) = parsear_linea(linea, mapeo, total_cols) else {
+                let Some(item) = parsear_linea(linea, mapeo_usar, total_cols) else {
                     continue;
                 };
 
@@ -304,6 +336,7 @@ pub fn procesar_archivos(
         res.nuevos = nuevos_archivo;
         res.existentes = existentes_totales;
         res.ventas_omitidas = omitidas_totales;
+        res.formato_distinto = mapeo_propio.is_some() && !ventas_info.is_empty();
         res.ventas = ventas_info.len();
         res.venta_id = ventas_info.first().and_then(|v| v.venta_id);
         res.total = total_archivo;
@@ -338,6 +371,7 @@ pub fn procesar_carpeta_impl(
             stats.exitosos += 1;
             stats.ventas_creadas += res.ventas;
             stats.ventas_omitidas += res.ventas_omitidas;
+            stats.archivos_formato_distinto += res.formato_distinto as usize;
             stats.items_insertados += res.items;
             stats.duplicados_detectados += res.duplicados;
             stats.productos_existentes += res.existentes;

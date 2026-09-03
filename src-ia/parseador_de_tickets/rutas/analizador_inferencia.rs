@@ -1,6 +1,8 @@
 // ============================================================
 // analizador_inferencia — Generación llama.cpp bajo lock global
-// (feature `llm-local`). Porción de analizador_llm.rs.
+// (feature `llm-local`). Consumido por el CHAT local (motor-chat).
+// El parseo de tickets ya NO usa LLM: la estructura de columnas la
+// detecta `analizador_tickets::detector` con verificación matemática.
 // ============================================================
 
 #[cfg(feature = "llm-local")]
@@ -12,14 +14,10 @@ use std::sync::Arc;
 use llama_cpp_4::prelude::*;
 
 #[cfg(feature = "llm-local")]
-use super::analizador_json::extraer_json;
-#[cfg(feature = "llm-local")]
 use super::analizador_modelos::{
     backend_global, n_threads_llm, ModeloChat, Resultado, INFERENCIA_LOCK, MAX_TOKENS,
-    MAX_TOKENS_PARSEO, N_BATCH, N_CTX, TEMPERATURA, TOP_P,
+    N_BATCH, N_CTX, TEMPERATURA, TOP_P,
 };
-#[cfg(feature = "llm-local")]
-use super::analizador_prompt::SISTEMA_PROMPT;
 
 /// Genera texto completo dado el prompt ya formateado con el chat template.
 /// `max_tokens` es un TECHO de generación por línea de uso: el chat usa 2048 y
@@ -48,8 +46,8 @@ fn generar(modelo: &ModeloChat, prompt: &str, max_tokens: i32) -> Resultado<Stri
         return Err("El prompt excede n_ctx".to_string());
     }
 
-    // Prefill por CHUNKS de N_BATCH: el prompt (SISTEMA_PROMPT + ticket)
-    // suele superar las 512 posiciones y `add` falla con "Insufficient Space"
+    // Prefill por CHUNKS de N_BATCH: el prompt (sistema + mensajes) suele
+    // superar las 512 posiciones y `add` falla con "Insufficient Space"
     // si no cabe en un solo batch (llama.cpp decodifica en lotes del tamaño
     // de `n_batch`).
     let mut batch = LlamaBatch::new(N_BATCH, 1);
@@ -115,11 +113,11 @@ fn generar(modelo: &ModeloChat, prompt: &str, max_tokens: i32) -> Resultado<Stri
 }
 
 /// Aplica el chat template a los mensajes y genera la respuesta bajo el lock
-/// global de inferencia (compartido con el parseo de tickets: llama.cpp no
-/// tolera dos generaciones a la vez sobre el mismo backend).
+/// global de inferencia (llama.cpp no tolera dos generaciones a la vez sobre
+/// el mismo backend).
 ///
 /// Lo consume el chat local (`motor-chat/llm`) para el modelo 1.7B de
-/// conversación, reutilizando el MISMO caché de modelos del parseo.
+/// conversación.
 #[cfg(feature = "llm-local")]
 pub fn generar_bajo_lock(
     modelo: &Arc<ModeloChat>,
@@ -131,48 +129,4 @@ pub fn generar_bajo_lock(
         .map_err(|e| format!("No se pudo aplicar el chat template: {e}"))?;
     let _lock = INFERENCIA_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     generar(modelo, &prompt, MAX_TOKENS)
-}
-
-/// Ejecuta un análisis sobre el modelo indicado (espejo de `_ejecutar_analisis`).
-#[cfg(feature = "llm-local")]
-pub(crate) fn ejecutar_analisis(
-    modelo: &Arc<ModeloChat>,
-    texto: &str,
-) -> Option<serde_json::Value> {
-    let lineas: Vec<&str> = texto
-        .trim()
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
-    let total_lineas = lineas.len();
-    const MAX_LINEAS_ENVIADAS: usize = 20;
-    let texto_analizar = lineas[..total_lineas.min(MAX_LINEAS_ENVIADAS)].join("\n");
-
-    let user_prompt = format!(
-        "TICKET A ANALIZAR:\n---\n{texto_analizar}\n---\n\nAnaliza este ticket y responde SOLAMENTE con el JSON válido."
-    );
-
-    let messages = vec![
-        LlamaChatMessage::new("system".to_string(), SISTEMA_PROMPT.to_string()).ok()?,
-        LlamaChatMessage::new("user".to_string(), user_prompt).ok()?,
-    ];
-
-    let prompt = modelo
-        .model
-        .apply_chat_template(None, &messages, true)
-        .ok()?;
-
-    // La inferencia está serializada por el lock global (llama-cpp-python igual).
-    let _lock = INFERENCIA_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let contenido = generar(modelo, &prompt, MAX_TOKENS_PARSEO).ok()?;
-    let mut json = extraer_json(&contenido)?;
-
-    // El recorte NUNCA es silencioso: si el ticket era más grande, la
-    // advertencia viaja en el resultado para que la UI la muestre al usuario.
-    if total_lineas > MAX_LINEAS_ENVIADAS {
-        json["advertencia_recorte"] = serde_json::json!(format!(
-            "El ticket tiene {total_lineas} líneas pero solo se analizaron las primeras {MAX_LINEAS_ENVIADAS}: los items restantes NO fueron procesados."
-        ));
-    }
-    Some(json)
 }

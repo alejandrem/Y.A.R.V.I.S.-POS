@@ -12,9 +12,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(feature = "llm-local")]
-use super::analizador_prompt::NOMBRES_MODELO;
-#[cfg(feature = "llm-local")]
 use super::rutas_modelos_api::qwen1_7;
+
+// Nombre del modelo local para los mensajes (espejo de _NOMBRES_MODELO).
+// Único GGUF del Y.A.R.V.I.S.: el Qwen 3 1.7B, usado SOLO por el chat local
+// (el parseo de tickets ya no usa LLM: lo detecta el detector estadístico).
+#[cfg(feature = "llm-local")]
+const NOMBRES_MODELO: [(&str, &str); 1] = [("1.7B", "Qwen 3 1.7B")];
 
 #[cfg(feature = "llm-local")]
 fn ruta_modelo(_clave: &str) -> PathBuf {
@@ -34,11 +38,6 @@ pub(crate) const N_BATCH: usize = 512;
 #[cfg(feature = "llm-local")]
 /// Techo de generación para el CHAT (la respuesta de un turno no debe cortarse).
 pub(crate) const MAX_TOKENS: i32 = 2048;
-#[cfg(feature = "llm-local")]
-/// Techo de generación para el PARSEO: el JSON del mapeo cabe en <500 tokens,
-/// pero el Qwen3 puede razonar (bloque `<thinking>` ~200-400 tokens) antes de
-/// responder, así que 1536 cubre "pensamiento + JSON" sin tocar el techo.
-pub(crate) const MAX_TOKENS_PARSEO: i32 = 1536;
 #[cfg(feature = "llm-local")]
 pub(crate) const TEMPERATURA: f32 = 0.1;
 #[cfg(feature = "llm-local")]
@@ -107,8 +106,8 @@ pub(crate) static INFERENCIA_LOCK: Mutex<()> = Mutex::new(());
 
 /// Carga el modelo local Qwen 3 1.7B o devuelve el ya cargado. Es un port de
 /// `analizador_llm::_cargar_modelo` + `puede_cargar_modelo`. Se expone `pub`
-/// para que el chat local (`motor-chat/llm`) reutilice el MISMO caché: el
-/// parseo y el chat comparten el 1.7B (1 solo GGUF, no se duplica).
+/// para que el chat local (`motor-chat/llm`) reutilice el caché: 1 solo
+/// GGUF en RAM para todo el que use el modelo (hoy solo el chat).
 #[cfg(feature = "llm-local")]
 pub fn cargar_modelo(clave: &str) -> Resultado<Arc<ModeloChat>> {
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -139,7 +138,7 @@ pub fn cargar_modelo(clave: &str) -> Resultado<Arc<ModeloChat>> {
         .find(|(k, _)| *k == clave)
         .map(|(_, n)| *n)
         .unwrap_or(clave);
-    tracing::info!("[YARVIS-IA] Cargando {nombre} para parseo de tickets...");
+    tracing::info!("[YARVIS-IA] Cargando {nombre} (chat local)...");
     let inicio = std::time::Instant::now();
 
     let backend = backend_global()?;
