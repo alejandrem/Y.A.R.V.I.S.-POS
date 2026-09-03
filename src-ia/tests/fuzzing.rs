@@ -244,20 +244,7 @@ fn linea_gigante_de_5000_columnas_no_explota() {
 
 #[test]
 fn fechas_y_horas_imposibles_no_rompen() {
-    for s in [
-        "31/02/2026",
-        "99/99/9999",
-        "13/13/13",
-        "32:99:99",
-        "25:00 PM",
-        "0:00 AM",
-        "9999-99-99",
-        "29 de febrero de 2023",
-        "1:1:1",
-        "",
-        "::::",
-        "FECHA: 12/05/2026 75:99 PM",
-    ] {
+    for s in ["0:00 AM", "1:1:1", "", "::::"] {
         let (f, h) = extraer_fecha_hora_regex(s);
         if let Some(fecha) = &f {
             assert!(
@@ -269,6 +256,26 @@ fn fechas_y_horas_imposibles_no_rompen() {
             assert!(h.len() == 5, "{h:?} de {s:?}");
         }
     }
+    // Y ahora MÁS: lo imposible jamás produce valor (antes entraba literal
+    // a ventas.fecha, ej. "99/99/9999" → "9999-99-99").
+    for s in [
+        "31/02/2026",
+        "99/99/9999",
+        "13/13/13",
+        "9999-99-99",
+        "29 de febrero de 2023",
+    ] {
+        let (f, _) = extraer_fecha_hora_regex(s);
+        assert_eq!(f, None, "fecha imposible sobrevivió: {s:?}");
+    }
+    for s in ["32:99:99", "25:00 PM"] {
+        let (_, h) = extraer_fecha_hora_regex(s);
+        assert_eq!(h, None, "hora imposible sobrevivió: {s:?}");
+    }
+    // Una fecha válida junto a una hora rota: salva la fecha, no la hora.
+    let (f, h) = extraer_fecha_hora_regex("FECHA: 12/05/2026 75:99 PM");
+    assert_eq!(f.as_deref(), Some("2026-05-12"));
+    assert_eq!(h, None);
 }
 
 // ---------------------------------------------------------------------------
