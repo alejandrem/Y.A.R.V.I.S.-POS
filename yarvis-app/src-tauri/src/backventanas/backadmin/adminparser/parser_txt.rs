@@ -1,7 +1,7 @@
 // Parser TXT/Visual en Rust.
-// Los comandos de catálogo, mapeo, carpetas y el análisis con LLM usan el
-// crate `src-ia`. El LLM local corre
-// vía llama.cpp dentro del feature `llm-local` de `src-ia`.
+// Catálogo, mapeo, carpetas y procesamiento masivo: todo sin LLM. La
+// estructura de columnas la detecta el detector estadístico
+// (`src_ia::cerebro::analizador_tickets::detectar_mapeo`).
 use super::utils::sanitize_path;
 use crate::backventanas::auth::AuthState;
 use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};

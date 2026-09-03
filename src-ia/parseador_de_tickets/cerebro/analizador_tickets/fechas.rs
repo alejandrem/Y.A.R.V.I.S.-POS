@@ -111,7 +111,8 @@ fn anio_desde_yy(yy: i32) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
-// Fecha y hora (regex, fallback si el LLM no detecta)
+// Fecha y hora (regex puro; el parseo ya no tiene LLM, este regex es la
+// única fuente de fecha/hora del ticket)
 // ---------------------------------------------------------------------------
 
 static RE_FECHA_ISO: LazyLock<Regex> =
