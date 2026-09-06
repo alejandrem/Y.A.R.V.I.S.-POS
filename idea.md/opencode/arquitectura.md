@@ -2,7 +2,7 @@
 
 Esta documentacion refleja la estructura actual y verificada de todo el sistema. Ya no existe sidecar de Python: la app es un binario unico de Tauri v2 (frontend React + backend Rust) que incluye el motor de IA como crate local (src-ia) y el modulo de predicciones Holt-Winters.
 
-> Este doc fue actualizado tras la migracion Python -> Rust y la implementacion de predicciones locales. Para el historico ver migracion-rust.md.
+> Este doc fue actualizado tras la migracion Python -> Rust, las predicciones locales y la estabilización del parseador 2026-09 (folio 10/10, clave de idempotencia, orden cronológico). Para el historico ver migracion-rust.md.
 
 ## Estructura de Archivos y Directorios
 
@@ -18,6 +18,7 @@ Y.A.R.V.I.S.-POS/
 │
 ├── src-ia/                            # CRATE RUST independiente: nucleo de IA.
 │   ├── Cargo.toml                     # package "src-ia" v0.1.0; feature "llm-local" (llama-cpp-4 0.5).
+│   ├── examples/                      # dbg (diagnóstico vs carpetas reales), bench1000 (prueba de carga).
 │   ├── predicciones/                  # Holt-Winters + capa de datos de ventas.
 │   │   ├── holt_winters.rs            #   Suavizado triple aditivo, grid 343 combos, banda 95%.
 │   │   ├── ventas.rs                  #   Lectura de SQLite (ventas completadas), serie densa, predecir_ventas.
@@ -25,18 +26,23 @@ Y.A.R.V.I.S.-POS/
 │   ├── parseador_de_tickets/          # Parseo de tickets/catalogos en Rust.
 │   │   ├── lib.rs                     # Entry: declara cerebro, formatos, rutas, motor_chat, predicciones.
 │   │   ├── cerebro/                   # Nucleo de regex/parseo sin modelo.
-│   │   │   ├── analizador_tickets/    #   parser, encabezado, fechas, pagos, segmentador, totales, esquema.
+│   │   │   ├── analizador_tickets/    #   parser, encabezado, fechas, pagos, totales, esquema.
+│   │   │   │   ├── detector/          #     Detección estadística SIN LLM: mod (orquesta),
+│   │   │   │   │                     #     hipotesis (A/B), familia_c, muestra, diagnostico.
+│   │   │   │   └── segmentador/       #     Un archivo → N tickets: mod, marcadores
+│   │   │   │                         #     (folio 10/10 formatos), clave (idempotencia
+│   │   │   │                         #     folio/AUTO/SIN-FOLIO + orden cronológico).
 │   │   │   ├── filtrador/             #   Filtro de lineas utiles (3 niveles).
-│   │   │   ├── parseador_masivo/      #   Orquestador: archivos, procesador, items, resumen, almacen.
+│   │   │   ├── parseador_masivo/      #   archivos, procesador/ (stream + carpeta),
+│   │   │   │                         #   items, resumen, almacen, tests.rs.
 │   │   │   └── vinculador_inventario/ #   Vinculacion: inventario, similitud (TF-IDF+fuzzy), vinculo, persistencia.
-│   │   ├── formatos/                  # Lectores: lector_csv, lector_excel (calamine), lector_txt.
-│   │   └── rutas/                     # Resolucion de modelos + analisis LLM:
-│   │       ├── analizador_ticket.rs   #   analizar_ticket (LLM local 1.5B Coder Instruct fine-tuneado).
-│   │       ├── analizador_prompt.rs   #   SISTEMA_PROMPT.
-│   │       ├── analizador_json.rs     #   extraer_json.
+│   │   ├── formatos/                  # Lectores: lector_csv, lector_excel (calamine),
+│   │   │                             # lector_txt/ (patrones, linea, visual).
+│   │   └── rutas/                     # Resolucion de modelos + generacion local. SOLO CHAT:
+│   │       ├── analizador_json.rs     #   extraer_json (generico, sin uso en parseo).
 │   │       ├── analizador_modelos.rs  #   descargar/cargar/verificar modelos GGUF.
-│   │       ├── analizador_inferencia.rs # generar_bajo_lock (llama.cpp).
-│   │       └── rutas_modelos_*.rs     #   API + config + deteccion (LM Studio).
+│   │       ├── analizador_inferencia.rs # generar_bajo_lock (llama.cpp) — chat.
+│   │       └── rutas_modelos_api|config|detect.rs # API + config + deteccion (LM Studio).
 │   ├── motor-chat/
 │   │   ├── mod.rs                     # pub mod cloud; pub mod llm.
 │   │   ├── cloud/                     # Chat por API (nube).
@@ -57,9 +63,9 @@ Y.A.R.V.I.S.-POS/
     ├── src/                           # FRONTEND: React + TypeScript 5.8.
     │   ├── main.tsx                   # React root: StrictMode + ThemeProvider + App.
     │   ├── App.tsx                    # Orquestador: setup (paso 0) -> login (1) -> AdminDashboard (2)/EmployeeDashboard (3).
-    │   ├── hooks/                     # ParserContext + ThemeContext/useTheme.
+    │   ├── hooks/                     # ThemeContext/useTheme (el progreso del lote vive en BatchProgressProvider, parseador/tickets/).
     │   ├── front-admin/               # Modulos del Administrador.
-    │   │   ├── AdminDashboard.tsx     # Sidebar y enrutador del Admin.
+    │   │   ├── AdminDashboard.tsx     # Sidebar + keep-alive perezoso de pestañas.
     │   │   ├── PrimerInicio.tsx       # Asistente de configuracion inicial (admin + tienda + empleado).
     │   │   ├── types.ts               # Tipos TypeScript compartidos.
     │   │   └── ventanas/
@@ -73,7 +79,7 @@ Y.A.R.V.I.S.-POS/
     │   │       ├── admininventario/inventario.tsx
     │   │       ├── adminticket/       #   tickets.tsx + graficas.tsx (usan get_predictions ya operativo)
     │   │       ├── adminventas/ventas.tsx
-    │   │       └── parseadodetickets/ #   BatchProcessor, ColumnMapper, CatalogosParseados
+    │   │       └── parseador/         #   parseador.tsx + tickets/ (BatchProgressProvider, historial, progreso) y cortes/
     │   └── front-empleado/            # Modulos del Empleado (Punto de Venta).
     │       ├── EmployeeDashboard.tsx
     │       └── ventanas/
@@ -91,7 +97,7 @@ Y.A.R.V.I.S.-POS/
         ├── Cargo.toml                 # tauri 2.11, sqlx 0.8, tokio 1.38, serde, reqwest, argon2, chrono, src-ia.
         └── src/
             ├── main.rs                # Entry (windows_subsystem) -> yarvis_app_lib::run().
-            ├── lib.rs                 # Builder Tauri: setup DB, registra 97 comandos, plugins.
+            ├── lib.rs                 # Builder Tauri: setup DB, registra 98 comandos, plugins.
             ├── models.rs              # Structs serde compartidas.
             ├── dinero.rs              # a_centavos / a_pesos (conversion centavos).
             ├── api_config.rs          # guardar_api_keys / leer_api_keys (archivo 0600).
@@ -102,8 +108,8 @@ Y.A.R.V.I.S.-POS/
                 │   ├── adminconfig/   #   auth.rs, google.rs (OAuth PKCE)
                 │   ├── adminempleados/#   empleados.rs, modalempleado.rs, modalmetas.rs
                 │   ├── adminfinanzas/ #   alertas, cortes, export (stubs), finanzas, gastos, graficas, metricas
-                │   ├── admininventory/#   inventory.rs (CRUD + importar_catalogo + stubs embeddings)
-                │   ├── adminparser/   #   parser_commands.rs, parser_csv.rs, parser_excel.rs, etc.
+                │   ├── admininventory/#   inventory/ (catalogo, crud, importar, semantica, historial)
+                │   ├── adminparser/   #   parser_commands.rs, parser_csv.rs, parser_excel.rs, parser_txt/ (archivos, catalogo, deteccion, lote), utils.rs
                 │   ├── admintarvis/   #   chat.rs + ciclo_tools, cancelacion, herramientas_rol, rutas
                 │   └── admintickets/  #   tickets.rs (get_predictions operativo)
                 └── backempleado/      # Comandos del empleado (venta nueva, perfil, asistencia).
@@ -122,7 +128,7 @@ Y.A.R.V.I.S.-POS/
 |  +------------------+         +----------------------------------+  |
 |  |   Frontend       | invoke  |   Backend Rust (Tauri)           |  |
 |  |  (React + Vite)  | ------> |   src-tauri/src/backventanas     |  |
-|  |                  | <------ |   (97 #[tauri::command])         |  |
+|  |                  | <------ |   (98 #[tauri::command])         |  |
 |  +------------------+  IPC    +-------+--------------+-----------+  |
 |                                   |              |             |
 |                      +------------v----+  +------v-----------+ |
@@ -140,18 +146,16 @@ Y.A.R.V.I.S.-POS/
 
 - Frontend <-> Rust: IPC nativo de Tauri (invoke). Sin HTTP local, sin puertos.
 - Rust <-> SQLite: sqlx en modo asincrono (pool), WAL activado, unico escritor.
-- Rust <-> IA: crate local src-ia (mismo proceso). Chat cloud (OpenCode Zen / Gemini via reqwest + SSE) con fallback a local (Qwen GGUF con llama-cpp-4). Parseo de tickets usa reglas (cerebro/) y LLM local bajo demanda. Predicciones usan Holt-Winters puro sin red.
+- Rust <-> IA: crate local src-ia (mismo proceso). Chat cloud (OpenCode Zen / Gemini via reqwest + SSE) con fallback a local (Qwen GGUF con llama-cpp-4). Parseo de tickets 100% reglas + estadística (detector/), sin LLM. Predicciones usan Holt-Winters puro sin red.
 
 ## Comandos registrados
 
-97 comandos en lib.rs:38. Ver tecnologias.md para el conteo por dominio.
+98 comandos en lib.rs. Ver tecnologias.md para el conteo por dominio.
 
 ## Casos pendientes (stubs) — devuelven error claro, no rompen la caja
 
 | Comando / funcion | Donde se llama | Estado |
 |---|---|---|
-| buscar_producto_similar | inventario + nueva venta (busqueda semantica) | STUB — embeddings propios pendientes; hoy usa TF-IDF+fuzzy solo en vinculador |
-| backfill_embeddings | config / importacion | STUB — mismo motivo |
 | exportar_balance_pdf / exportar_gastos_csv | finanzas export | STUB — export pendiente |
 
-Nota: get_predictions y get_predicciones_financieras ya no son stubs: estan implementados via src-ia/predicciones y responden con fecha/prediccion/minimo/maximo.
+Nota: buscar_producto_similar y backfill_embeddings YA están implementados (HashEmbedder propio 384d por trigramas, sin red neuronal); get_predictions y get_predicciones_financieras responden con fecha/prediccion/minimo/maximo. La importación masiva de 1000 tickets tarda ~250ms en release con 0 errores (example bench1000).

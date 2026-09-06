@@ -1,6 +1,6 @@
 # Y.A.R.V.I.S. POS — Documentacion Completa de Implementacion
 
-> Actualizado 2026-08-26: IA 100% Rust (src-ia), sin sidecar Python. Chat con fine-tuning + tools SQL, predicciones Holt-Winters operativas, busqueda semantica pendiente con modelo propio. Ver migracion-rust.md.
+> Actualizado 2026-08-26: IA 100% Rust (src-ia), sin sidecar Python. Chat con fine-tuning + tools SQL, predicciones Holt-Winters operativas, busqueda semantica operativa con HashEmbedder propio. Ver migracion-rust.md.
 
 ## Indice
 
@@ -44,7 +44,7 @@ Stack verificado:
 ## 2. Arquitectura del Sistema
 
 ```
-  Frontend (React + Vite)  --invoke-->  Backend Rust (Tauri, 97 comandos)  -->  SQLite (WAL)
+  Frontend (React + Vite)  --invoke-->  Backend Rust (Tauri, 98 comandos)  -->  SQLite (WAL)
          |                                        |
          +---- respuesta IPC <--------------------+
    Motor IA (crate src-ia, en proceso): chat cloud (SSE) + chat local (llama.cpp) + parseador + predicciones.
@@ -55,7 +55,7 @@ Ciclo de vida:
 2. lib.rs inicializa SQLite (WAL, tablas, migraciones) y registra los comandos.
 3. App.tsx decide la pantalla por check_setup_done (PrimerInicio / Login / Dashboard).
 4. El frontend se comunica con Rust via invoke() (IPC nativo; sin HTTP ni puertos).
-5. La IA corre dentro del mismo proceso (crate src-ia); el LLM local se carga bajo demanda y comparte cache con el parseador.
+5. La IA corre dentro del mismo proceso (crate src-ia); el LLM local se carga bajo demanda solo para el chat (el parseador es 100% reglas + estadística, sin LLM).
 
 ---
 
@@ -89,9 +89,9 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 
 - AdminDashboard.tsx: sidebar + enrutador (ventas, inventario, tickets, finanzas, clientes, empleados, configuracion, yarvis).
 - adminconfig/: Configuracion refactorizada en componentes (ConfigHeader, IdentityForm, SecurityForm, AppearanceForm, importmodule/) + hooks (useAdminData, useParserActions).
-- parseadodetickets/: BatchProcessor (lotes con streaming), ColumnMapper (mapeo con IA), CatalogosParseados.
+- parseador/: parseador.tsx + tickets/ (BatchProgressProvider: el progreso sobrevive al cambio de pestaña; historial con total real) y cortes/. Detección estadística sin IA + inserción cronológica + idempotencia folio/AUTO/SIN-FOLIO.
 - adminfinanzas/: dashboard, alertas, cortes X/Z, gastos, graficas (usa get_predicciones_financieras ya operativo), metricas.
-- admininventario/: CRUD + importar catalogo + busqueda semantica (stub TF-IDF interino).
+- admininventario/: inventory/ por tema (catalogo, crud, importar, semantica, historial) + busqueda semantica propia operativa (HashEmbedder).
 - adminempleados/: empleados + modales de edicion, metas y turnos (ya subdividido, 271 lineas).
 - adminyarvis/: chat (ChatWidget).
 - adminticket/: tickets + graficas (usan get_predictions ya operativo).
@@ -99,12 +99,12 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 ### 4.5 front-empleado/ — Punto de Venta
 
 - EmployeeDashboard.tsx: nueva venta, inventario, tickets/cortes, clientes, perfil, yarvis, ajustes.
-- nueva_venta.tsx: carrito con busqueda (usa buscar_producto_similar — stub), modal de venta y vista de ticket. Ya modularizado (198 lineas).
+- nueva_venta.tsx: carrito con busqueda (buscar_producto_similar operativo), modal de venta y vista de ticket.
 - empleaperfil/perfil.tsx: perfil y asistencia (130 lineas tras refactorizacion).
 
 ### 4.6 Hooks globales
 
-- ParserContext.tsx: estado global del parseo (items, modo, analisis LLM).
+- BatchProgressProvider (parseador/tickets/): progreso del lote que sobrevive al cambio de pestaña + keep-alive perezoso en ambos dashboards (las pestañas visitadas no se desmontan).
 - ThemeContext.tsx/useTheme.ts: temas claro/oscuro.
 
 ---
@@ -113,7 +113,7 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 
 ### 5.1 lib.rs — Setup principal
 
-Inicializa DB, registra 97 comandos en el invoke_handler, plugins (opener, dialog), job de alertas cada hora, tracing con RUST_LOG.
+Inicializa DB, registra 98 comandos en el invoke_handler, plugins (opener, dialog), job de alertas cada hora, tracing con RUST_LOG.
 
 ### 5.2 db.rs — Inicializacion de SQLite
 
@@ -124,7 +124,7 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, client
 | Modulo | Contenido |
 |---|---|
 | backadmin/adminconfig | auth (setup + login + datos admin/empleado, cerrar_sesion), google (OAuth) |
-| backadmin/admininventory | CRUD inventario, importar_catalogo, stubs embeddings (buscar_producto_similar, backfill_embeddings) |
+| backadmin/admininventory | CRUD inventario, importar_catalogo, semantica propia operativa (buscar_producto_similar, backfill_embeddings) |
 | backadmin/adminparser | parseo TXT/CSV/Excel, carpetas, vinculacion, modelos |
 | backadmin/admintickets | tickets, cortes; get_predictions operativo (Holt-Winters) |
 | backadmin/adminfinanzas | gastos, cortes X/Z, alertas, metricas, graficas (incluye get_predicciones_financieras operativo), export stubs |
@@ -156,9 +156,9 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, client
 
 ## 7. Modelos de IA
 
-### 7.1 LLM Local (chat + parseo)
+### 7.1 LLM Local (solo chat)
 
-- Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado — unico modelo local; se carga bajo demanda (chat y analisis de tickets) via llama.cpp y funciona offline sin internet. Ruta configurable via set_local_model_path; resolucion en src-ia/rutas/rutas_modelos_*. Ventana 4096, recorte conservador de historial.
+- Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado — unico modelo local; se carga bajo demanda solo para el chat via llama.cpp y funciona offline sin internet. Ruta configurable via set_local_model_path; resolucion en src-ia/rutas/rutas_modelos_*. Ventana 4096, recorte conservador de historial.
 
 ### 7.2 Cloud
 
@@ -166,7 +166,7 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, client
 
 ### 7.3 Embeddings / Busqueda semantica
 
-- Sin RAG. buscar_producto_similar y backfill_embeddings son stubs que devuelven error claro. Hoy la vinculacion usa TF-IDF + fuzzy sin vectores. Plan: modelo de embeddings propio (no all-MiniLM), con entrenamiento y pipeline local pendiente.
+- Sin RAG. buscar_producto_similar y backfill_embeddings operativos con HashEmbedder propio 384d (no all-MiniLM, sin red neuronal). La vinculación de tickets usa TF-IDF + fuzzy como interino.
 
 ### 7.4 Predicciones
 
@@ -182,7 +182,7 @@ SQLite, un archivo (yarvis.db), modo WAL, acceso asincrono con sqlx. Unico escri
 
 ## 9. Comandos Tauri (Rust)
 
-97 comandos #[tauri::command] en lib.rs:38. Resumen por modulo:
+98 comandos #[tauri::command] en lib.rs. Resumen por modulo:
 
 Auth / Setup (adminconfig/auth.rs, google.rs)
 check_setup_done, guardar_admin, validar_login_admin, get_admin_data, update_admin_data, guardar_empleado, validar_login_empleado, cerrar_sesion, login_con_google
@@ -217,12 +217,12 @@ guardar_api_keys, leer_api_keys
 
 | Comando | Funcion | Estado |
 |---|---|---|
-| buscar_producto_similar | Busqueda semantica en inventario / nueva venta | STUB — embeddings propios pendientes |
-| backfill_embeddings | Generar embeddings de la base | STUB — embeddings propios pendientes |
+| buscar_producto_similar | Busqueda semantica en inventario / nueva venta | OPERATIVO — HashEmbedder propio 384d |
+| backfill_embeddings | Generar embeddings de la base | OPERATIVO — HashEmbedder propio 384d |
 | exportar_balance_pdf | Exportar balance a PDF | STUB |
 | exportar_gastos_csv | Exportar gastos a CSV | STUB |
 
-Planes: embeddings con modelo propio y fine-tuning de Qwen2.5-Coder 1.5B Instruct para tools/SQL. Predicciones ya operativas via Holt-Winters. Impresion termica ESC/POS y facturacion electronica: pendientes.
+Planes: fine-tuning de Qwen2.5-Coder 1.5B Instruct para tools/SQL. Predicciones ya operativas via Holt-Winters. Impresion termica ESC/POS y facturacion electronica: pendientes.
 
 ---
 
@@ -230,7 +230,7 @@ Planes: embeddings con modelo propio y fine-tuning de Qwen2.5-Coder 1.5B Instruc
 
 - Migracion Python -> Rust completa: sidecar eliminado, binario unico.
 - Dinero en centavos: migracion 0005 y modulo dinero.rs eliminan errores de redondeo.
-- Parseo robusto: bugfixes A1/A3/A4/Bug8 conservados en el port.
+- Parseo robusto: bugfixes A1/A3/A4/Bug8 conservados en el port + folio 10/10 formatos, clave de idempotencia (folio/AUTO/SIN-FOLIO), inserción cronológica y familia C con denominador correcto (1000 tickets reales al 100%).
 - Seguridad: SQL parametrizado, roles por tool, API keys 0600, CSP activa, sin fallback plaintext en passwords, atomicidad en ventas/importaciones/pagos.
 - Modularizacion frontend: empleados.tsx, nueva_venta.tsx y perfil.tsx subdivididos bajo 650 lineas.
 - Predicciones locales sin red: Holt-Winters con banda 95% reemplaza a Prophet.

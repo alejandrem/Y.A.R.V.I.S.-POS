@@ -1,11 +1,11 @@
 # Plan de Implementacion — Y.A.R.V.I.S. POS
 
-> Actualizado 2026-08-26. Convive con refactor-seguridad.md (auditoria senior, migracion a centavos, endurecimiento y tools). Este documento describe el estado real en Rust. Las olas marcadas como completadas estan implementadas y verificadas. Las zonas sin marca son planes pendientes. No se usa RAG; la estrategia de IA es fine-tuning + tools SQL.
+> Actualizado 2026-09-06. Convive con refactor-seguridad.md (auditoria senior, migracion a centavos, endurecimiento y tools). Este documento describe el estado real en Rust. Las olas marcadas como completadas estan implementadas y verificadas. Las zonas sin marca son planes pendientes. No se usa RAG; la estrategia de IA es fine-tuning + tools SQL + embeddings propios HashEmbedder.
 
 Bienvenido al mapa de batalla. Para asegurar que Y.A.R.V.I.S. sea robusto, escalable y mantenible, se implemento por fases.
 
 > Regla de oro del codigo
-> Ningun archivo .rs, .ts o .tsx debe pasar de 600-650 lineas. Si llega a 650, modularizar.
+> Ningun archivo .rs, .ts o .tsx debe pasar de ~400 lineas. Al acercarse, se divide en carpeta por tema con re-exports que conservan las rutas (ver detector/, segmentador/, inventory/, metricas/, cortes/, parser_txt/, lector_txt/, procesador/).
 
 ---
 
@@ -27,16 +27,17 @@ La idea original era un sidecar Python con FastAPI. Se descarto y se migro todo 
 - Chat cloud: src-ia/motor-chat/cloud (OpenCode Zen / Gemini via reqwest + SSE) con fallback a local y ciclo de tools con 10 herramientas.
 - Chat local: Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado con llama-cpp-4 (src-ia/motor-chat/llm), carga bajo demanda (lazy), ventana 4096, recorte de historial conservador. Opera 100% offline con 10 tools SQL.
 
-## Ola 3: El Parseador y la Ingesta Masiva — COMPLETADA (reglas en Rust)
+## Ola 3: El Parseador y la Ingesta Masiva — COMPLETADA (estadística sin IA)
 
-- Parseador de tickets/catalogos: src-ia/parseador_de_tickets (regex + reglas en cerebro/, lectores en formatos/).
-- Procesamiento por lotes: cerebro/parseador_masivo/ (eventos al frontend; transaccion por archivo con rollback).
+- Parseador de tickets/catalogos: src-ia/parseador_de_tickets (regex + estadística en cerebro/, lectores en formatos/). Sin LLM en el pipeline.
+- Detección de formato: cerebro/analizador_tickets/detector/ (hipótesis A/B + familia C por consistencia de precios + diagnóstico en lenguaje normal).
+- Folio/fecha/hora: cerebro/analizador_tickets/segmentador/ (10/10 formatos reales, apertura fuerte, sin tickets fantasma) + fechas validadas con pivote.
+- Idempotencia y orden: clave en 3 niveles (folio → AUTO-YYYYMMDD-HHMM → SIN-FOLIO) guardada en ventas.folio_ticket; inserción cronológica de archivos y segmentos.
+- Procesamiento por lotes: cerebro/parseador_masivo/ (streaming por canal + modo síncrono; transaccion por archivo con rollback). Verificado: 1000 tickets reales en ~250ms release, re-importación 0 duplicados (example bench1000).
 - Vinculacion con inventario: cerebro/vinculador_inventario/ (TF-IDF + fuzzy como interino, sin vectores).
-- Analisis LLM: rutas/ -> analizar_ticket con Qwen local bajo demanda + deteccion de modelos GGUF en ~/.lmstudio/models.
-- Comandos: adminparser/parser_*.rs (parsear_catalogo_visual, parsear_carpeta_stream, analizar_ticket_con_ia, parsear_con_mapeo, etc.).
-- Frontend: parseadodetickets/ (BatchProcessor, ColumnMapper, CatalogosParseados) integrado en el Modulo de Importacion Inteligente (adminconfig/components/importmodule/).
-
-Pendiente en parseador: busqueda semantica vectorial (buscar_producto_similar, backfill_embeddings son stubs). Se construira modelo de embeddings propio; no se usara all-MiniLM.
+- Comandos: adminparser/ (parser_txt/ por tema: archivos, catalogo, deteccion, lote; parser_csv/excel; get_tickets_total para el historial real).
+- Frontend: parseador/ con BatchProgressProvider (el progreso sobrevive al cambio de pestaña) + keep-alive perezoso en ambos dashboards.
+- Búsqueda semántica propia operativa: HashEmbedder 384d (buscar_producto_similar, backfill_embeddings). No se usara all-MiniLM ni ONNX externo.
 
 ## Ola 4: El Chatbot y su motor — COMPLETADA (cloud + local con tools)
 
@@ -62,7 +63,6 @@ Pendiente en IA: fine-tuning final de Qwen2.5-Coder 1.5B Instruct para que gener
 
 Pendiente en produccion:
 - Impresion termica ESC/POS y facturacion electronica (XML/PAC): sin implementar (flujo visual preparado).
-- Modelo de embeddings propio y cableado de buscar_producto_similar / backfill_embeddings.
 - CI/CD, empaquetado .exe estable en Windows y bateria de pruebas finales (concurrencia, cortes, SSE, flujos completos).
 
 ---
@@ -70,10 +70,9 @@ Pendiente en produccion:
 ## Orden de ataque de lo pendiente (actualizado)
 
 1. Finalizar todos los modulos funcionales sin bloqueos por IA (ventas, inventario, finanzas, tickets, empleados, clientes, configuracion).
-2. Modelo de embeddings propio -> reactivar buscar_producto_similar y backfill_embeddings (TF-IDF actual es interino).
-3. Drivers de impresion termica (ESC/POS) y facturacion electronica.
-4. Fine-tuning final de Qwen2.5-Coder 1.5B Instruct para tools/SQL y despliegue del GGUF resultante.
-5. CI/CD, empaquetado .exe y pruebas finales end-to-end en Windows y Linux.
+2. Drivers de impresion termica (ESC/POS) y facturacion electronica.
+3. Fine-tuning final de Qwen2.5-Coder 1.5B Instruct para tools/SQL y despliegue del GGUF resultante.
+4. CI/CD, empaquetado .exe y pruebas finales end-to-end en Windows y Linux.
 
 ## Archivos clave
 
@@ -84,7 +83,7 @@ Pendiente en produccion:
 | Backend Rust (comandos) | yarvis-app/src-tauri/src/backventanas/ |
 | Motor de IA (Rust) | src-ia/ |
 | Predicciones | src-ia/predicciones/ |
-| Registro de comandos | yarvis-app/src-tauri/src/lib.rs:38 (97 comandos) |
+| Registro de comandos | yarvis-app/src-tauri/src/lib.rs (98 comandos) |
 | DB (init + WAL + migraciones) | yarvis-app/src-tauri/src/backventanas/db/db.rs |
 | Conversion monetaria | yarvis-app/src-tauri/src/dinero.rs |
 | Build de produccion | yarvis-app/build.sh |

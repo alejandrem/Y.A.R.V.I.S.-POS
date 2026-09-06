@@ -1,6 +1,6 @@
 # Lógica de Proceso / Spec de UI-UX — Y.A.R.V.I.S. POS
 
-> Nota de estado 2026-08-26: spec de diseno UI/UX que guio la implementacion. La mayoria de flujos ya estan implementados: PrimerInicio registra administrador + tienda + empleados, login por roles (Admin/Empleado), dashboards de admin y empleado con menus descritos. Los mockups ASCII son referenciales (diseno real en Tailwind). Predicciones Holt-Winters ya operativas; busqueda semantica vectorial pendiente con modelo propio; impresion termica y facturacion electronica pendientes; fine-tuning planificado a Qwen2.5-Coder 1.5B Instruct. Lo demas sigue vigente como referencia de negocio.
+> Nota de estado 2026-08-26: spec de diseno UI/UX que guio la implementacion. La mayoria de flujos ya estan implementados: PrimerInicio registra administrador + tienda + empleados, login por roles (Admin/Empleado), dashboards de admin y empleado con menus descritos. Los mockups ASCII son referenciales (diseno real en Tailwind). Predicciones Holt-Winters ya operativas; busqueda semantica operativa con HashEmbedder propio; impresion termica y facturacion electronica pendientes; fine-tuning planificado a Qwen2.5-Coder 1.5B Instruct. Lo demas sigue vigente como referencia de negocio.
 
 ---
 

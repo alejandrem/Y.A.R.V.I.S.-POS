@@ -25,7 +25,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 
 ## Backend (Rust — verificado en Cargo.toml)
 
-> Comunicacion con Frontend: Tauri IPC (comandos #[tauri::command], 97 registrados) via invoke().
+> Comunicacion con Frontend: Tauri IPC (comandos #[tauri::command], 98 registrados) via invoke().
 > Framework: Tauri 2.11.
 > Runtime Asincrono: Tokio 1.38 full.
 > Serializacion: Serde / serde_json.
@@ -37,7 +37,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 > IA:
 >   - Local: llama-cpp-4 0.5 via crate src-ia, feature llm-local, modelo Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado (ruta configurable, resolucion en rutas/rutas_modelos_* incluyendo deteccion ~/.lmstudio/models). Planificado migrar a Qwen2.5-Coder 1.5B Instruct fine-tuneado para generar tools/SQL con mayor precision.
 >   - Cloud: OpenCode Zen / Gemini via HTTP + SSE con fallback a local (src-ia/motor-chat/cloud), separador de bloques think/response y ciclo de tools con MAX_RONDAS_TOOLS=3.
->   - Parseo de tickets: reglas regex + analisis LLM local bajo demanda (src-ia/parseador_de_tickets).
+>   - Parseo de tickets: 100% reglas + estadística, sin LLM (detector/ verifica cantidad×precio≈total; segmentador/ extrae folio/fecha/hora; clave de idempotencia folio/AUTO/SIN-FOLIO en src-ia/parseador_de_tickets).
 >   - Predicciones: Holt-Winters triple aditivo sin dependencias (src-ia/predicciones), operativo via get_predictions / get_predicciones_financieras.
 
 ## Base de Datos
@@ -46,7 +46,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 > Acceso: SQLx (pool asincrono), PRAGMA journal_mode=WAL.
 > Escritor unico: Rust (comandos Tauri). No hay otro proceso que toque la DB.
 > Dinero: INTEGER en centavos (migracion 0005_moneda_centavos.sql, modulo dinero.rs: a_centavos/a_pesos; el contrato IPC sigue en pesos f64 para no romper el frontend).
-> Busqueda vectorial (sqlite-vec): deshabilitada. Los comandos buscar_producto_similar y backfill_embeddings son stubs. Hoy la vinculacion usa TF-IDF + fuzzy (src-ia/parseador_de_tickets/cerebro/vinculador_inventario/similitud.rs) como interino. Pendiente reimplementar con modelo de embeddings propio (decision: no se usara all-MiniLM ni ONNX externo).
+> Busqueda vectorial (sqlite-vec): deshabilitada por decisión. La búsqueda semántica es propia: HashEmbedder 384d por trigramas + coseno (src-ia/embeddings/), sin red neuronal ni ONNX externo. Comandos buscar_producto_similar y backfill_embeddings operativos; la vinculación de tickets usa TF-IDF + fuzzy como interino.
 
 ## Modelo de despliegue
 
@@ -60,7 +60,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 > Chat local: Qwen2.5-Coder 1.5B Instruct GGUF via llama.cpp (src-ia/motor-chat/llm, CPU, ventana 4096, fine-tuneado con tools) tokens, recorte de historial conservador (src-ia/motor-chat/llm/mod.rs:42). Comandos send_chat_message, send_chat_stream, get_cloud_models, get_model_status, load_chat_model, unload_chat_model, stop_chat_stream (admintarvis/chat.rs).
 > Chat cloud: OpenCode Zen + Gemini con cola de fallback 429, streaming SSE, instrucciones de tools congeladas segun dataset tools_arreglado.jsonl (TOOLS_LINEA en src-ia/motor-chat/cloud/prompts.rs:28 y src-ia/motor-chat/llm/tools/).
 > Tools: 10 tools de solo lectura, SQL parametrizado con escape_like, LIMIT parametrizado, ejecutor compartido cloud/local (src-ia/motor-chat/llm/tools/mod.rs). Roles enforced en herramientas_rol.rs (empleado no ve finanzas/nomina).
-> Parseador: 100% Rust (reglas + LLM local). Comandos parser_* (adminparser/).
+> Parseador: 100% Rust sin LLM (detección estadística + folio/clave/orden cronológico). Comandos parser_* (adminparser/, parser_txt/ por tema) + get_tickets_total para el historial real.
 > Predicciones: implementadas con Holt-Winters aditivo (src-ia/predicciones/holt_winters.rs:70 predecir, ventana 7 dias, grid 343 combos alpha/beta/gamma, banda 95% z 1.96). Capa de datos lee ventas completadas, agrupa por dia, densifica huecos con 0 y devuelve fecha/prediccion/minimo/maximo (src-ia/predicciones/ventas.rs:37).
 > Embeddings / RAG: no hay RAG. Pendiente busqueda semantica con modelo de embeddings propio. El plan anterior de all-MiniLM-L6-v2 + ort/fastembed fue descartado.
 > Fine-tuning: Qwen local con system prompt de testing (src-ia/motor-chat/llm/mod.rs:107 SYSTEM_PROMPT_TEST, 7 tools core). Dataset tools_arreglado.jsonl congelado. Siguiente paso: fine-tune de Qwen2.5-Coder 1.5B Instruct para mejorar generacion de SQL/tools (work in progress, aun no estable).
@@ -84,4 +84,4 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 - Nunca usar ./ estatico: la DB y los modelos se resuelven por rutas de datos/contexto de la app (Tauri) y deteccion dinamica.
 - Un solo escritor de SQLite: Rust. Cero conflictos de lock.
 - Modo degradado: si el LLM local no esta disponible o la nube falla, el POS sigue funcionando y el chat usa el fallback configurado.
-- Regla de oro de lineas: ningun archivo .rs/.ts/.tsx debe pasar de 600-650 lineas; modularizar apenas se acerque (empleados.tsx ya subdividido en 3 archivos).
+- Regla de oro de lineas: ningun archivo .rs/.ts/.tsx debe pasar de ~400 lineas; al acercarse se divide en carpeta por tema (detector/, segmentador/, inventory/, metricas/, cortes/, parser_txt/, lector_txt/, procesador/) con re-exports que conservan las rutas.

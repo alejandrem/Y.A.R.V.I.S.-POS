@@ -36,7 +36,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Binario único** — Tauri v2 empaqueta frontend + backend + motor IA juntos.
 
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **97 comandos Tauri** registrados en 21 módulos de backend.
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **98 comandos Tauri** registrados en 21 módulos de backend.
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Parseador 100% Rust, sin IA de por medio** — el formato del ticket se detecta verificando `cantidad × precio ≈ total` línea por línea. Instantáneo incluso en laptops viejas; el Qwen 1.7B queda solo para el chat.
 
@@ -58,7 +58,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 | <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> | **Inventario** | CRUD de productos, alertas de stock bajo, importación de catálogos. |
 | <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> | **Finanzas** | Cortes de caja X/Z, gastos recurrentes, alertas, métricas y exportación. |
 | <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg> | **Empleados** | Metas y bonos, turnos, salario, resumen de ventas por operador. |
-| <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> | **Importación de tickets** | Mapeo de columnas con IA, procesamiento por lotes con streaming, vinculación al inventario. |
+| <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> | **Importación de tickets** | Detección estadística de formato (sin IA), procesamiento por lotes con streaming, folio automático e idempotencia total. |
 | <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> | **Asistente Y.A.R.V.I.S.** | Chat con IA local/cloud: ventas, inventario, detección de anomalías y consejos. |
 | <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> | **Configuración** | Identidad de tienda, seguridad (admin/empleado), temas claro/oscuro. |
 
@@ -82,14 +82,15 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 ├── src-ia/                  # Motor de IA en Rust (crate local)
 │   ├── parseador_de_tickets/  # Reglas + lectores + detector estadístico de formato
 │   ├── motor-chat/            # Chat cloud (SSE) y local (llama.cpp)
+│   ├── examples/              # dbg (diagnóstico vs carpetas reales), bench1000 (carga)
 │   └── tests/                 # Estrés del parseador, verificación de modelos
 ├── yarvis-app/
 │   ├── src/                   # Frontend React
 │   │   ├── front-admin/       #   Panel del administrador
 │   │   ├── front-empleado/    #   Punto de venta del operador
-│   │   └── hooks/             #   ThemeContext, ParserContext
+│   │   └── hooks/             #   ThemeContext/useTheme
 │   └── src-tauri/             # Backend Rust + configuración Tauri
-│       └── src/backventanas/  #   ~91 comandos (backadmin/ y backempleado/)
+│       └── src/backventanas/  #   ~98 comandos (backadmin/ y backempleado/)
 ├── idea.md/                   # Documentación completa (arquitectura, stack,
 │                              #   parseador, migración, bugs)
 ├── run.sh / run.bat           # Lanzadores (dev)

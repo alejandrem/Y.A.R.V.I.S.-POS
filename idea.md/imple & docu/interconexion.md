@@ -34,7 +34,7 @@ No hay HTTP local. No hay puertos libres. No hay ai_service. No hay externalBin 
 
 1. El usuario ejecuta yarvis-app (el binario unico).
 2. lib.rs abre el pool SQLite (db/db.rs): crea el archivo yarvis.db si no existe, activa WAL, aplica migraciones (dos fases para foreign_keys), crea tablas.
-3. Se registran 97 comandos Tauri en el invoke_handler y se inicia el job de alertas cada hora.
+3. Se registran 98 comandos Tauri en el invoke_handler y se inicia el job de alertas cada hora.
 4. main.tsx monta React: el orquestador App.tsx decide la pantalla segun check_setup_done (comando real):
    - Paso 0 PrimerInicio: primer registro de administrador + tienda + empleado (solo se muestra una vez).
    - Paso 1 Login con seleccion de rol y contrasena.
@@ -56,14 +56,16 @@ No hay HTTP local. No hay puertos libres. No hay ai_service. No hay externalBin 
 
 No se usa RAG. Las tools consultan SQLite directamente con SQL parametrizado.
 
-## Flujo del Parseador (reglas + LLM bajo demanda)
+## Flujo del Parseador (estadística sin IA)
 
 1. El admin abre el Modulo de Importacion Inteligente (ImportModule.tsx).
 2. Sube TXT / CSV / Excel; se llaman los comandos parser_* (adminparser/).
 3. src-ia/parseador_de_tickets aplica:
-   - Reglas (cerebro/): filtrado de lineas (3 niveles), encabezados, fechas, pagos, totales, segmentacion.
+   - Estadística (cerebro/analizador_tickets/detector/): hipótesis A/B por ecuación cantidad×precio≈total + familia C por consistencia de precios entre repetidos; `diagnosticar_muestra` explica el fallo en lenguaje normal.
+   - Folio/fecha/hora (cerebro/analizador_tickets/segmentador/): 10/10 formatos reales, apertura fuerte, clave de idempotencia (folio → AUTO-YYYYMMDD-HHMM → SIN-FOLIO) e inserción cronológica.
+   - Reglas (cerebro/): filtrado de lineas (3 niveles), encabezados, fechas validadas, pagos, totales, segmentacion.
    - Lectores (formatos/): CSV (auto-detect separador), Excel (calamine), TXT.
-   - LLM (si aplica): analizar_ticket_con_ia con analisis local; mapeo de columnas confirmado por el usuario (ColumnMapper).
+   - Sin LLM: el mapeo ganador está demostrado contra la muestra (confianza 55%+ exigida); si falla, error accionable, nada se escribe.
 4. parsear_carpeta_stream procesa carpetas enteras con eventos al frontend y transaccion por archivo (rollback ante fallo).
 5. Vincular con inventario -> vincular_inventario / guardar_vinculacion (SQLite, via Rust, TF-IDF + fuzzy como similitud interina).
 
@@ -77,14 +79,14 @@ No se usa RAG. Las tools consultan SQLite directamente con SQL parametrizado.
 
 ---
 
-## Base de Conocimiento y busqueda semantica (PENDIENTE)
+## Base de Conocimiento y busqueda semantica (OPERATIVA con HashEmbedder)
 
-En la era Python existia knowledge_base con sqlite-vec y embeddings para busqueda semantica y RAG. En la migracion a Rust quedaron como stubs y la estrategia cambio:
+En la era Python existia knowledge_base con sqlite-vec. En Rust se implementó motor propio sin red neuronal ni ONNX externo: HashEmbedder 384d por trigramas + coseno (src-ia/embeddings/):
 
-- buscar_producto_similar (inventario / nueva venta) — STUB
-- backfill_embeddings (importacion) — STUB
+- buscar_producto_similar (inventario / nueva venta) — OPERATIVO (prefiere knowledge_base, fallback al vuelo)
+- backfill_embeddings (importacion) — OPERATIVO (construye todo antes de borrar)
 
-Plan actual: modelo de embeddings propio para busqueda semantica (no all-MiniLM, no ONNX externo). Interino: similitud TF-IDF + fuzzy en vinculador_inventario/similitud.rs. Las predicciones con Holt-Winters ya estan operativas, asi que solo quedan pendientes los embeddings.
+Interino aún: similitud TF-IDF + fuzzy en vinculador_inventario para vincular tickets. Las predicciones con Holt-Winters ya estan operativas.
 
 ## Relaciones por rol
 

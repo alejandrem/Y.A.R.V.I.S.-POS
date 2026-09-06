@@ -1,16 +1,29 @@
 # Documentacion de Parseo - Y.A.R.V.I.S. POS
 
-> Actualizado 2026-09-03: **EL PARSEO DE TICKETS YA NO USA LLM**. La estructura
-> de columnas la detecta el detector estadistico (`cerebro/analizador_tickets/detector.rs`)
+> Actualizado 2026-09-06: **EL PARSEO DE TICKETS YA NO USA LLM**. La estructura
+> de columnas la detecta el detector estadistico (`cerebro/analizador_tickets/detector/`)
 > verificando la ecuacion `cantidad x precio - descuento ≈ total` contra cientos de
 > lineas reales del lote; el mapeo ganador esta matematicamente demostrado, no
 > "adivinado" por un modelo. El Qwen 1.7B queda SOLO para el chat local.
 >
-> Ademas:
+> Novedades de septiembre (verificadas con 1000 tickets reales de 6 meses):
+> - **Folio 10/10 formatos**: etiquetas FOLIO/FOL/TICKET/SERIE/NOTA/RECIBO,
+>   separadores `: . # | = -`, muletillas (`TICKET NO. 1927` → `1927`) y valor
+>   con dígito obligatorio (cero colisiones).
+> - **Clave de idempotencia en 3 niveles** (`TicketSegmento::clave`): folio
+>   impreso → `AUTO-YYYYMMDD-HHMM-hash` (fecha+hora) → `SIN-FOLIO-hash`.
+>   Re-importar ya no duplica, con o sin folio.
+> - **Inserción cronológica**: archivos y segmentos se ordenan por fecha/hora;
+>   los IDs de venta crecen en el orden en que se generaron.
+> - **Familia C con denominador correcto**: la confianza es
+>   consistentes/repetidas (lo único observable), no consistentes/muestra.
+> - **Errores en lenguaje normal** (`diagnosticar_muestra`): con números y
+>   siguiente paso, no "agrupa tus tickets" a secas.
 > - **Idempotencia por folio** (2026-09): re-importar la misma carpeta no duplica
 >   ventas ni descuenta stock dos veces.
 > - **Fechas validadas** (2026-09): fechas imposibles ("99/99/9999") nunca entran a
->   `ventas.fecha`; años de 2 digitos con pivote (98 → 1998, no 2098); horas validadas.
+>   `ventas.fecha`; años de 2 digitos con pivote (98 → 1998, no 2098); horas validadas;
+>   mes abreviado día-primero ("05-mar-2026") e ISO con hora pegada ("2026-03-04T20:11:03").
 > - **Mapeo por archivo**: si el mapeo general no reconoce un archivo (otra impresora
 >   / formato), se le detecta uno propio en caliente (carpetas de formatos mezclados).
 
@@ -27,15 +40,26 @@ parseador_de_tickets/
 ├── lib.rs                          # Entry point: declara cerebro, formatos, rutas, motor_chat, predicciones.
 ├── cerebro/                        # Logica de negocio y procesamiento masivo (sin modelos).
 │   ├── analizador_tickets/         #   parser.rs, encabezado.rs, fechas.rs, pagos.rs,
-│   │                               #   segmentador.rs, totales.rs, esquema.rs,
-│   │                               #   detector.rs (mapeo estadistico, SIN LLM)
+│   │                               #   esquema.rs, totales.rs (+ detector/ y segmentador/)
+│   │   ├── detector/               #     Detección estadística (SIN LLM), un tema por archivo:
+│   │   │                         #     mod.rs (orquesta detectar_mapeo), hipotesis.rs
+│   │   │                         #     (linea_cuadra + familias A/B), familia_c.rs
+│   │   │                         #     (consistencia de precios), muestra.rs,
+│   │   │                         #     diagnostico.rs (por qué falló, para la UI)
+│   │   ├── segmentador/            #     Un archivo → N tickets, un tema por archivo:
+│   │                               #     mod.rs (TicketSegmento + segmentar),
+│   │                               #     marcadores.rs (aperturas/cierres/folio),
+│   │                               #     clave.rs (idempotencia + orden cronológico)
 │   ├── filtrador/                  #   Filtro de lineas utiles (niveles 1/2/3).
-│   ├── parseador_masivo/           #   archivos.rs, procesador.rs, items.rs, resumen.rs, almacen.rs
+│   ├── parseador_masivo/           #   archivos.rs, procesador/ (stream.rs + carpeta.rs),
+│   │                               #   items.rs, resumen.rs, almacen.rs, tests.rs
 │   └── vinculador_inventario/      #   inventario.rs, similitud.rs (TF-IDF+fuzzy), vinculo.rs, persistencia.rs
 ├── formatos/                       # Lectores mecanicos por formato.
 │   ├── lector_csv.rs               #   CSV (auto-detect separador/header).
 │   ├── lector_excel.rs             #   Excel (calamine).
-│   └── lector_txt.rs               #   Tickets .txt y catalogo visual.
+│   └── lector_txt/                 #   Tickets .txt y catalogo visual, por tema:
+│                               #     patrones.rs (regex), linea.rs (7 patrones),
+│                               #     visual.rs (CSV vs visual), tests.rs
 └── rutas/                          # Resolucion de modelos + generacion local. SOLO CHAT.
     ├── analizador_json.rs          #   extraer_json (generico, sin uso en parseo).
     ├── analizador_modelos.rs       #   descargar/cargar/verificar el GGUF del chat.
@@ -45,13 +69,55 @@ parseador_de_tickets/
 
 ### Backend Tauri (exposicion de comandos — yarvis-app/src-tauri/src/backventanas/backadmin/adminparser/)
 
-| Archivo | Comandos que expone |
+| Carpeta | Comandos que expone |
 |---|---|
-| parser_txt.rs | listar_archivos_carpeta, leer_archivo_raw, leer_archivo_bytes, parsear_catalogo_visual, **detectar_mapeo_estadistico (SIN IA)**, parsear_con_mapeo, parsear_carpeta, parsear_carpeta_stream |
+| parser_txt/archivos.rs | listar_archivos_carpeta, leer_archivo_raw, leer_archivo_bytes |
+| parser_txt/catalogo.rs | parsear_catalogo_visual |
+| parser_txt/deteccion.rs | **detectar_mapeo_estadistico (SIN IA)** + mensajes en lenguaje normal |
+| parser_txt/lote.rs | parsear_con_mapeo, parsear_carpeta, parsear_carpeta_stream |
 | parser_csv.rs | parsear_catalogo_csv (auto-detect separador/header/columnas numericas) |
 | parser_excel.rs | parsear_excel |
 | parser_commands.rs | get_db_path, vincular_inventario, guardar_vinculacion, descargar_modelos |
 | utils.rs | Utilidades compartidas (rutas, precio limpio) |
+
+---
+
+## 1b. Folio, clave de idempotencia y orden cronológico (2026-09)
+
+Verificado contra 10 formatos reales de tiendas mexicanas (folio 10/10) y
+una carpeta real de 1000 tickets de 6 meses (1000/1000 ventas con total,
+fecha y folio exactos al centavo).
+
+**Detección de folio** (`segmentador/marcadores.rs::extraer_folio`):
+
+| Formato real | Resultado |
+|---|---|
+| `FOLIO: 000482`, `FOLIO:2288` | `000482`, `2288` |
+| `FOLIO\|55190`, `FOLIO=88231` | `55190`, `88231` (separadores `\|` y `=`) |
+| `Fol 3341`, `FOL 00721` | `3341`, `00721` (abreviatura) |
+| `TICKET NO. 1927` | `1927` (la muletilla `NO.` se salta; antes capturaba `"NO"`) |
+| `Ticket #6650`, `TICKET: A-004471` | `6650`, `A-004471` |
+| `CONSERVE SU TICKET`, `TICKET DE VENTA` | `None` (el valor exige dígito; sin dígito no es folio) |
+
+La apertura "fuerte" (etiqueta al inicio + valor) vale aunque la línea
+parezca de producto; la palabra sola jamás abre ticket fantasma.
+
+**Clave de idempotencia** (`segmentador/clave.rs::TicketSegmento::clave`),
+en 3 niveles: 1. folio impreso → 2. `AUTO-YYYYMMDD-HHMM-hash` (fecha+hora,
+ancho fijo = ordenable) → 3. `SIN-FOLIO-hash` (último recurso). Se guarda
+en `ventas.folio_ticket`, así la siguiente corrida encuentra el ticket con
+o sin folio. Límite honesto: dos ventas distintas con mismo contenido,
+misma fecha y sin folio colisionarían.
+
+**Orden cronológico**: archivos (`ordenar_archivos_cronologicamente`, un
+pre-pass barato de solo-regex) y segmentos (`comparar_cronologico`) se
+ordenan por fecha/hora antes de insertar; los IDs crecen en el orden en
+que se generaron. Las predicciones igual agrupan por `date(fecha)`, así
+que la matemática nunca dependió del orden físico.
+
+**Confianza de familia C**: el denominador son solo las líneas de
+productos repetidos (las únicas observables), no toda la muestra. Una
+carpeta real con precios perfectos daba 37% por este bug; hoy da 100%.
 
 ---
 
@@ -122,6 +188,9 @@ La gestion descargar_modelos() de Python (auto-unload en finally, endpoints /unl
 | Catalogo pierde datos al cambiar modo | Estado no persistia | lastCatalogPath + lastCatalogItems |
 | Nombre con " -- " (separador del catalogo) | Patron SIN_SEP se comia el separador | Bug 8 resuelto en Rust: reorden de patrones; los lectores no arrastran el separador |
 | Producto legitimo descartado ("GATORADE TOTAL") | substring if x in linea_lower | _es_linea_util con 3 niveles + word-boundary (portado a cerebro/filtrador) |
+| "37% cuadran, separa por tienda" en carpeta uniforme | confianza C dividía entre toda la muestra | denominador = solo repetidas (`detector/familia_c.rs`); hoy esa carpeta da 100% |
+| Historial muestra 20 de 1000 | `.slice(0, 20)` + contador con `length` | sin recorte (backend trae 500) + `get_tickets_total` para el total real |
+| Al cambiar de pestaña "no se está parseando nada" | estado + listener vivían en el componente desmontado | `BatchProgressProvider` en el dashboard + keep-alive perezoso en ambos dashboards |
 
 > Los bugfix A1 (transaccion por archivo con rollback), A3 (filtro 3 niveles), A4 (volumenes) y Bug 8 (separador robado) fueron verificados en Python y conservados en el port a Rust. Ver bugs-resueltos.md.
 

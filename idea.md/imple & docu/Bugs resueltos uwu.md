@@ -1,6 +1,6 @@
 # Auditoria Completa de Y.A.R.V.I.S. IA — Veredicto de Claudio
 
-> Nota de estado 2026-08-26: bitacora historica de la era Python (FastAPI). El motor ya se migro a Rust (src-ia); los archivos .py citados no existen. Los bugfixes fueron especificacion para el port y se conservaron en Rust (filtro 3 niveles, transacciones por archivo, separador -- del catalogo). Actualizacion: predicciones Holt-Winters ya operativas en src-ia/predicciones (get_predictions y get_predicciones_financieras ya no son stubs), busqueda semantica pendiente con modelo de embeddings propio (no all-MiniLM), y fine-tuning objetivo es Qwen2.5-Coder 1.5B Instruct para SQL/tools. Se mantiene como historial y lista de trampas conocidas.
+> Nota de estado 2026-08-26: bitacora historica de la era Python (FastAPI). El motor ya se migro a Rust (src-ia); los archivos .py citados no existen. Los bugfixes fueron especificacion para el port y se conservaron en Rust (filtro 3 niveles, transacciones por archivo, separador -- del catalogo). Actualizacion: predicciones Holt-Winters ya operativas en src-ia/predicciones (get_predictions y get_predicciones_financieras ya no son stubs), busqueda semantica operativa con HashEmbedder propio (no all-MiniLM), y fine-tuning objetivo es Qwen2.5-Coder 1.5B Instruct para SQL/tools. Se mantiene como historial y lista de trampas conocidas.
 
 Revisé **cada archivo** del proyecto. Aquí va el diagnóstico honesto, separando **bugs reales** de **cosas que parecen bugs pero NO lo son**.
 
@@ -460,3 +460,65 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 **Importante NO confundir:** el error aparece AL FINAL del output pero NO invalida el build. El binario de produccion (`target/release/yarvis-app`), el `.deb` y el `.rpm` ya estaban generados y funcionan. El AppImage es solo un formato mas de distribucion (el mas portable: un solo archivo sin instalacion).
 
 **Leccion aprendida:** leer la ultima linea de un fallo de bundling con lupa pero sin panico: Tauri genera varios formatos de paquete en secuencia y un fallo en el ultimo no tira los anteriores. Y en Arch, `fuse2` NO viene por defecto aunque `fuse3` si venga en algunos sistemas — linuxdeploy todavia usa FUSE 2.
+
+---
+
+### Bug F1: `TICKET NO. 1927` capturaba `"NO"` como folio (colisión masiva) — ALTO (RESUELTO)
+
+**Contexto:** carpeta real de 1000 tickets. Todos los `TICKET NO. XXXX` quedaban con folio `"NO"`.
+
+**Causa raiz:** el regex de folio capturaba el primer token alfanumérico tras la etiqueta, y la muletilla `NO.` calificaba. Peor: como la idempotencia es por folio, tickets DISTINTOS colisionaban y el segundo se omitía como "duplicado".
+
+**Solucion:** `segmentador/marcadores.rs::extraer_folio` en 2 pasos (etiqueta → resto con separadores `: . # | = -` y muletillas `NO./NUM/#/DE` saltadas → valor) + regla "sin dígito no es folio". `FOLIO|55190`, `FOLIO=88231`, `Fol 3341` y `TICKET NO. 1927` dan el valor correcto; `CONSERVE SU TICKET` y `No. ARTICULOS: 8` dan None.
+
+**Leccion aprendida:** un folio mal extraído es peor que ninguno: None activa el hash de contenido (distinto por ticket), pero un valor basura igual para todos convierte la idempotencia en pérdida de ventas.
+
+---
+
+### Bug F2: `CONSERVE SU TICKET` abría un ticket fantasma — MEDIO (RESUELTO)
+
+**Causa raiz:** la apertura se decidía por palabra (`folio|serie|ticket`) sin exigir valor. El pie cerraba un segundo segmento de 2 líneas sin folio ni fecha.
+
+**Solucion:** `es_apertura` exige folio extraíble o fecha real en la misma línea; la apertura "fuerte" (etiqueta al INICIO + valor) vale aunque la línea parezca de producto (`Fol 3341 - 06/03/2026`).
+
+---
+
+### Bug F3: hora `11:03` en vez de `20:11` en ISO con hora pegada — MEDIO (RESUELTO)
+
+**Causa raiz (doble):** 1. `RE_FECHA_ISO` terminaba en `\b`, así que `2026-03-04T20:11:03` no matcheaba (entre `T` y `2` no hay boundary). 2. `RE_HORA` empezaba en `\b`, así que sobre `T20:11:03` pescaba `11:03` de adentro.
+
+**Solucion:** ISO termina en `(?:[^0-9]|$)` (el crate `regex` NO tiene look-ahead `(?!...)`, truena en runtime) y la hora acepta `T` como inicio (`(?:\b|T)`).
+
+**Leccion aprendida:** el crate `regex` de Rust no soporta look-around de ningún tipo: cualquier `(?!`, `(?<!` compila el crate pero paniquea el `LazyLock` al primer uso y envenena todos los tests del módulo.
+
+---
+
+### Bug F4: familia C reportaba 37% en carpeta con precios perfectos — ALTO (RESUELTO)
+
+**Causa raiz:** la confianza se calculaba como `consistentes / total_muestra`. Los productos que aparecen una sola vez en la muestra de 15 archivos no son observables (ni confirman ni niegan) pero igual dividían.
+
+**Solucion:** denominador = solo líneas repetidas (`detector/familia_c.rs::EvidenciaC`). La carpeta pasó de 0.368 (rechazada) a 1.000. Regla: el denominador de una confianza siempre debe ser "lo observable", no "lo muestreado".
+
+---
+
+### Bug U1: el historial mostraba 20 de 1000 (`.slice(0, 20)`) — BAJO (RESUELTO)
+
+**Causa raiz:** `historial.tsx` recortaba a 20 y el contador usaba `tickets.length`, así que mentía el total. El backend ya traía 500 (`LIMIT 500`).
+
+**Solucion:** sin recorte + nuevo comando `get_tickets_total` (`COUNT(*)`) para el total real + aviso "mostrando los 500 más recientes" cuando aplica. Total de comandos: 97 → 98.
+
+---
+
+### Bug U2: cambiar de pestaña mataba importaciones, streams y carritos — ALTO (RESUELTO)
+
+**Contexto:** el commit 4f032a1 anunciaba haberlo arreglado pero solo pausó un timer; el desmontaje siguió igual y "se volvió a romper" (nunca funcionó de verdad).
+
+**Causa raiz:** ambos dashboards desmontaban cada módulo al cambiar de tab. El progreso del parseo (estado + `listen`), el stream del chat y el carrito vivían dentro del componente desmontado; el backend seguía sin nadie que lo escuchara.
+
+**Solucion (2 capas):**
+1. `BatchProgressProvider` en el dashboard (un solo listener global `batch-progress` + bloqueo de doble importación concurrente) para el parseador.
+2. Keep-alive perezoso en ambos dashboards: cada pestaña se monta en su primera visita y luego solo se oculta (`hidden`/`display:none`). Finanzas recibió la prop `active` que le faltaba para no trabajar oculta ni quedar obsoleta.
+
+**Regresión cazada por el fix:** el chat usa `h-full` y el `<div>` envoltorio (altura auto) le rompió la cadena de altura (hueco blanco). Envoltorios activos ahora son `h-full`; en empleado se usó `display:contents` + inline `display:none` (una clase `hidden` podía perder contra `contents` por orden del CSS).
+
+**Leccion aprendida:** "no se ve nada pero el backend sigue" siempre es estado muerto en un componente desmontado: el fix es mover el estado arriba del punto de desmontaje, no re-suscribirse al volver.
