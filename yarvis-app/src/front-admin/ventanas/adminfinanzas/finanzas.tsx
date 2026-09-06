@@ -29,7 +29,7 @@ import SeccionCortes from "./componentes/seccion-cortes";
 import SeccionAlertas from "./componentes/seccion-alertas";
 import SeccionMetricas from "./componentes/seccion-metricas";
 
-export default function AdminFinanzas() {
+export default function AdminFinanzas({ active = true }: { active?: boolean }) {
   const [seccion, setSeccion] = useState<Seccion>("resumen");
   const [rango, setRango] = useState<RangoFechas>(() => rangoDeDias(180));
   const [cargando, setCargando] = useState(true);
@@ -175,7 +175,9 @@ export default function AdminFinanzas() {
     setCargando(false);
   }, [cargarResumen, cargarPuntoEq, cargarGraficas, cargarPredicciones, cargarGastos, cargarCortes, cargarAlertas, cargarMetricas]);
 
-  useEffect(() => { cargarTodo(); }, [cargarTodo]);
+  // Con keep-alive el módulo ya no se desmonta al cambiar de pestaña:
+  // se recarga al volver (datos frescos) y no hace nada oculto.
+  useEffect(() => { if (active) cargarTodo(); }, [cargarTodo, active]);
 
   const recargarGastos = () => { cargarGastos(); cargarResumen(); cargarPuntoEq(); cargarGraficas(); };
   const marcarLeida = async (id: number) => {

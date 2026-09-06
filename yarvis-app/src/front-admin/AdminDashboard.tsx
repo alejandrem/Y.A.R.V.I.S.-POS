@@ -7,6 +7,8 @@ import AdminClientes from "./ventanas/adminclientes/clientes";
 import AdminEmpleados from "./ventanas/adminempleados/empleados";
 import AdminYarvis from "./ventanas/adminyarvis/yarvis";
 import Parseador from "./ventanas/parseador/parseador";
+import { BatchProgressProvider } from "./ventanas/parseador/tickets/batchProgress";
+import { useEffect, useState } from "react";
 
 interface AdminDashboardProps {
   activeTab: string;
@@ -29,6 +31,15 @@ const AdminDashboard = ({
   initialLocation = "",
   initialCp = "",
 }: AdminDashboardProps) => {
+  // Keep-alive perezoso: cada pestaña se monta en su PRIMERA visita y ya no
+  // se desmonta (solo se oculta). Sin esto, cambiar de tab mataba el estado
+  // local del módulo: importaciones en curso, respuestas del chat a medias,
+  // filtros y formularios. El login sigue rápido porque solo se monta la
+  // pestaña inicial; el resto se monta bajo demanda.
+  const [visited, setVisited] = useState<string[]>(() => [activeTab]);
+  useEffect(() => {
+    setVisited((v) => (v.includes(activeTab) ? v : [...v, activeTab]));
+  }, [activeTab]);
   const menuItems = [
     {
       id: "ventas", label: "VENTAS", icon: (
@@ -106,25 +117,64 @@ const AdminDashboard = ({
         </div>
       </aside>
 
-      {/* CONTENIDO CENTRAL. Solo se monta en el DOM la pantalla activa (ahorro de RAM/CPU). */}
+      {/* CONTENIDO CENTRAL. Keep-alive perezoso: las pestañas visitadas
+          quedan montadas pero ocultas (no se pierde estado al navegar).
+          Cada módulo recibe `active` y decide si recarga o pausa (los
+          timers pesados ya respetan esa prop). */}
       <section className="flex-1 p-6 bg-white overflow-y-auto custom-scrollbar">
-        {activeTab === "inventario" && <Inventario activeTab={activeTab} />}
-        {activeTab === "ajustes" && (
-          <Configuracion
-            adminName={adminName}
-            storeName={storeName}
-            adminPass={adminPass}
-            initialLocation={initialLocation}
-            initialCp={initialCp}
-          />
+        <BatchProgressProvider>
+        {visited.includes("inventario") && (
+          <div className={activeTab === "inventario" ? "h-full" : "hidden"}>
+            <Inventario activeTab={activeTab} />
+          </div>
         )}
-        {activeTab === "tickets" && <Tickets active={activeTab === "tickets"} />}
-        {activeTab === "ventas" && <AdminVentas />}
-        {activeTab === "finanzas" && <AdminFinanzas />}
-        {activeTab === "clientes" && <AdminClientes />}
-        {activeTab === "empleados" && <AdminEmpleados activeTab={activeTab} />}
-        {activeTab === "parseador" && <Parseador />}
-        {activeTab === "yarvis" && <AdminYarvis active={activeTab === "yarvis"} />}
+        {visited.includes("ajustes") && (
+          <div className={activeTab === "ajustes" ? "h-full" : "hidden"}>
+            <Configuracion
+              adminName={adminName}
+              storeName={storeName}
+              adminPass={adminPass}
+              initialLocation={initialLocation}
+              initialCp={initialCp}
+            />
+          </div>
+        )}
+        {visited.includes("tickets") && (
+          <div className={activeTab === "tickets" ? "h-full" : "hidden"}>
+            <Tickets active={activeTab === "tickets"} />
+          </div>
+        )}
+        {visited.includes("ventas") && (
+          <div className={activeTab === "ventas" ? "h-full" : "hidden"}>
+            <AdminVentas />
+          </div>
+        )}
+        {visited.includes("finanzas") && (
+          <div className={activeTab === "finanzas" ? "h-full" : "hidden"}>
+            <AdminFinanzas active={activeTab === "finanzas"} />
+          </div>
+        )}
+        {visited.includes("clientes") && (
+          <div className={activeTab === "clientes" ? "h-full" : "hidden"}>
+            <AdminClientes />
+          </div>
+        )}
+        {visited.includes("empleados") && (
+          <div className={activeTab === "empleados" ? "h-full" : "hidden"}>
+            <AdminEmpleados activeTab={activeTab} />
+          </div>
+        )}
+        {visited.includes("parseador") && (
+          <div className={activeTab === "parseador" ? "h-full" : "hidden"}>
+            <Parseador />
+          </div>
+        )}
+        {visited.includes("yarvis") && (
+          <div className={activeTab === "yarvis" ? "h-full" : "hidden"}>
+            <AdminYarvis active={activeTab === "yarvis"} />
+          </div>
+        )}
+        </BatchProgressProvider>
       </section>
     </main>
   );

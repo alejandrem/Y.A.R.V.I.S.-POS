@@ -1,12 +1,16 @@
 // Shell del módulo Parseador: header + pastilla TICKETS/CORTES con slider negro.
 // Guarda el estado y el flujo completos de tickets; cortes es provisional.
 // El contenido de tickets vive en ./tickets y el de cortes en ./cortes.
-import { useCallback, useEffect, useRef, useState } from "react";
+//
+// El progreso del lote vive en BatchProgressProvider (montado en el
+// dashboard, fuera del árbol que se desmonta al cambiar de pestaña): si te
+// vas a Inventario a media importación y vuelves, ves el progreso real.
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { ArchivoTicket, BatchProgress, CatalogItem, DeteccionMapeo, Phase } from "./tickets/compartido";
+import type { ArchivoTicket, CatalogItem, DeteccionMapeo, Phase } from "./tickets/compartido";
 import { PasosGrid, errorMessage, normalizeCatalogItem } from "./tickets/compartido";
+import { useBatchProgress } from "./tickets/batchProgress";
 import Catalogo from "./tickets/catalogo";
 import Carpeta from "./tickets/carpeta";
 import Progreso from "./tickets/progreso";
@@ -31,17 +35,19 @@ const Parseador = () => {
   const [folderPath, setFolderPath] = useState("");
   const [ticketFiles, setTicketFiles] = useState<ArchivoTicket[]>([]);
   const [deteccion, setDeteccion] = useState<DeteccionMapeo | null>(null);
-  const [batch, setBatch] = useState<BatchProgress | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busyLocal, setBusyLocal] = useState(false);
   const [error, setError] = useState("");
-  const unlistenBatch = useRef<(() => void) | null>(null);
-
-  const cleanupListeners = useCallback(() => {
-    unlistenBatch.current?.();
-    unlistenBatch.current = null;
-  }, []);
-
-  useEffect(() => cleanupListeners, [cleanupListeners]);
+  // Progreso persistente (sobrevive al cambio de pestaña).
+  const batchCtx = useBatchProgress();
+  const batch = batchCtx.batch;
+  // Fase efectiva: mientras haya lote activo manda el provider.
+  const batchActive = batchCtx.phase !== "idle";
+  const effectivePhase: Phase = batchActive
+    ? (batchCtx.phase === "completo" ? "completo" : "procesando")
+    : phase;
+  // Ocupado local o lote ajeno en curso (evita doble importación).
+  const busy = busyLocal || batchCtx.phase === "procesando";
+  const shownError = error || batchCtx.error;
 
   const selectCatalog = async () => {
     setError("");
@@ -85,7 +91,7 @@ const Parseador = () => {
 
   const importCatalog = async () => {
     if (!catalogItems.length || !catalogPath) return;
-    setBusy(true);
+    setBusyLocal(true);
     setError("");
     try {
       await invoke("importar_catalogo", {
@@ -106,7 +112,7 @@ const Parseador = () => {
         setError(`No se pudo importar el catálogo: ${msg}`);
       }
     } finally {
-      setBusy(false);
+      setBusyLocal(false);
     }
   };
 
@@ -128,11 +134,14 @@ const Parseador = () => {
 
   const startFlow = async () => {
     if (!folderPath || !ticketFiles.length) return;
-    setBusy(true);
+    if (batchCtx.phase === "procesando") {
+      setError("Ya hay una importación en curso: termina antes de iniciar otra.");
+      return;
+    }
+    setBusyLocal(true);
     setError("");
+    batchCtx.clearBatchError();
     setDeteccion(null);
-    setBatch(null);
-    cleanupListeners();
 
     try {
       // 1. Detección ESTADÍSTICA del formato (sin IA): el mapeo queda
@@ -142,13 +151,17 @@ const Parseador = () => {
       setDeteccion(deteccionResult);
 
       // 2. Parseo del lote con ese mapeo (per-file fallback incluido en el
-      //    núcleo: archivos de otro formato se rescatan solos).
+      //    núcleo: archivos de otro formato se rescatan solos). El progreso
+      //    lo publica el provider: si cambias de pestaña y vuelves, sigue ahí.
+      if (!batchCtx.beginBatch({
+        carpeta: folderPath,
+        totalArchivos: ticketFiles.length,
+        deteccion: deteccionResult,
+      })) {
+        setError("Ya hay una importación en curso: termina antes de iniciar otra.");
+        return;
+      }
       setPhase("procesando");
-      let completeReceived = false;
-      unlistenBatch.current = await listen<BatchProgress>("batch-progress", (event) => {
-        setBatch(event.payload);
-        if (event.payload.type === "complete") completeReceived = true;
-      });
 
       const dbPath = await invoke<string>("get_db_path");
       await invoke("parsear_carpeta_stream", {
@@ -157,22 +170,24 @@ const Parseador = () => {
         dbPath,
       });
 
-      if (!completeReceived) {
-        await new Promise((resolve) => setTimeout(resolve, 700));
-      }
+      // El backend emite "complete" antes de resolver; esta espera cubre el
+      // retardo del evento por IPC (el listener vive en el provider).
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      batchCtx.completeBatch();
       setPhase("completo");
-      unlistenBatch.current?.();
-      unlistenBatch.current = null;
     } catch (flowError) {
-      setError(`No se pudo procesar: ${errorMessage(flowError)}`);
+      const msg = `No se pudo procesar: ${errorMessage(flowError)}`;
+      setError(msg);
+      batchCtx.failBatch(msg);
       setPhase("carpeta");
-      cleanupListeners();
     } finally {
-      setBusy(false);
+      setBusyLocal(false);
     }
   };
 
   const handlePhaseChange = (next: Phase) => {
+    // Al navegar se descarta el error heredado del provider (si lo hay).
+    batchCtx.clearBatchError();
     if (next === "catalogo") {
       setPhase("catalogo");
       setError("");
@@ -207,7 +222,7 @@ const Parseador = () => {
   };
 
   const reset = () => {
-    cleanupListeners();
+    batchCtx.resetBatch();
     setPhase("catalogo");
     setCatalogPath("");
     setCatalogContent("");
@@ -216,12 +231,14 @@ const Parseador = () => {
     setFolderPath("");
     setTicketFiles([]);
     setDeteccion(null);
-    setBatch(null);
     setError("");
   };
 
-  const batchTotal = batch?.total ?? batch?.total_archivos ?? ticketFiles.length;
+  const batchTotal = batch?.total ?? batch?.total_archivos ?? batchCtx.meta?.totalArchivos ?? ticketFiles.length;
   const batchPercent = batchTotal ? Math.min(100, Math.round(((batch?.procesados ?? 0) / batchTotal) * 100)) : 0;
+  // Detección para la pantalla final: la del lote activo (sobrevive al
+  // cambio de pestaña) o la local si aún no empezó el lote.
+  const deteccionEfectiva = batchCtx.meta?.deteccion ?? deteccion;
 
   return (
     <div className="max-w-5xl animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto w-full">
@@ -254,9 +271,9 @@ const Parseador = () => {
 
       {view === "tickets" ? (
         <>
-          {error && <div className="mb-6 rounded-2xl bg-red-50 border border-red-100 text-red-700 px-5 py-4 text-sm font-bold whitespace-pre-line">{error}</div>}
-          <PasosGrid phase={phase} onPhaseChange={handlePhaseChange} />
-          {phase === "catalogo" && (
+          {shownError && <div className="mb-6 rounded-2xl bg-red-50 border border-red-100 text-red-700 px-5 py-4 text-sm font-bold whitespace-pre-line">{shownError}</div>}
+          <PasosGrid phase={effectivePhase} onPhaseChange={handlePhaseChange} />
+          {effectivePhase === "catalogo" && (
             <>
               <Catalogo catalogPath={catalogPath} catalogItems={catalogItems} busy={busy} onSelectCatalog={selectCatalog} onImportCatalog={importCatalog} />
               <div className="mt-4 flex justify-center">
@@ -267,10 +284,10 @@ const Parseador = () => {
               <p className="text-center text-[10px] text-neutral-400 mt-2">Si subes 30 tickets sin catálogo, cada producto extraído (nombre, precio, cantidad vendida) se creará en inventario automáticamente.</p>
             </>
           )}
-          {phase === "carpeta" && <Carpeta folderPath={folderPath} ticketFiles={ticketFiles} busy={busy} catalogImported={catalogImported} onSelectFolder={selectFolder} onStartFlow={startFlow} />}
-          {phase === "procesando" && <Progreso batch={batch} batchTotal={batchTotal} batchPercent={batchPercent} />}
-          {phase === "completo" && <Completo batch={batch} ticketFiles={ticketFiles} deteccion={deteccion} onReset={reset} />}
-          {phase === "historial" && <Historial />}
+          {effectivePhase === "carpeta" && <Carpeta folderPath={folderPath} ticketFiles={ticketFiles} busy={busy} catalogImported={catalogImported} onSelectFolder={selectFolder} onStartFlow={startFlow} />}
+          {effectivePhase === "procesando" && <Progreso batch={batch} batchTotal={batchTotal} batchPercent={batchPercent} />}
+          {effectivePhase === "completo" && <Completo batch={batch} ticketFiles={ticketFiles} deteccion={deteccionEfectiva} onReset={reset} />}
+          {effectivePhase === "historial" && <Historial />}
         </>
       ) : (
         <Cortes />

@@ -70,38 +70,59 @@ const EmployeeDashboard = ({
   const [turno, setTurno] = useState<MiTurno | null>(null);
   const [ahora, setAhora] = useState(() => new Date());
 
+  // Keep-alive perezoso (igual que el admin): la venta a medias, el carrito
+  // y el chat sobreviven al cambio de pestaña. Solo se monta lo visitado.
+  const [visited, setVisited] = useState<string[]>(() => [activeTab]);
+  useEffect(() => {
+    setVisited((v) => (v.includes(activeTab) ? v : [...v, activeTab]));
+  }, [activeTab]);
+
   useEffect(() => {
     invoke<MiTurno>("get_mi_turno").then(setTurno).catch((e) => { console.error("Error al cargar turno:", e); notificarError("No se pudo cargar la información de tu turno", e); });
     const t = window.setInterval(() => setAhora(new Date()), 30000);
     return () => window.clearInterval(t);
   }, []);
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case "inventario":
-        return <Inventario activeTab={activeTab} />;
-      case "perfil":
-        return <Perfil activeTab={activeTab} operatorName={operatorName} />;
-      case "ajustes":
-        return <Ajustes operatorName={operatorName} />;
-      case "nueva_venta":
-        return <NuevaVenta activeTab={activeTab} />;
-      case "yarvis":
-        return <YarvisEmpleado active={true} />;
-      default:
-        return (
-          <div className="flex-1 flex items-center justify-center bg-white rounded-[2.5rem] border border-dashed border-neutral-200">
-            <div className="text-center py-16">
-              <div className="w-16 h-16 bg-neutral-950 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-lg">
-                <MorphIcon icon={employeeMenuItems.find((i) => i.id === activeTab)?.id === "yarvis" ? ICONO_AYUDA : ICONO_CAJA} size={24} strokeWidth={2} spring="smooth" className="text-white" />
-              </div>
-              <h3 className="text-base font-black text-neutral-900 uppercase tracking-tight">{employeeMenuItems.find(i => i.id === activeTab)?.label}</h3>
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-300 mt-2">Boceto pendiente de implementación</p>
+  const renderContent = () => (
+    <>
+      {visited.includes("inventario") && (
+        <div className="contents" style={activeTab === "inventario" ? undefined : { display: "none" }}>
+          <Inventario activeTab={activeTab} />
+        </div>
+      )}
+      {visited.includes("perfil") && (
+        <div className="contents" style={activeTab === "perfil" ? undefined : { display: "none" }}>
+          <Perfil activeTab={activeTab} operatorName={operatorName} />
+        </div>
+      )}
+      {visited.includes("ajustes") && (
+        <div className="contents" style={activeTab === "ajustes" ? undefined : { display: "none" }}>
+          <Ajustes operatorName={operatorName} />
+        </div>
+      )}
+      {visited.includes("nueva_venta") && (
+        <div className="contents" style={activeTab === "nueva_venta" ? undefined : { display: "none" }}>
+          <NuevaVenta activeTab={activeTab} />
+        </div>
+      )}
+      {visited.includes("yarvis") && (
+        <div className="contents" style={activeTab === "yarvis" ? undefined : { display: "none" }}>
+          <YarvisEmpleado active={activeTab === "yarvis"} />
+        </div>
+      )}
+      {!["inventario", "perfil", "ajustes", "nueva_venta", "yarvis"].includes(activeTab) && (
+        <div className="flex-1 flex items-center justify-center bg-white rounded-[2.5rem] border border-dashed border-neutral-200">
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-neutral-950 rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-lg">
+              <MorphIcon icon={employeeMenuItems.find((i) => i.id === activeTab)?.id === "yarvis" ? ICONO_AYUDA : ICONO_CAJA} size={24} strokeWidth={2.2} spring="smooth" className="text-white" />
             </div>
+            <h3 className="text-base font-black text-neutral-900 uppercase tracking-tight">{employeeMenuItems.find(i => i.id === activeTab)?.label}</h3>
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-300 mt-2">Boceto pendiente de implementación</p>
           </div>
-        );
-    }
-  };
+        </div>
+      )}
+    </>
+  );
 
   return (
     <main className="h-screen w-full flex bg-white font-sans text-neutral-800 animate-in fade-in duration-500 overflow-hidden">
