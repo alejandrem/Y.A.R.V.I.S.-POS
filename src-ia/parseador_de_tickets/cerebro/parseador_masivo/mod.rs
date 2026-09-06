@@ -17,7 +17,7 @@ mod items;
 mod procesador;
 mod resumen;
 
-pub use archivos::obtener_archivos_txt;
+pub use archivos::{obtener_archivos_txt, ordenar_archivos_cronologicamente};
 pub use procesador::{procesar_archivos, procesar_carpeta_impl};
 pub use resumen::{
     ArchivoResultado, EstadisticasCarpeta, ProductoNuevo, ResumenVenta, TicketFallido,
@@ -121,7 +121,15 @@ mod tests {
         sembrar_producto(&db, "TAZAS", 60.0, 0.0);
         sembrar_producto(&db, "PLATO", 80.0, 0.0);
         let a = escribir(&dir, "ticket1.txt", TICKET);
-        let b = escribir(&dir, "ticket2.txt", TICKET);
+        // Distinto día y distinto número de ticket: son dos ventas DISTINTAS
+        // (mismo contenido + misma fecha + sin folio = mismo ticket → hash).
+        let b = escribir(
+            &dir,
+            "ticket2.txt",
+            &TICKET
+                .replace("12/05/2026", "13/05/2026")
+                .replace("TICKET 1", "TICKET 2"),
+        );
 
         let stats = procesar_carpeta_impl(vec![a, b], mapeo(), db.clone());
 
@@ -154,7 +162,14 @@ mod tests {
         let dir = tmp_workspace("canal");
         let db = crear_bd(&dir);
         let a = escribir(&dir, "ticket1.txt", TICKET);
-        let b = escribir(&dir, "ticket2.txt", TICKET);
+        // Distinto día y distinto número de ticket: dos ventas DISTINTAS.
+        let b = escribir(
+            &dir,
+            "ticket2.txt",
+            &TICKET
+                .replace("12/05/2026", "13/05/2026")
+                .replace("TICKET 1", "TICKET 2"),
+        );
 
         let (tx, rx) = std::sync::mpsc::channel::<ArchivoResultado>();
         procesar_archivos(&[a, b], &mapeo(), &db, &tx);
@@ -313,6 +328,100 @@ Forma de pago: EFECTIVO
         // re-importación NO volvieron a descontar).
         assert_eq!(stock, 96.0, "el stock se descontó de más");
         assert_eq!(vendido, 4.0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reimportar_sin_folio_tampoco_duplica_gracias_al_hash() {
+        let dir = tmp_workspace("idempotente_sin_folio");
+        let db = crear_bd(&dir);
+        sembrar_producto(&db, "TAZAS", 60.0, 100.0);
+        // Sin FOLIO ni fecha: solo contenido. Antes esto se duplicaba.
+        let ticket = "2 TAZAS $60.00 $120.00\nTOTAL $120.00\n";
+        let a = escribir(&dir, "s1.txt", ticket);
+        let b = escribir(&dir, "s1_copia.txt", ticket);
+
+        // Misma corrida: la copia se omite por hash de contenido.
+        let stats1 = procesar_carpeta_impl(vec![a.clone(), b], mapeo(), db.clone());
+        assert_eq!(stats1.ventas_creadas, 1);
+        assert_eq!(stats1.ventas_omitidas, 1);
+
+        // Segunda corrida: re-importar no crea nada.
+        let stats2 = procesar_carpeta_impl(vec![a], mapeo(), db.clone());
+        assert_eq!(stats2.ventas_creadas, 0);
+        assert_eq!(stats2.ventas_omitidas, 1);
+        assert_eq!(stats2.errores, 0);
+        assert_eq!(contar(&db, "ventas"), 1);
+
+        // La clave guardada es el hash estable, no NULL (si fuera NULL la
+        // siguiente corrida no encontraría el ticket).
+        let conn = Connection::open(&db).unwrap();
+        let clave: String = conn
+            .query_row("SELECT folio_ticket FROM ventas", [], |r| r.get(0))
+            .unwrap();
+        assert!(clave.starts_with("SIN-FOLIO-"), "clave guardada: {clave}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn archivos_desordenados_se_insertan_en_orden_cronologico_con_auto_folio() {
+        let dir = tmp_workspace("cronologico");
+        let db = crear_bd(&dir);
+        sembrar_producto(&db, "TAZAS", 60.0, 100.0);
+        // Sin folio impreso, con fecha: el folio se genera de la fecha.
+        let ticket = |dia: &str| {
+            format!("{dia}/05/2026\n2 TAZAS $60.00 $120.00\nTOTAL $120.00\n")
+        };
+        // A propósito en desorden: día 14, 12 y 13.
+        let f14 = escribir(&dir, "c.txt", &ticket("14"));
+        let f12 = escribir(&dir, "a.txt", &ticket("12"));
+        let f13 = escribir(&dir, "b.txt", &ticket("13"));
+
+        let stats =
+            procesar_carpeta_impl(vec![f14, f12, f13], mapeo(), db.clone());
+        assert_eq!(stats.ventas_creadas, 3);
+
+        // Los IDs crecen en el orden en que se generaron los tickets.
+        let conn = Connection::open(&db).unwrap();
+        let fechas: Vec<String> = conn
+            .prepare("SELECT fecha FROM ventas ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            fechas,
+            vec![
+                "2026-05-12 00:00:00".to_string(),
+                "2026-05-13 00:00:00".to_string(),
+                "2026-05-14 00:00:00".to_string(),
+            ]
+        );
+        // Folios automáticos legibles y ordenables.
+        let folios: Vec<String> = conn
+            .prepare("SELECT folio_ticket FROM ventas ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert!(folios.iter().all(|f| f.starts_with("AUTO-202605")), "{folios:?}");
+        assert!(folios[0] < folios[1] && folios[1] < folios[2]);
+
+        // Re-importar en OTRO orden no crea nada (el AUTO-folio es estable).
+        let stats2 = procesar_carpeta_impl(
+            vec![
+                dir.join("b.txt").to_string_lossy().to_string(),
+                dir.join("a.txt").to_string_lossy().to_string(),
+            ],
+            mapeo(),
+            db.clone(),
+        );
+        assert_eq!(stats2.ventas_creadas, 0);
+        assert_eq!(stats2.ventas_omitidas, 2);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

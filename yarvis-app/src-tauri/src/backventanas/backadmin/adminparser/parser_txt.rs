@@ -188,19 +188,60 @@ pub fn detectar_mapeo_estadistico(
             "lineas_validas": d.lineas_validas,
             "archivos_muestra": archivos_muestra,
         })),
-        Some(d) => Err(format!(
-            "Formato detectable con baja confianza ({:.0}% de líneas cuadran). \
-             Esto suele pasar cuando la carpeta mezcla formatos distintos: \
-             prueba agrupando tickets de la misma impresora/época juntos.",
-            d.confianza * 100.0
-        )),
-        None => Err(
-            "No se pudo detectar el formato: ninguna estructura de columnas cuadra \
-             con cantidad × precio = total en las líneas de la carpeta. ¿Son tickets \
-             de venta con cantidad, precio y total por línea?"
-                .to_string(),
-        ),
+        Some(d) => {
+            let pct = (d.confianza * 100.0).round() as i64;
+            let minimo = (UMBRAL_CONFIANZA_MAPEO * 100.0).round() as i64;
+            Err(format!(
+                "Tus tickets parecen venir de más de un formato distinto: solo el {pct}% de los \
+                 renglones cuadran con un solo formato y necesitamos al menos {minimo}% \
+                 (revisamos {archivos_muestra} archivos).\n\n\
+                 Separa los tickets por tienda o impresora en carpetas distintas e importa cada \
+                 carpeta por separado. Si todos son de la misma tienda, quita fotos o archivos \
+                 que no sean tickets de venta."
+            ))
+        }
+        None => {
+            let diag = src_ia::cerebro::analizador_tickets::diagnosticar_muestra(&refs);
+            Err(mensaje_sin_formato(&diag, archivos_muestra))
+        }
     }
+}
+
+/// Explica en lenguaje normal por qué no se identificó el formato,
+/// con números de la muestra y el siguiente paso sugerido.
+fn mensaje_sin_formato(
+    diag: &src_ia::cerebro::analizador_tickets::DiagnosticoMuestra,
+    archivos_muestra: usize,
+) -> String {
+    if diag.lineas_utiles < 3 {
+        return format!(
+            "No encontramos renglones de productos en tus tickets (revisamos {archivos_muestra} \
+             archivos y solo vimos {} renglones con datos; necesitamos al menos 3).\n\n\
+             Revisa que la carpeta tenga tickets de venta en .txt con renglones tipo \
+             \"2 COCA 25.00 50.00\" (cantidad, producto, precio y total por renglón).",
+            diag.lineas_utiles
+        );
+    }
+    let pct = if diag.lineas_utiles > 0 {
+        (diag.mejor_coincidencia as f64 / diag.lineas_utiles as f64 * 100.0).round() as i64
+    } else {
+        0
+    };
+    let mut msg = format!(
+        "No pudimos identificar el formato de columnas de tus tickets: el mejor candidato solo \
+         explica {} de {} renglones ({pct}%).\n\n\
+         Para leerlos necesitamos renglones donde cantidad × precio ≈ total \
+         (ej. 2 × $25.00 = $50.00). Usa tickets de una sola tienda e impresora a la vez.",
+        diag.mejor_coincidencia, diag.lineas_utiles
+    );
+    if diag.pinta_familia_c {
+        msg.push_str(
+            "\n\nTus renglones traen un solo importe (cantidad + producto + total, sin precio \
+             unitario): para ese formato necesitamos ver los mismos productos repetidos varias \
+             veces al mismo precio. Agrega más tickets del mismo periodo e inténtalo de nuevo.",
+        );
+    }
+    msg
 }
 
 // ============================================================

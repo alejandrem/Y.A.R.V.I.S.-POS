@@ -58,15 +58,89 @@ impl TicketSegmento {
     pub fn texto(&self) -> String {
         self.lineas.join("\n")
     }
+
+    /// Clave de idempotencia del ticket, en 3 niveles de prioridad:
+    ///   1. Folio impreso (manda: es la identidad que dio la tienda).
+    ///   2. Fecha+hora → folio automático `AUTO-YYYYMMDD-HHMM-xxxxxx`
+    ///      (legible, ordenable cronológicamente y determinista: el mismo
+    ///      ticket re-importado genera el mismo folio).
+    ///   3. Sin fecha → `SIN-FOLIO-<hash>` del contenido.
+    ///
+    /// Antes, un ticket sin folio detectable NO se podía deduplicar y
+    /// re-importar la carpeta duplicaba ventas y descontaba stock dos
+    /// veces. Límite honesto: dos ventas DISTINTAS con mismo contenido,
+    /// misma fecha y sin folio colisionarían; el folio impreso sigue
+    /// siendo la identificación preferible.
+    pub fn clave(&self) -> String {
+        // 1. Folio impreso.
+        if let Some(f) = self.folio.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+            return f.to_string();
+        }
+        // Hash corto del contenido: distingue dos ventas del mismo minuto.
+        let hash_corto = format!("{:012x}", fnv1a64(&self.base_hash()) >> 16);
+        // 2. Folio automático desde fecha+hora ("2026-03-04 20:11:00" →
+        // "AUTO-20260304-2011-xxxxxx"). Ancho fijo: orden lexicográfico =
+        // orden cronológico.
+        if let Some(fh) = self.fecha_hora.as_deref() {
+            let digitos: String = fh.chars().filter(|c| c.is_ascii_digit()).collect();
+            if digitos.len() >= 12 {
+                return format!("AUTO-{}-{}-{hash_corto}", &digitos[..8], &digitos[8..12]);
+            }
+        }
+        // 3. Último recurso: hash del contenido (estable entre corridas).
+        format!("SIN-FOLIO-{:016x}", fnv1a64(&self.base_hash()))
+    }
+
+    /// Contenido normalizado para el hash: espacios colapsados + fecha.
+    /// Dos importaciones del mismo ticket dan la misma base (y por tanto
+    /// la misma clave); distinto contenido o distinta fecha, distinta clave.
+    fn base_hash(&self) -> String {
+        let normalizado: Vec<String> = self
+            .lineas
+            .iter()
+            .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect();
+        format!(
+            "{}|{}",
+            normalizado.join("\n"),
+            self.fecha_hora.as_deref().unwrap_or("")
+        )
+    }
 }
 
+/// Hash FNV-1a de 64 bits: estable entre corridas y procesos (a
+/// diferencia de `DefaultHasher`, que usa semilla aleatoria por proceso
+/// y NO sirve para deduplicar entre una corrida y la siguiente).
+pub fn fnv1a64(texto: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in texto.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Orden cronológico de segmentos para inserción: por fecha/hora (el
+/// formato ISO de ancho fijo hace que comparar strings = comparar
+/// tiempo), sin fecha al final, y por orden de archivo en empates.
+/// Pensado para `sort_by` (estable): los IDs de venta crecen en el orden
+/// en que se generaron los tickets.
+pub fn comparar_cronologico(a: &TicketSegmento, b: &TicketSegmento) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (&a.fecha_hora, &b.fecha_hora) {
+        (Some(x), Some(y)) => x.cmp(y).then(a.index.cmp(&b.index)),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => a.index.cmp(&b.index),
+    }
+}
 // ---------------------------------------------------------------------------
 // Detección de marcadores (solo se evalúa sobre líneas NO útiles)
 // ---------------------------------------------------------------------------
 
-/// Apertura: "FOLIO", "SERIE", "TICKET #"... o cualquier línea con fecha.
-static RE_APERTURA: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(?:folio|serie|ticket)\b").expect("regex apertura"));
+// NOTA: no hay regex de "palabras de apertura" por separado: la palabra
+// sola ("CONSERVE SU TICKET") abría tickets fantasma. La apertura REAL la
+// confirman `extraer_folio` / `tiene_fecha` en `es_apertura`.
 
 /// Cierre: la palabra TOTAL como encabezado. "SUBTOTAL" NO cierra: `\b`
 /// exige un límite de palabra, y dentro de "subtotal" no hay ningún límite
@@ -89,7 +163,22 @@ static RE_PAGO_FOOTER: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 fn es_apertura(linea: &str) -> bool {
-    tiene_fecha(linea) || RE_APERTURA.is_match(linea)
+    // La palabra sola ("CONSERVE SU TICKET") NO abre ticket: se exige
+    // folio extraíble o fecha real en la misma línea.
+    tiene_fecha(linea) || extraer_folio(linea).is_some()
+}
+
+/// Apertura "fuerte": la línea EMPIEZA con etiqueta de folio + valor
+/// ("Fol 3341 - 06/03/2026"). Estas líneas a veces parecen de producto
+/// (pocas columnas numéricas) y el filtro se las tragaría antes de que
+/// `es_apertura` las vea; por eso se evalúan SIN exigir que sean separador.
+/// Se exige etiqueta al INICIO para no partir tickets por productos que
+/// mencionen la palabra (ej. "RIFA TICKET 2024" a media línea).
+fn es_apertura_fuerte(linea: &str) -> bool {
+    static RE_INICIO: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^\s*(?:FOLIO|FOL|TICKET|SERIE|NOTA|RECIBO)\b").expect("regex inicio folio")
+    });
+    RE_INICIO.is_match(linea) && extraer_folio(linea).is_some()
 }
 
 fn es_cierre(linea: &str) -> bool {
@@ -101,15 +190,43 @@ fn es_cierre(linea: &str) -> bool {
 }
 
 /// Extrae el folio/número de ticket de una línea de apertura.
-/// "FOLIO: 004582" → "004582", "TICKET # A-123" → "A-123",
-/// "NO. TICKET: 0002" → "0002", "SERIE A-123" → "A-123".
-/// Una línea que solo trae fecha devuelve None (no hay folio).
+///
+/// Formatos reales soportados (verificados contra tickets mexicanos):
+/// "FOLIO: 004582", "FOLIO|55190", "FOLIO=88231", "FOLIO:2288",
+/// "Fol 3341", "FOL 00721", "TICKET #6650", "TICKET: A-004471",
+/// "TICKET NO. 1927", "NO. TICKET: 0002", "SERIE A-123", "NOTA 45".
+///
+/// Reglas:
+/// - Etiquetas: FOLIO, FOL, TICKET, SERIE, NOTA, RECIBO.
+/// - Separadores: `: . # | = -` y espacios (los tickets usan `|` y `=`
+///   cuando vienen de sistemas con campos delimitados).
+/// - Muletillas entre etiqueta y valor ("TICKET NO. 1927", "NOTA DE
+///   VENTA 12") se saltan; sin esto "TICKET NO. 1927" capturaba "NO".
+/// - El valor debe contener al menos un dígito: evita que "No.
+///   ARTICULOS: 8" (sin etiqueta válida igual) o "TICKET DE VENTA"
+///   produzcan folios basura, y que dos tickets distintos colisionen.
+/// - Una línea que solo trae fecha devuelve None (no hay folio).
 fn extraer_folio(linea: &str) -> Option<String> {
-    static RE_FOLIO: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)\b(?:FOLIO|NO\.?\s*TICKET|TICKET\s*#?|SERIE)\s*[:.#]?\s*([A-Za-z0-9\-]+)")
-            .expect("regex folio")
+    static RE_ETIQUETA: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)\b(?:FOLIO|FOL|TICKET|SERIE|NOTA|RECIBO)\b").expect("regex etiqueta folio")
     });
-    RE_FOLIO.captures(linea).map(|c| c[1].to_string())
+    // Separadores + muletillas al inicio del resto ("NO.", "NUM", "#"...).
+    // Sin `\b` global: `N°` termina en símbolo y el boundary fallaría.
+    // Solo `DE` lo conserva para no comerse folios tipo "DELTA-9".
+    static RE_RESTO: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"^(?:[\s:.\-#|=]|N°|NO\.?|NUM\.?(?:ERO)?|DE\b)+"#)
+            .expect("regex resto folio")
+    });
+    // Valor del folio: letras/dígitos/guiones (para en el primer
+    // espacio o `;`, así "FOLIO=88231;FECHA=..." da "88231").
+    static RE_VALOR: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"[A-Za-z0-9][A-Za-z0-9\-]*").expect("regex valor folio"));
+
+    let m = RE_ETIQUETA.find(linea)?;
+    let resto = RE_RESTO.replace(linea[m.end()..].trim_start(), "");
+    let valor = RE_VALOR.find(&resto).map(|v| v.as_str().to_string())?;
+    // Sin dígito no es folio ("TICKET DE VENTA", "NOTA IMPORTANTE"...).
+    valor.chars().any(|c| c.is_ascii_digit()).then_some(valor)
 }
 
 // ---------------------------------------------------------------------------
@@ -153,8 +270,10 @@ pub fn segmentar(texto: &str) -> Vec<TicketSegmento> {
 
     for linea in &lineas {
         let es_separador = !es_linea_util(linea);
+        // La apertura fuerte vale aunque la línea parezca de producto.
+        let abre_bloque = es_apertura_fuerte(linea) || (es_separador && es_apertura(linea));
 
-        if es_separador && es_apertura(linea) {
+        if abre_bloque {
             match actual.take() {
                 Some((bloque, folio, con_contenido)) if con_contenido => {
                     // Ya había productos en el bloque: se cierra y este
@@ -359,6 +478,55 @@ mod tests {
     }
 
     #[test]
+    fn extraer_folio_formatos_reales_de_tiendas() {
+        // Separadores `|` y `=` de sistemas con campos delimitados.
+        assert_eq!(extraer_folio("FOLIO|55190").as_deref(), Some("55190"));
+        assert_eq!(
+            extraer_folio("TIENDA=ABARROTES_LOPEZ;FOLIO=88231;FECHA=2026-03-09")
+                .as_deref(),
+            Some("88231")
+        );
+        // Abreviatura "FOL" con y sin dos puntos.
+        assert_eq!(
+            extraer_folio("Fol 3341 - 06/03/2026 08:55").as_deref(),
+            Some("3341")
+        );
+        assert_eq!(
+            extraer_folio("FOL 00721  07/03/26 12:30").as_deref(),
+            Some("00721")
+        );
+        assert_eq!(extraer_folio("FOLIO:2288 04/03/26 21:03").as_deref(), Some("2288"));
+        // La muletilla "NO." no se captura como folio (antes daba "NO").
+        assert_eq!(extraer_folio("TICKET NO. 1927").as_deref(), Some("1927"));
+        assert_eq!(extraer_folio("Ticket #6650").as_deref(), Some("6650"));
+        assert_eq!(
+            extraer_folio("TICKET: A-004471        10/03/2026").as_deref(),
+            Some("A-004471")
+        );
+        // Sin dígito no es folio: nada de folios basura ni colisiones.
+        assert_eq!(extraer_folio("CONSERVE SU TICKET"), None);
+        assert_eq!(extraer_folio("TICKET DE VENTA"), None);
+        assert_eq!(extraer_folio("No. ARTICULOS: 8"), None);
+        assert_eq!(extraer_folio("FOLIO:"), None);
+    }
+
+    #[test]
+    fn conserve_su_ticket_no_abre_segmento_fantasma() {
+        // "CONSERVE SU TICKET" trae la palabra ticket pero sin folio ni
+        // fecha: es pie, no un segundo ticket.
+        let texto = "TICKET: A-004471        10/03/2026  20:15:09\n\
+                     2 COCA $25.00 $50.00\n\
+                     TOTAL: 50.00\n\
+                     ================================================\n\
+                     CONSERVE SU TICKET\n\
+                     ================================================\n";
+        let segs = segmentar(texto);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].folio.as_deref(), Some("A-004471"));
+        assert!(segs[0].lineas.iter().any(|l| l.contains("CONSERVE")));
+    }
+
+    #[test]
     fn metodo_pago_se_extrae_de_cada_segmento() {
         let texto = "FOLIO: 1\n12/05/2026\n1 COCA $25.00 $25.00\nTOTAL $25.00\n\
                      METODO DE PAGO: TARJETA DEBITO\n\
@@ -369,5 +537,90 @@ mod tests {
         assert_eq!(segs.len(), 2);
         assert_eq!(segs[0].metodo_pago, "tarjeta");
         assert_eq!(segs[1].metodo_pago, "efectivo");
+    }
+
+    #[test]
+    fn clave_es_folio_si_hay_y_hash_estable_si_no() {
+        let con_folio = &segmentar("FOLIO: 9\n2 COCA $25.00 $50.00\nTOTAL $50.00\n")[0];
+        assert_eq!(con_folio.clave(), "9");
+
+        let a = &segmentar("2 COCA $25.00 $50.00\nTOTAL $50.00\n")[0];
+        let b = &segmentar("2 COCA $25.00 $50.00\nTOTAL $50.00\n")[0];
+        assert!(a.clave().starts_with("SIN-FOLIO-"));
+        // Estable entre corridas: mismo contenido → misma clave.
+        assert_eq!(a.clave(), b.clave());
+
+        // Contenido distinto → clave distinta (no se come ventas ajenas).
+        let c = &segmentar("3 COCA $25.00 $75.00\nTOTAL $75.00\n")[0];
+        assert_ne!(a.clave(), c.clave());
+    }
+
+    #[test]
+    fn clave_auto_desde_fecha_y_hora_es_legible_y_ordenable() {
+        let a = &segmentar("12/05/2026 14:30\n2 COCA $25.00 $50.00\nTOTAL $50.00\n")[0];
+        let b = &segmentar("12/05/2026 14:30\n2 COCA $25.00 $50.00\nTOTAL $50.00\n")[0];
+        assert!(
+            a.clave().starts_with("AUTO-20260512-1430-"),
+            "clave: {}",
+            a.clave()
+        );
+        // Determinista: re-importar da el mismo folio automático.
+        assert_eq!(a.clave(), b.clave());
+
+        // Distinto contenido el mismo minuto → distinto sufijo.
+        let c = &segmentar("12/05/2026 14:30\n3 COCA $25.00 $75.00\nTOTAL $75.00\n")[0];
+        assert_ne!(a.clave(), c.clave());
+
+        // Orden lexicográfico = orden cronológico (ancho fijo).
+        let d = &segmentar("13/05/2026 09:00\n2 COCA $25.00 $50.00\nTOTAL $50.00\n")[0];
+        assert!(a.clave() < d.clave());
+    }
+
+    #[test]
+    fn clave_prioriza_folio_impreso_sobre_fecha() {
+        let s = &segmentar("FOLIO: 7\n12/05/2026\n2 COCA $25.00 $50.00\nTOTAL $50.00\n")[0];
+        assert_eq!(s.clave(), "7");
+    }
+
+    #[test]
+    fn comparar_cronologico_ordena_y_manda_sin_fecha_al_final() {
+        let mut segs = segmentar(
+            "14/05/2026\n2 COCA $25.00 $50.00\nTOTAL $50.00\n\
+             12/05/2026\n1 PAN $10.00 $10.00\nTOTAL $10.00\n",
+        );
+        segs.sort_by(comparar_cronologico);
+        assert_eq!(segs[0].fecha_hora.as_deref(), Some("2026-05-12 00:00:00"));
+        assert_eq!(segs[1].fecha_hora.as_deref(), Some("2026-05-14 00:00:00"));
+
+        let mut mixtos = segmentar("2 COCA $25.00 $50.00\nTOTAL $50.00\n");
+        mixtos.extend(segmentar("12/05/2026\n1 PAN $10.00 $10.00\nTOTAL $10.00\n"));
+        mixtos.sort_by(comparar_cronologico);
+        assert!(mixtos[0].fecha_hora.is_some());
+        assert!(mixtos[1].fecha_hora.is_none());
+    }
+
+    #[test]
+    fn tickets_reales_fol_y_fecha_abreviada() {
+        // ticket_06: "Fol" sin dos puntos + productos de un solo importe.
+        let t06 = "*** MISCELANEA \"LAS DELICIAS\" ***\n\
+                   Fol 3341 - 06/03/2026 08:55\n\
+                   2x Coca 600         $36.00\n\
+                   1x Sabritas Original $18.50\n\
+                   TOTAL A PAGAR $129.50\n\
+                   Gracias - vuelva pronto\n";
+        let segs = segmentar(t06);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].folio.as_deref(), Some("3341"));
+        assert_eq!(segs[0].fecha_hora.as_deref(), Some("2026-03-06 08:55:00"));
+
+        // ticket_03: campos con `|` e ISO con hora pegada.
+        let t03 = "TIENDA|LA GUADALUPANA|SUC01\n\
+                   FOLIO|55190\n\
+                   FECHA|2026-03-04T20:11:03\n\
+                   TOTAL|220.70\n";
+        let segs = segmentar(t03);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].folio.as_deref(), Some("55190"));
+        assert_eq!(segs[0].fecha_hora.as_deref(), Some("2026-03-04 20:11:00"));
     }
 }

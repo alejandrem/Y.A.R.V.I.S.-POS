@@ -22,6 +22,9 @@ const MESES: &[(&str, &str)] = &[
     ("jan", "01"),
     ("feb", "02"),
     ("mar", "03"),
+    ("ene", "01"),
+    ("abr", "04"),
+    ("ago", "08"),
     ("apr", "04"),
     ("may", "05"),
     ("jun", "06"),
@@ -115,8 +118,13 @@ fn anio_desde_yy(yy: i32) -> i32 {
 // única fuente de fecha/hora del ticket)
 // ---------------------------------------------------------------------------
 
-static RE_FECHA_ISO: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(\d{4})-(\d{2})-(\d{2})\b").expect("regex fecha ISO"));
+static RE_FECHA_ISO: LazyLock<Regex> = LazyLock::new(|| {
+    // La hora puede venir pegada ("2026-03-04T20:11:03"), así que no se
+    // exige `\b` final (el crate `regex` no tiene look-ahead): se pide un
+    // caracter NO dígito o fin de línea, para no comerse el prefijo de un
+    // número más largo ("2026-03-04123" no matchea).
+    Regex::new(r"(?i)\b(\d{4})-(\d{2})-(\d{2})(?:[^0-9]|$)").expect("regex fecha ISO")
+});
 static RE_FECHA_SLASH: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(\d{1,2})/(\d{1,2})/(\d{2,4})\b").expect("regex fecha slash")
 });
@@ -137,8 +145,19 @@ static RE_FECHA_MES_PRIMERO: LazyLock<Regex> = LazyLock::new(|| {
     )
     .expect("regex fecha mes primero")
 });
+/// Día PRIMERO con mes abreviado: "05-mar-2026", "5 mar 26" (tickets de
+/// sistemas que imprimen el mes corto con guiones o espacios).
+static RE_FECHA_DIA_MES_ABREV: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b(\d{1,2})[\s\-.]+(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic|jan|feb|apr|aug|dec)\.?[\s\-.]+(\d{2,4})\b",
+    )
+    .expect("regex fecha dia mes abreviado")
+});
 static RE_HORA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?\b").expect("regex hora")
+    // La `T` de "2026-03-04T20:11:03" cuenta como inicio válido: con `\b`
+    // solo, "20" no matcheaba (T y 2 son word-chars) y se pescaba "11:03".
+    Regex::new(r"(?:\b|T)(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?\b")
+        .expect("regex hora")
 });
 
 /// Busca fecha y hora en el texto del ticket usando regex.
@@ -197,6 +216,21 @@ pub fn extraer_fecha_hora_regex(texto: &str) -> (Option<String>, Option<String>)
                         c[3].parse().unwrap_or(0),
                     );
                 }
+            } else if let Some(c) = RE_FECHA_DIA_MES_ABREV.captures(linea) {
+                // "05-mar-2026" / "5 mar 26" (día primero, mes abreviado).
+                if let Some(mes) = mes_numero(&c[2]) {
+                    let anio: i32 = c[3].parse().unwrap_or(0);
+                    let anio = if c[3].len() == 4 {
+                        anio
+                    } else {
+                        anio_desde_yy(anio)
+                    };
+                    fecha_encontrada = fecha(
+                        c[1].parse().unwrap_or(0),
+                        mes.parse().unwrap_or(0),
+                        anio,
+                    );
+                }
             }
         }
 
@@ -232,7 +266,7 @@ pub fn extraer_fecha_hora_regex(texto: &str) -> (Option<String>, Option<String>)
 }
 
 /// True si la línea contiene una fecha reconocible (ISO, DD/MM/YYYY,
-/// DD-MM-YYYY o "15 de marzo de 2024"). Usada por el segmentador para
+/// DD-MM-YYYY, "15 de marzo de 2024" o "05-mar-2026"). Usada por el segmentador para
 /// detectar el encabezado de un ticket nuevo. NO valida rangos (el
 /// segmentador solo necesita saber si "huele" a fecha).
 pub fn tiene_fecha(linea: &str) -> bool {
@@ -241,6 +275,7 @@ pub fn tiene_fecha(linea: &str) -> bool {
         || RE_FECHA_GUION.is_match(linea)
         || RE_FECHA_MES.is_match(linea)
         || RE_FECHA_MES_PRIMERO.is_match(linea)
+        || RE_FECHA_DIA_MES_ABREV.is_match(linea)
 }
 
 #[cfg(test)]
@@ -290,6 +325,15 @@ mod tests {
         assert_eq!(f.as_deref(), Some("2024-03-15"));
         let (f, _) = extraer_fecha_hora_regex("Ventas\nDec 3, 2023\nTOTAL $1.00");
         assert_eq!(f.as_deref(), Some("2023-12-03"));
+    }
+
+    #[test]
+    fn fecha_dia_primero_mes_abreviado() {
+        let (f, _) = extraer_fecha_hora_regex("Ticket: 000913            Fecha: 05-mar-2026");
+        assert_eq!(f.as_deref(), Some("2026-03-05"));
+        let (f, _) = extraer_fecha_hora_regex("5 mar 26");
+        assert_eq!(f.as_deref(), Some("2026-03-05"));
+        assert!(tiene_fecha("Fecha: 05-mar-2026"));
     }
 
     #[test]

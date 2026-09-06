@@ -34,6 +34,20 @@ pub async fn get_tickets(
     Ok(tickets)
 }
 
+/// Total de ventas en la DB (el historial pagina: `get_tickets` trae los
+/// 500 más recientes; esto dice cuántos hay en realidad).
+#[tauri::command]
+pub async fn get_tickets_total(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<i64, String> {
+    auth.require_admin()?;
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ventas")
+        .fetch_one(&*state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn get_cortes(
     state: tauri::State<'_, SqlitePool>,

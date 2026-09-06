@@ -22,13 +22,13 @@ mod parser;
 mod segmentador;
 mod totales;
 
-pub use detector::{detectar_mapeo, DeteccionMapeo};
+pub use detector::{detectar_mapeo, diagnosticar_muestra, DeteccionMapeo, DiagnosticoMuestra};
 pub use encabezado::extraer_cajero;
 pub use esquema::{resolver_indice, Item, MapeoColumnas};
 pub use fechas::{extraer_fecha_hora_regex, tiene_fecha};
 pub use pagos::extraer_metodo_pago;
 pub use parser::{es_linea_util, limpiar_precio, parsear_linea, PRECIO_MAXIMO};
-pub use segmentador::{segmentar, TicketSegmento};
+pub use segmentador::{comparar_cronologico, fnv1a64, segmentar, TicketSegmento};
 pub use totales::{extraer_totales, TotalesTicket};
 
 #[cfg(test)]

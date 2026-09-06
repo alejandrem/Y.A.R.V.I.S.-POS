@@ -4,6 +4,7 @@ license = "GPL-3.0-or-later"
 # Los tests de integración se declaran explícitos abajo: los módulos hermanos
 # de `estres` (soporte/fuzzing/masivo) NO deben autodescubrirse como targets.
 autotests = false
+autoexamples = false
 version = "0.1.0"
 edition = "2021"
 description = "Núcleo de IA en Rust (migración desde yarvis-IA). Port de parseador, RAG, profeta y chat."
@@ -40,6 +41,18 @@ opt-level = 1
 [[test]]
 name = "estres"
 path = "tests/estres.rs"
+
+# Diagnóstico manual del detector contra carpetas reales (no CI).
+# Uso: cargo run --example dbg -- "/ruta/a/tickets"
+[[example]]
+name = "dbg"
+path = "examples/dbg.rs"
+
+# Prueba de carga del pipeline real (genera N tickets y mide).
+# Uso: cargo run --release --example bench1000 -- [N]
+[[example]]
+name = "bench1000"
+path = "examples/bench1000.rs"
 
 [[test]]
 name = "test_chat_1_7_real"

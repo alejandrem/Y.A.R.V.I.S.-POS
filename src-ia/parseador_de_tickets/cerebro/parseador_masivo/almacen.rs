@@ -144,8 +144,10 @@ pub(super) fn cargar_productos_por_nombre(conn: &Connection) -> HashMap<String, 
         .collect()
 }
 
-/// Precarga los folios de tickets YA importados (`ventas.folio_ticket`).
-/// Idempotencia de la importación masiva: un segmento con folio conocido se
+/// Precarga las claves de tickets YA importados (`ventas.folio_ticket`).
+/// La clave es el folio impreso o, si el ticket no trae folio detectable,
+/// un hash estable `SIN-FOLIO-…` de su contenido (ver `TicketSegmento::clave`).
+/// Idempotencia de la importación masiva: un segmento con clave conocida se
 /// omite por completo, así re-correr la misma carpeta no duplica ventas ni
 /// vuelve a descontar stock. Requiere `garantizar_columna_folio` ya corrido.
 pub(super) fn cargar_folios_existentes(conn: &Connection) -> HashSet<String> {

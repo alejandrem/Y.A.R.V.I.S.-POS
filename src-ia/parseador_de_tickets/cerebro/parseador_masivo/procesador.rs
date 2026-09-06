@@ -6,13 +6,14 @@ use super::almacen::{
     cargar_estado, cargar_folios_existentes, cargar_productos_por_nombre,
     garantizar_columna_folio, insertar_venta,
 };
-use super::archivos::{leer_archivo_tolerante, nombre_de_archivo};
+use super::archivos::{leer_archivo_tolerante, nombre_de_archivo, ordenar_archivos_cronologicamente};
 use super::items::{a_centavos, resolver_totales_venta};
 use super::resumen::{
     ArchivoResultado, EstadisticasCarpeta, ProductoNuevo, ResumenVenta, TicketFallido,
 };
 use crate::cerebro::analizador_tickets::{
-    detectar_mapeo, extraer_totales, parsear_linea, segmentar, Item, MapeoColumnas,
+    comparar_cronologico, detectar_mapeo, extraer_totales, parsear_linea, segmentar, Item,
+    MapeoColumnas,
 };
 use crate::embeddings::Embedder;
 
@@ -22,12 +23,16 @@ pub fn procesar_archivos(
     db_path: &str,
     tx: &Sender<ArchivoResultado>,
 ) {
+    // Orden cronológico de inserción: los IDs de venta crecen en el orden
+    // en que se generaron los tickets (folio → fecha → hora manda en la
+    // clave; aquí manda la fecha mínima de cada archivo).
+    let archivos = ordenar_archivos_cronologicamente(archivos.to_vec());
     let mut productos_vistos = cargar_estado(db_path);
 
     let conn = match Connection::open(db_path) {
         Ok(c) => c,
         Err(e) => {
-            for archivo in archivos {
+    for archivo in &archivos {
                 let mut res = ArchivoResultado::info(
                     false,
                     Some(format!("no se pudo abrir la base de datos: {e}")),
@@ -43,12 +48,13 @@ pub fn procesar_archivos(
     let productos_por_nombre = cargar_productos_por_nombre(&conn);
     // Cache para fuzzy matching (evita fantasmas tipo "ACEITE" vs "ACEITE 123 1L")
     let inventario_fuzzy = crate::cerebro::vinculador_inventario::cargar_inventario_cache(&conn);
-    // Idempotencia: folios YA importados (de corridas anteriores). Un ticket
-    // con folio conocido se omite entero: re-importar la misma carpeta ya no
-    // duplica ventas, ni vuelve a descontar stock.
+    // Idempotencia: claves YA importadas (folios de corridas anteriores o
+    // hashes SIN-FOLIO de tickets sin folio). Un ticket con clave conocida
+    // se omite entero: re-importar la misma carpeta ya no duplica ventas,
+    // ni vuelve a descontar stock.
     let mut folios_importados = cargar_folios_existentes(&conn);
 
-    for archivo in archivos {
+    for archivo in &archivos {
         let nombre_archivo = nombre_de_archivo(archivo);
 
         let texto = match leer_archivo_tolerante(archivo) {
@@ -87,7 +93,10 @@ pub fn procesar_archivos(
             .unwrap_or(0);
 
         // Un archivo puede traer N tickets concatenados → N ventas.
-        let segmentos = segmentar(&texto);
+        // Se ordenan cronológicamente (los sin fecha al final) para que
+        // los IDs crezcan en el orden en que se generaron.
+        let mut segmentos = segmentar(&texto);
+        segmentos.sort_by(comparar_cronologico);
 
         // MAPEO POR ARCHIVO (red de seguridad para carpetas con formatos
         // mezclados): si el mapeo general NO reconoce este archivo —otra
@@ -148,14 +157,15 @@ pub fn procesar_archivos(
         let mut error_db: Option<String> = None;
 
         for segmento in &segmentos {
-            // Folio ya importado (esta u otra corrida): se omite el ticket
+            // Clave ya importada (esta u otra corrida): se omite el ticket
             // ENTERO — sin parseo de items, sin productos, sin venta, sin
             // tocar stock. La venta ya existe con sus mismos efectos.
-            if let Some(folio) = segmento.folio.as_deref() {
-                if folios_importados.contains(folio.trim()) {
-                    omitidas_totales += 1;
-                    continue;
-                }
+            // Sin folio impreso la clave es un hash estable del contenido,
+            // así que re-importar también deduplica esos tickets.
+            let clave = segmento.clave();
+            if folios_importados.contains(&clave) {
+                omitidas_totales += 1;
+                continue;
             }
 
             let mut items: Vec<Item> = Vec::new();
@@ -260,18 +270,20 @@ pub fn procesar_archivos(
                 &segmento.cajero,
                 segmento.fecha_hora.as_deref(),
                 &segmento.metodo_pago,
-                segmento.folio.as_deref(),
+                // Se guarda la CLAVE (folio impreso, AUTO-fecha u hash
+                // SIN-FOLIO), no el folio crudo: así la siguiente corrida
+                // encuentra el ticket aunque no traiga folio impreso.
+                Some(clave.as_str()),
                 subtotal,
                 iva,
                 total,
                 &productos_por_nombre,
             ) {
                 Ok(venta_id) => {
-                    // Registrar el folio: dos archivos con el mismo ticket en
-                    // la MISMA corrida tampoco se duplican entre sí.
-                    if let Some(folio) = segmento.folio.as_deref() {
-                        folios_importados.insert(folio.trim().to_string());
-                    }
+                    // Registrar la clave: dos archivos con el mismo ticket en
+                    // la MISMA corrida tampoco se duplican entre sí (con o
+                    // sin folio impreso).
+                    folios_importados.insert(clave.clone());
                     items_totales += items.len();
                     duplicados_totales += duplicados;
                     existentes_totales += existentes;
@@ -281,7 +293,9 @@ pub fn procesar_archivos(
                         venta_id: Some(venta_id),
                         items: items.len(),
                         total,
-                        folio: segmento.folio.clone(),
+                        // La clave visible (el AUTO-folio cuenta la historia
+                        // aunque el ticket no trajera folio impreso).
+                        folio: Some(clave),
                         fecha_hora: segmento.fecha_hora.clone(),
                     });
                     nuevos_archivo.append(&mut nuevos_seg);

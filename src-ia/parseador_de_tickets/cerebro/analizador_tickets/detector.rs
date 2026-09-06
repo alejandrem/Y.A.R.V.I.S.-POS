@@ -44,10 +44,11 @@ use super::es_linea_util;
 #[derive(Debug, Clone, Serialize)]
 pub struct DeteccionMapeo {
     pub mapeo: MapeoColumnas,
-    /// Fracción de líneas de la muestra cuya ecuación cuadró con el
-    /// mapeo ganador (0.0..=1.0).
+    /// Fracción de líneas que cuadraron con el mapeo ganador (0.0..=1.0).
+    /// En familia C (un solo importe) el denominador son solo las líneas
+    /// de productos repetidos —las únicas observables— no toda la muestra.
     pub confianza: f64,
-    /// Líneas útiles con ≥3 columnas consideradas en la muestra.
+    /// Líneas consideradas (toda la muestra, o solo repetidas en familia C).
     pub lineas_evaluadas: usize,
     /// Líneas donde la hipótesis ganadora cuadró la ecuación.
     pub lineas_validas: usize,
@@ -86,20 +87,28 @@ fn es_ruido_permitido(token: &str) -> bool {
 ///             en contra.
 /// - `Some(true)`  → CUADRA: cant×precio(−descuento) ≈ total y TODA la
 ///                   línea queda explicada (regla de cobertura).
+///                 Para la familia C (un solo importe) CUADRA significa
+///                 "estructura sana"; la matemática la valida después la
+///                   consistencia de precios entre productos repetidos.
 /// - `Some(false)` → evaluable pero NO cuadra: en contra.
 fn linea_cuadra(
     cols: &[String],
     cant_i: i32,
-    precio_i: i32,
+    precio_i: Option<i32>,
     total_i: i32,
     producto: &(i32, i32),
 ) -> Option<bool> {
     let n = cols.len();
     let ci = resolver_indice(Some(cant_i), n)?;
-    let pi = resolver_indice(Some(precio_i), n)?;
+    let pi = resolver_indice(precio_i, n);
     let ti = resolver_indice(Some(total_i), n)?;
-    if ci == pi || ci == ti || pi == ti {
+    if ci == ti {
         return None;
+    }
+    if let Some(pi) = pi {
+        if ci == pi || pi == ti {
+            return None;
+        }
     }
 
     // Rango del producto
@@ -109,7 +118,9 @@ fn linea_cuadra(
         return None;
     }
     let rango_producto: Vec<usize> = (p_ini..=p_fin).collect();
-    if rango_producto.contains(&ci) || rango_producto.contains(&pi) || rango_producto.contains(&ti)
+    if rango_producto.contains(&ci)
+        || rango_producto.contains(&ti)
+        || pi.is_some_and(|pi| rango_producto.contains(&pi))
     {
         return None;
     }
@@ -124,7 +135,7 @@ fn linea_cuadra(
 
     // Cobertura: ninguna columna sin explicar.
     for (i, token) in cols.iter().enumerate() {
-        if i == ci || i == pi || i == ti || rango_producto.contains(&i) {
+        if i == ci || i == ti || pi == Some(i) || rango_producto.contains(&i) {
             continue;
         }
         if !es_ruido_permitido(token) {
@@ -137,13 +148,21 @@ fn linea_cuadra(
     } else {
         return None;
     };
-    let precio = if es_token_numero(&cols[pi]) {
-        limpiar_precio(&cols[pi])
+    let total = if es_token_numero(&cols[ti]) {
+        limpiar_precio(&cols[ti])
     } else {
         return None;
     };
-    let total = if es_token_numero(&cols[ti]) {
-        limpiar_precio(&cols[ti])
+
+    // Familia C: UN solo importe ("CANT PRODUCTO IMPORTE"). No hay precio
+    // unitario que multiplicar: la línea cuadra si la estructura es sana y
+    // la confianza REAL la da la consistencia de precios entre tickets.
+    let Some(pi) = pi else {
+        return Some(cantidad > 0.0 && cantidad <= CANTIDAD_MAXIMA && total > 0.0);
+    };
+
+    let precio = if es_token_numero(&cols[pi]) {
+        limpiar_precio(&cols[pi])
     } else {
         return None;
     };
@@ -183,11 +202,121 @@ fn linea_cuadra(
     Some(false)
 }
 
-/// Detecta estadísticamente el mapeo de columnas de un conjunto de líneas
-/// de tickets. Devuelve `None` si la muestra es muy chica o ninguna
-/// hipótesis cuadra (formato de un solo importe, texto libre, etc.).
-pub fn detectar_mapeo(lineas: &[&str]) -> Option<DeteccionMapeo> {
-    let muestras: Vec<Vec<String>> = lineas
+// ---------------------------------------------------------------------------
+// Familia C: validación por CONSISTENCIA DE PRECIO UNITARIO
+//
+// En el formato "CANT PRODUCTO IMPORTE" no hay precio por línea que
+// multiplicar: la única fuente de verdad es que el MISMO producto cobra
+// (casi) siempre el mismo precio unitario. Sobre un lote de meses los
+// productos se repiten cientos de veces, así que esta señal es FUERTE.
+//
+// Se tolera el historial de precios (el plátano pudo subir de $22 a $25):
+// por producto se toma el precio DOMINANTE y se cuentan como sólidas solo
+// las líneas a +-3% de él. Con todo eso, solo aceptamos la familia C si:
+//   * hay suficientes líneas observables (productos que se repiten),
+//   * ≥ 60% de esas líneas son consistentes con el precio dominante.
+// ---------------------------------------------------------------------------
+
+const MIN_REPETIDAS_C: usize = 5;
+const MIN_FRACCION_CONSISTENTE_C: f64 = 0.6;
+
+/// Evidencia de familia C: líneas observables (de productos repetidos,
+/// las únicas que pueden validar precio) y cuántas son consistentes.
+struct EvidenciaC {
+    repetidas: usize,
+    consistentes: usize,
+}
+
+/// Valida la familia C por CONSISTENCIA DE PRECIO UNITARIO y devuelve la
+/// evidencia; None si es demasiado débil para confiar (pocos repetidos o
+/// fracción consistente < 60%).
+fn consistencia_familia_c(
+    muestras: &[Vec<String>],
+    cant_i: i32,
+    total_i: i32,
+    producto: &(i32, i32),
+) -> Option<EvidenciaC> {
+    // Clave: producto (upper) → lista de precios unitarios observados.
+    let mut por_producto: std::collections::HashMap<String, Vec<f64>> =
+        std::collections::HashMap::new();
+
+    for cols in muestras {
+        if linea_cuadra(cols, cant_i, None, total_i, producto) != Some(true) {
+            continue;
+        }
+        let n = cols.len();
+        let ci = resolver_indice(Some(cant_i), n)?;
+        let ti = resolver_indice(Some(total_i), n)?;
+        let p_ini = resolver_indice(Some(producto.0), n)?;
+        let p_fin = resolver_indice(Some(producto.1), n)?;
+        if p_fin < p_ini {
+            continue;
+        }
+        let cantidad = limpiar_precio(&cols[ci]);
+        let total = limpiar_precio(&cols[ti]);
+        if cantidad <= 0.0 {
+            continue;
+        }
+        let clave = cols[p_ini..=p_fin].join(" ").to_uppercase();
+        por_producto
+            .entry(clave)
+            .or_default()
+            .push(total / cantidad);
+    }
+
+    let mut repetidas = 0usize;
+    let mut consistentes = 0usize;
+    for precios in por_producto.values() {
+        if precios.len() < 2 {
+            continue;
+        }
+        repetidas += precios.len();
+        // Precio dominante: el cubo de 2 decimales con más líneas.
+        let mut cubos: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for p in precios {
+            *cubos.entry(format!("{p:.2}")).or_default() += 1;
+        }
+        let dominante: f64 = cubos
+            .iter()
+            .max_by_key(|(_, c)| *c)
+            .map(|(k, _)| k.parse().unwrap_or(0.0))
+            .unwrap_or(0.0);
+        consistentes += precios
+            .iter()
+            .filter(|p| {
+                let dif = (*p - dominante).abs();
+                dif <= 0.05_f64.max(dominante.abs() * 0.03)
+            })
+            .count();
+    }
+
+    if repetidas < MIN_REPETIDAS_C {
+        return None;
+    }
+    let fraccion = consistentes as f64 / repetidas as f64;
+    (fraccion >= MIN_FRACCION_CONSISTENTE_C).then_some(EvidenciaC {
+        repetidas,
+        consistentes,
+    })
+}
+
+/// Diagnóstico de la muestra para mensajes de error accionables (sin IA).
+/// Cuando `detectar_mapeo` devuelve `None` o confianza baja, esto dice
+/// QUÉ vio el detector, para explicárselo al usuario en su idioma.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiagnosticoMuestra {
+    /// Líneas útiles con ≥3 columnas encontradas en la muestra.
+    pub lineas_utiles: usize,
+    /// Líneas que el MEJOR mapeo con precio logró cuadrar.
+    pub mejor_coincidencia: usize,
+    /// Hay renglones con pinta de familia C (un solo importe por línea):
+    /// el problema puede ser falta de productos repetidos, no de formato.
+    pub pinta_familia_c: bool,
+}
+
+fn muestrear(lineas: &[&str]) -> Vec<Vec<String>> {
+    lineas
         .iter()
         .map(|l| l.trim())
         .filter(|l| es_linea_util(l))
@@ -196,16 +325,53 @@ pub fn detectar_mapeo(lineas: &[&str]) -> Option<DeteccionMapeo> {
         .map(|l| l.split_whitespace().map(String::from).collect::<Vec<_>>())
         // Sin ≥3 columnas no hay (cantidad, producto, ≥1 importe) detectable.
         .filter(|cols| cols.len() >= 3)
-        .collect();
+        .collect()
+}
+
+/// Explica por qué una muestra no dio un mapeo confiable. Barato: reusa
+/// las mismas hipótesis sobre la muestra ya filtrada.
+pub fn diagnosticar_muestra(lineas: &[&str]) -> DiagnosticoMuestra {
+    let muestras = muestrear(lineas);
+    let mut mejor = 0usize;
+    let mut mejor_c = 0usize;
+    for (cant_i, precio_i, total_i, producto) in hipotesis() {
+        let validas = muestras
+            .iter()
+            .filter(|cols| linea_cuadra(cols, cant_i, precio_i, total_i, &producto) == Some(true))
+            .count();
+        if precio_i.is_some() {
+            mejor = mejor.max(validas);
+        } else {
+            mejor_c = mejor_c.max(validas);
+        }
+    }
+    DiagnosticoMuestra {
+        lineas_utiles: muestras.len(),
+        mejor_coincidencia: mejor,
+        pinta_familia_c: mejor_c >= MIN_VALIDAS,
+    }
+}
+
+/// Detecta estadísticamente el mapeo de columnas de un conjunto de líneas
+/// de tickets. Devuelve `None` si la muestra es muy chica o ninguna
+/// hipótesis cuadra (formato de un solo importe sin repetidos, texto
+/// libre, etc.). Para saber POR QUÉ falló, ver `diagnosticar_muestra`.
+pub fn detectar_mapeo(lineas: &[&str]) -> Option<DeteccionMapeo> {
+    let muestras = muestrear(lineas);
 
     if muestras.len() < MIN_LINEAS_MUESTRA {
         return None;
     }
 
-    // Recorre todas las hipótesis y se queda con la que MÁS líneas cuadra
-    // (en empate gana la primera, que es el formato más dominante según
-    // el orden de `hipotesis()`).
-    let mut mejor: Option<(usize, i32, i32, i32, (i32, i32))> = None;
+    // Recorre todas las hipótesis y se queda con la que MÁS líneas cuadra.
+    // Desempate: las hipótesis CON columna de precio (donde la ecuación es
+    // verificable línea a línea) ganan sobre la familia C (un solo importe,
+    // validada solo por consistencia entre tickets).
+    //
+    // La confianza sale del denominador correcto de cada familia: en la A/B
+    // es cuadradas/muestra; en la C es consistentes/repetidas (los productos
+    // que aparecen una sola vez no son observables: ni confirman ni niegan).
+    let mut mejor: Option<(usize, usize, bool, i32, Option<i32>, i32, (i32, i32))> = None;
     for (cant_i, precio_i, total_i, producto) in hipotesis() {
         let mut validas = 0usize;
         for cols in &muestras {
@@ -213,27 +379,47 @@ pub fn detectar_mapeo(lineas: &[&str]) -> Option<DeteccionMapeo> {
                 validas += 1;
             }
         }
-        if validas >= MIN_VALIDAS
-            && mejor
-                .as_ref()
-                .map(|(v, _, _, _, _)| validas > *v)
-                .unwrap_or(true)
-        {
-            mejor = Some((validas, cant_i, precio_i, total_i, producto));
+        if validas < MIN_VALIDAS {
+            continue;
+        }
+        // Denominador de la confianza (toda la muestra, salvo familia C).
+        let mut evaluadas = muestras.len();
+        if precio_i.is_none() {
+            // Familia C: estructura no basta; exigimos consistencia de
+            // precios entre productos repetidos como validación matemática.
+            let Some(ev) = consistencia_familia_c(&muestras, cant_i, total_i, &producto)
+            else {
+                continue;
+            };
+            validas = ev.consistentes;
+            evaluadas = ev.repetidas;
+            if validas < MIN_VALIDAS {
+                continue;
+            }
+        }
+        let tiene_precio = precio_i.is_some();
+        let es_mejor = match &mejor {
+            None => true,
+            Some((v, _, tp, _, _, _, _)) => {
+                validas > *v || (validas == *v && tiene_precio && !*tp)
+            }
+        };
+        if es_mejor {
+            mejor = Some((validas, evaluadas, tiene_precio, cant_i, precio_i, total_i, producto));
         }
     }
-    let (validas, cant_i, precio_i, total_i, producto) = mejor?;
+    let (validas, evaluadas, _tiene_precio, cant_i, precio_i, total_i, producto) = mejor?;
 
     Some(DeteccionMapeo {
         mapeo: MapeoColumnas {
             cantidad: Some(cant_i),
             producto: Some(vec![producto.0, producto.1]),
-            precio_unitario: Some(precio_i),
+            precio_unitario: precio_i,
             total: Some(total_i),
             descuento: None,
         },
-        confianza: (validas as f64 / muestras.len() as f64 * 1000.0).round() / 1000.0,
-        lineas_evaluadas: muestras.len(),
+        confianza: (validas as f64 / evaluadas as f64 * 1000.0).round() / 1000.0,
+        lineas_evaluadas: evaluadas,
         lineas_validas: validas,
     })
 }
@@ -244,21 +430,28 @@ pub fn detectar_mapeo(lineas: &[&str]) -> Option<DeteccionMapeo> {
 /// "COCA 2 25 50" y "FANTA NARANJA 600ML 2 15 30" comparten cantidad=-3.
 const CANDIDATOS_CANTIDAD_A: &[i32] = &[0, 1, 2, -3, -4];
 const CANDIDATOS_CANTIDAD_B: &[i32] = &[-3, -4, -5, 1, 2, 3];
+/// Familia C (un solo importe): "CANT PRODUCTO IMPORTE".
+const CANDIDATOS_CANTIDAD_C: &[i32] = &[0, 1];
 
-/// Genera todas las hipótesis viables, las dos familias incluidas.
-/// Devuelve (cant_i, precio_i, total_i, (prod_ini, prod_fin)).
-fn hipotesis() -> Vec<(i32, i32, i32, (i32, i32))> {
+/// Genera todas las hipótesis viables, las TRES familias incluidas.
+/// Devuelve (cant_i, precio_i, total_i, (prod_ini, prod_fin)); en la
+/// familia C `precio_i` es `None` (solo hay un importe por línea).
+fn hipotesis() -> Vec<(i32, Option<i32>, i32, (i32, i32))> {
     let mut out = Vec::new();
     for &total_i in CANDIDATOS_TOTAL {
         for &precio_i in CANDIDATOS_PRECIO {
             for &cant_i in CANDIDATOS_CANTIDAD_A {
                 // Familia A: CANT PRODUCTO PRECIO TOTAL
-                out.push((cant_i, precio_i, total_i, (cant_i + 1, precio_i - 1)));
+                out.push((cant_i, Some(precio_i), total_i, (cant_i + 1, precio_i - 1)));
             }
             for &cant_i in CANDIDATOS_CANTIDAD_B {
                 // Familia B: PRODUCTO CANT PRECIO TOTAL
-                out.push((cant_i, precio_i, total_i, (0, cant_i - 1)));
+                out.push((cant_i, Some(precio_i), total_i, (0, cant_i - 1)));
             }
+        }
+        // Familia C: CANT PRODUCTO IMPORTE (precio = total/cantidad).
+        for &cant_i in CANDIDATOS_CANTIDAD_C {
+            out.push((cant_i, None, total_i, (cant_i + 1, total_i - 1)));
         }
     }
     out
@@ -462,6 +655,101 @@ mod tests {
             );
         }
         assert_eq!(d.lineas_validas, 4);
+    }
+
+    // ---------- Familia C: CANT PRODUCTO IMPORTE (un solo importe) ----------
+
+    #[test]
+    fn formato_un_solo_importe_con_productos_repetidos() {
+        // Estilo "ticket de la esquina": misma mercancía, mismo precio por KG.
+        let mut lineas = Vec::new();
+        for _ in 0..6 {
+            lineas.extend_from_slice(&[
+                "4 PLATANO TABASCO KG 88.00",
+                "2 CHILE SERRANO KG 60.00",
+                "3 RUFFLES QUESO 60G 54.00",
+            ]);
+        }
+        let d = detectar(&lineas);
+        assert_eq!(d.mapeo.cantidad, Some(0));
+        assert_eq!(d.mapeo.precio_unitario, None, "un solo importe: sin precio");
+        assert_eq!(d.mapeo.total, Some(-1));
+        assert_eq!(d.mapeo.producto, Some(vec![1, -2]));
+        assert_eq!(d.confianza, 1.0);
+
+        // Y el mapeo detectado produce precios unitarios correctos.
+        let item = crate::cerebro::analizador_tickets::parsear_linea(
+            "4 PLATANO TABASCO KG 88.00",
+            &d.mapeo,
+            4,
+        )
+        .unwrap();
+        assert_eq!(item.producto, "PLATANO TABASCO KG");
+        assert_eq!(item.cantidad, 4.0);
+        assert_eq!(item.precio_unitario, 22.0);
+        assert_eq!(item.total, 88.0);
+    }
+
+    #[test]
+    fn familia_c_rechaza_precios_inconsistentes() {
+        // El mismo "producto" cobra totalmente distinto cada vez → NO hay
+        // consistencia → no hay verdad matemática → no detectar.
+        let lineas = [
+            "1 X 10.00", "1 X 97.00", "1 X 55.00", "1 X 33.00", "1 X 76.00",
+            "1 Y 20.00", "1 Y 88.00", "1 Y 41.00",
+        ];
+        assert!(detectar_mapeo(&lineas).is_none());
+    }
+
+    #[test]
+    fn familia_c_confianza_ignora_productos_no_repetidos() {
+        // Los productos que aparecen una sola vez no son observables: ni
+        // confirman ni niegan. La confianza es consistentes/repetidas, no
+        // consistentes/muestra (esto daba 37% en una carpeta real de 1000
+        // tickets con precios perfectos).
+        let lineas = [
+            "4 PLATANO TABASCO KG 88.00",
+            "2 PLATANO TABASCO KG 44.00",
+            "1 PLATANO TABASCO KG 22.00",
+            "3 RUFFLES QUESO 60G 54.00",
+            "1 RUFFLES QUESO 60G 18.00",
+            "1 KIWI UNICO 10.00",
+            "1 MANGO RARO 20.00",
+            "1 PAPAYA SOLA 15.00",
+        ];
+        let d = detectar(&lineas);
+        assert_eq!(d.mapeo.precio_unitario, None);
+        assert_eq!(d.lineas_evaluadas, 5, "solo las repetidas son observables");
+        assert_eq!(d.lineas_validas, 5);
+        assert_eq!(d.confianza, 1.0);
+    }
+
+    #[test]
+    fn familia_c_tolera_un_cambio_historico_de_precio() {        // El plátano estaba a $20 y en marzo subió a $22: hay un precio
+        // DOMINANTE y la detección sobrevive con confianza razonable.
+        let mut lineas = Vec::new();
+        for _ in 0..8 {
+            lineas.extend_from_slice(&["2 PLATANO KG 40.00", "3 RUFFLES 54.00"]);
+        }
+        lineas.push("2 PLATANO KG 44.00"); // subió una vez
+        lineas.push("2 PLATANO KG 44.00");
+        let d = detectar(&lineas);
+        assert_eq!(d.mapeo.precio_unitario, None);
+        assert!(d.confianza >= 0.6, "confianza {}", d.confianza);
+    }
+
+    #[test]
+    fn formato_con_precio_gana_sobre_familia_c_en_empate() {
+        // En formato clásico (precio + total), la familia A debe ganar
+        // aunque la C también "cuadre estructuralmente": el mapeo con
+        // precio unitario es mas informativo y verificable línea a línea.
+        let mut lineas = Vec::new();
+        for _ in 0..5 {
+            lineas.extend_from_slice(&["2 COCA 25.00 50.00", "1 PAN 10.00 10.00"]);
+        }
+        let d = detectar(&lineas);
+        assert_eq!(d.mapeo.precio_unitario, Some(-2));
+        assert_eq!(d.confianza, 1.0);
     }
 
     #[test]

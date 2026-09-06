@@ -254,7 +254,7 @@ const Parseador = () => {
 
       {view === "tickets" ? (
         <>
-          {error && <div className="mb-6 rounded-2xl bg-red-50 border border-red-100 text-red-700 px-5 py-4 text-sm font-bold">{error}</div>}
+          {error && <div className="mb-6 rounded-2xl bg-red-50 border border-red-100 text-red-700 px-5 py-4 text-sm font-bold whitespace-pre-line">{error}</div>}
           <PasosGrid phase={phase} onPhaseChange={handlePhaseChange} />
           {phase === "catalogo" && (
             <>

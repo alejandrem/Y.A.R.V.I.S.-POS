@@ -75,6 +75,7 @@ pub fn run() {
             backventanas::backadmin::adminparser::listar_archivos_carpeta,
             // Tickets
             backventanas::backadmin::admintickets::tickets::get_tickets,
+            backventanas::backadmin::admintickets::tickets::get_tickets_total,
             backventanas::backadmin::admintickets::tickets::get_cortes,
             backventanas::backadmin::admintickets::tickets::guardar_ticket_parseado,
             backventanas::backadmin::admintickets::tickets::get_predictions,

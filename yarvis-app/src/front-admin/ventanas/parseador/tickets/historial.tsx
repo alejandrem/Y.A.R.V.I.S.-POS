@@ -21,17 +21,22 @@ interface TicketDb {
 const Historial = () => {
   const [catalogos, setCatalogos] = useState<CatalogoImportado[]>([]);
   const [tickets, setTickets] = useState<TicketDb[]>([]);
+  const [totalTickets, setTotalTickets] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [cats, tks] = await Promise.all([
+        const [cats, tks, total] = await Promise.all([
           invoke<CatalogoImportado[]>("get_catalogos_importados").catch(() => []),
           invoke<TicketDb[]>("get_tickets").catch(() => []),
+          invoke<number>("get_tickets_total").catch(() => 0),
         ]);
         setCatalogos(cats || []);
-        setTickets((tks || []).slice(0, 20));
+        // Sin recorte artificial: se muestran los 500 más recientes que
+        // trae el backend; el total real va en el contador.
+        setTickets(tks || []);
+        setTotalTickets(total || (tks || []).length);
       } finally {
         setLoading(false);
       }
@@ -85,8 +90,11 @@ const Historial = () => {
             <p className="text-[10px] font-black uppercase tracking-[0.35em] text-neutral-400">Tickets</p>
             <h3 className="text-xl font-black text-neutral-900 mt-1">Tickets ya parseados</h3>
           </div>
-          <span className="rounded-xl bg-neutral-950 text-white px-3 py-1.5 text-[10px] font-black">{tickets.length} tickets</span>
+          <span className="rounded-xl bg-neutral-950 text-white px-3 py-1.5 text-[10px] font-black">{totalTickets} tickets</span>
         </div>
+        {totalTickets > tickets.length && (
+          <p className="text-[10px] text-neutral-400 mb-4">Mostrando los {tickets.length} más recientes.</p>
+        )}
         {tickets.length === 0 ? (
           <p className="text-sm text-neutral-400 text-center py-10 border-2 border-dashed border-neutral-100 rounded-2xl">No se han parseado tickets</p>
         ) : (

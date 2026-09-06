@@ -241,9 +241,15 @@ pub fn parsear_linea(linea: &str, mapeo: &MapeoColumnas, _total_cols: usize) -> 
     }
 
     let cantidad = limpiar_precio(col_valor(&cols, idx_cant));
-    let precio = limpiar_precio(col_valor(&cols, idx_precio));
+    let mut precio = limpiar_precio(col_valor(&cols, idx_precio));
     let total = limpiar_precio(col_valor(&cols, idx_total));
     let descuento = limpiar_precio(col_valor(&cols, idx_desc));
+
+    // Familia C ("CANT PRODUCTO IMPORTE", un solo importe por línea): el
+    // precio unitario no está impreso; se infiere como total / cantidad.
+    if precio == 0.0 && cantidad > 0.0 && total > 0.0 {
+        precio = total / cantidad;
+    }
 
     if producto.is_empty() || (cantidad == 0.0 && total == 0.0) {
         return None;
