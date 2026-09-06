@@ -8,6 +8,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
 import { mockInvoke } from "./setup";
 import AdminYarvis from "../front-admin/ventanas/adminyarvis/yarvis";
+import { ChatProvider } from "../front-admin/ventanas/adminyarvis/ChatProvider";
+
+const conChat = (ui: React.ReactElement) => (
+  <ChatProvider role="admin" userId="yarvis-test-admin">{ui}</ChatProvider>
+);
 
 beforeEach(() => {
   mockInvoke.mockReset();
@@ -26,12 +31,12 @@ beforeEach(() => {
 
 describe("yarvis · estado del modelo", () => {
   it("consulta get_model_status al montar", async () => {
-    render(<AdminYarvis active={true} />);
+    render(conChat(<AdminYarvis active={true} />));
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_model_status"));
   });
 
   it("renderiza el panel sin crash", async () => {
-    const { container } = render(<AdminYarvis active={true} />);
+    const { container } = render(conChat(<AdminYarvis active={true} />));
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_model_status"));
     expect(container).toBeTruthy();
   });

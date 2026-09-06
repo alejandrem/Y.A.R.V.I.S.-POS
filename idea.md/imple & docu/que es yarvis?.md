@@ -104,7 +104,7 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 
 ### 4.6 Hooks globales
 
-- BatchProgressProvider (parseador/tickets/): progreso del lote que sobrevive al cambio de pestaña + keep-alive perezoso en ambos dashboards (las pestañas visitadas no se desmontan).
+- Providers persistentes (sobreviven al cambio de pestaña, sin DOM oculto): BatchProgressProvider (progreso del lote), ChatProvider (sesiones + stream en curso), CartProvider (carrito del empleado). Solo la pestaña activa está en el DOM.
 - ThemeContext.tsx/useTheme.ts: temas claro/oscuro.
 
 ---

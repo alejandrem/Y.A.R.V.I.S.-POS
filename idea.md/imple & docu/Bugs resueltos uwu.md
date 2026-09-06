@@ -517,8 +517,8 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 
 **Solucion (2 capas):**
 1. `BatchProgressProvider` en el dashboard (un solo listener global `batch-progress` + bloqueo de doble importación concurrente) para el parseador.
-2. Keep-alive perezoso en ambos dashboards: cada pestaña se monta en su primera visita y luego solo se oculta (`hidden`/`display:none`). Finanzas recibió la prop `active` que le faltaba para no trabajar oculta ni quedar obsoleta.
+2. Providers persistentes montados arriba del switch de pestañas (sin DOM oculto): BatchProgressProvider (lote), ChatProvider (sesiones + stream en curso, con syncConfig anti-loops desde PanelYarvis) y CartProvider (carrito del empleado). Las pestañas vuelven a desmontarse al salir: un solo árbol en el DOM, a11y limpio. Finanzas conservó la prop `active` para recargar al volver.
 
-**Regresión cazada por el fix:** el chat usa `h-full` y el `<div>` envoltorio (altura auto) le rompió la cadena de altura (hueco blanco). Envoltorios activos ahora son `h-full`; en empleado se usó `display:contents` + inline `display:none` (una clase `hidden` podía perder contra `contents` por orden del CSS).
+**Lección del camino:** primero se probó keep-alive perezoso (pestañas ocultas con `hidden`), pero mantener 9 árboles en el DOM contradice el rendimiento en hardware modesto (renders ocultos, RAM, a11y). La forma correcta es desmontar + elevar estado, no ocultar.
 
 **Leccion aprendida:** "no se ve nada pero el backend sigue" siempre es estado muerto en un componente desmontado: el fix es mover el estado arriba del punto de desmontaje, no re-suscribirse al volver.

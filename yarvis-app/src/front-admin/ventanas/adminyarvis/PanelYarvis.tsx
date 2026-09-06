@@ -21,6 +21,7 @@ import ChatWidget, {
   type CloudModel,
   CLOUD_PROVIDERS,
 } from "./ChatWidget";
+import { useChat } from "./ChatProvider";
 import { setApiKeysCache } from "./ChatWidget";
 import {
   ICONO_CHECK,
@@ -98,11 +99,13 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [ramWarning, setRamWarning] = useState("");
   const [configMessage, setConfigMessage] = useState("");
-  const [clearTrigger, setClearTrigger] = useState(0);
   const [clearIcon, setClearIcon] = useState<IconInput>(ICONO_REINICIAR);
   const [configIcon, setConfigIcon] = useState<IconInput>(ICONO_ENGRANAJE);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const clearIconTimeoutsRef = useRef<number[]>([]);
+  // El estado vivo del chat (sesiones + stream) vive en ChatProvider, arriba
+  // del cambio de pestaña: la respuesta en curso sobrevive aunque te vayas.
+  const chat = useChat();
 
   useEffect(() => {
     return () => {
@@ -111,7 +114,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   }, []);
 
   const handleClearChat = () => {
-    setClearTrigger((value) => value + 1);
+    chat.clearChat();
     clearIconTimeoutsRef.current.forEach(window.clearTimeout);
     clearIconTimeoutsRef.current = [
       window.setTimeout(() => setClearIcon(ICONO_PAUSA), 0),
@@ -215,6 +218,15 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
       contextWindow: 4096,
     };
   }, [selectedProvider, selectedCloudModels, apiKeys, currentCloudModel, localModelName]);
+
+  // La config de envío vive en el provider (sobrevive al cambio de pestaña);
+  // aquí solo se sincroniza cuando el usuario cambia de modelo. syncConfig
+  // ignora valores idénticos, así que no hay loops aunque esto corra seguido.
+  const { syncConfig } = chat;
+  useEffect(() => {
+    syncConfig({ fallbackSelection: currentSelection, modelLoadingLabel: loadingModel });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSelection, loadingModel]);
 
   const saveLocalPath = async (path: string) => {
     setConfigMessage("");
@@ -387,7 +399,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
 
       <div className="min-h-0 flex-1 px-4 pb-4 sm:px-8 sm:pb-8">
         <div className="yarvis-panel yarvis-border yarvis-shadow h-full min-h-0 overflow-hidden rounded-[2rem] border">
-          <ChatWidget role={rol} userId={rol} suggestions={rol === "admin" ? SUGERENCIAS_ADMIN : SUGERENCIAS_EMPLEADO} modelState={{ loadingModel }} modelSelection={currentSelection} clearTrigger={clearTrigger} />
+          <ChatWidget suggestions={rol === "admin" ? SUGERENCIAS_ADMIN : SUGERENCIAS_EMPLEADO} />
         </div>
       </div>
 

@@ -36,7 +36,7 @@ La idea original era un sidecar Python con FastAPI. Se descarto y se migro todo 
 - Procesamiento por lotes: cerebro/parseador_masivo/ (streaming por canal + modo síncrono; transaccion por archivo con rollback). Verificado: 1000 tickets reales en ~250ms release, re-importación 0 duplicados (example bench1000).
 - Vinculacion con inventario: cerebro/vinculador_inventario/ (TF-IDF + fuzzy como interino, sin vectores).
 - Comandos: adminparser/ (parser_txt/ por tema: archivos, catalogo, deteccion, lote; parser_csv/excel; get_tickets_total para el historial real).
-- Frontend: parseador/ con BatchProgressProvider (el progreso sobrevive al cambio de pestaña) + keep-alive perezoso en ambos dashboards.
+- Frontend: providers persistentes por proceso en segundo plano (BatchProgressProvider, ChatProvider, CartProvider); montaje condicional por pestaña (solo la activa en el DOM, sin árboles ocultos).
 - Búsqueda semántica propia operativa: HashEmbedder 384d (buscar_producto_similar, backfill_embeddings). No se usara all-MiniLM ni ONNX externo.
 
 ## Ola 4: El Chatbot y su motor — COMPLETADA (cloud + local con tools)

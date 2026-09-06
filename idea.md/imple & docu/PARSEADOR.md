@@ -190,7 +190,7 @@ La gestion descargar_modelos() de Python (auto-unload en finally, endpoints /unl
 | Producto legitimo descartado ("GATORADE TOTAL") | substring if x in linea_lower | _es_linea_util con 3 niveles + word-boundary (portado a cerebro/filtrador) |
 | "37% cuadran, separa por tienda" en carpeta uniforme | confianza C dividía entre toda la muestra | denominador = solo repetidas (`detector/familia_c.rs`); hoy esa carpeta da 100% |
 | Historial muestra 20 de 1000 | `.slice(0, 20)` + contador con `length` | sin recorte (backend trae 500) + `get_tickets_total` para el total real |
-| Al cambiar de pestaña "no se está parseando nada" | estado + listener vivían en el componente desmontado | `BatchProgressProvider` en el dashboard + keep-alive perezoso en ambos dashboards |
+| Al cambiar de pestaña "no se está parseando nada" | estado + listener vivían en el componente desmontado | `BatchProgressProvider` en el dashboard (un solo listener global + bloqueo de doble importación); las pestañas se desmontan pero el provider no |
 
 > Los bugfix A1 (transaccion por archivo con rollback), A3 (filtro 3 niveles), A4 (volumenes) y Bug 8 (separador robado) fueron verificados en Python y conservados en el port a Rust. Ver bugs-resueltos.md.
 

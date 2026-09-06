@@ -1,14 +1,12 @@
 // Orquestador del widget de chat de Y.A.R.V.I.S.
-// Compone los hooks de sesiones y streaming con la UI (sidebar, mensajes e input),
-// define los tipos compartidos (Message, ChatSession, selección de modelo) y resuelve
-// los efectos transversales: cambio de modelo, switch de chat, acción "Limpiar chat".
-import { useEffect, useRef } from "react";
+// Compone el estado del ChatProvider (sesiones + streaming persistentes)
+// con la UI (sidebar, mensajes e input) y define los tipos compartidos
+// (Message, ChatSession, selección de modelo).
 import { invoke } from "@tauri-apps/api/core";
 import ChatSidebar from "./components/ChatSidebar";
 import ChatMessages from "./components/ChatMessages";
 import ChatInput from "./components/ChatInput";
-import { useChatSessions } from "./hooks/useChatSessions";
-import { useChatStream } from "./hooks/useChatStream";
+import { useChat } from "./ChatProvider";
 
 export interface Message {
   role: "user" | "assistant";
@@ -101,26 +99,12 @@ export function getActiveCloud(): ActiveCloud {
   }
 }
 
-interface ModelPickerState {
-  loadingModel: string | null;
-}
-
 interface ChatWidgetProps {
-  role: "admin" | "empleado";
-  userId: string;
   suggestions: string[];
-  modelState: ModelPickerState;
-  modelSelection?: ChatModelSelection;
-  clearTrigger: number;
 }
 
-const ChatWidget = ({ role, userId, suggestions, modelState, modelSelection, clearTrigger }: ChatWidgetProps) => {
-  const fallbackSelection = modelSelection || getActiveCloud();
-  const localLoading = modelState.loadingModel;
-
+const ChatWidget = ({ suggestions }: ChatWidgetProps) => {
   const {
-    sessionsSorted,
-    activeSession,
     activeChatId,
     setActiveChatId,
     messages,
@@ -137,47 +121,11 @@ const ChatWidget = ({ role, userId, suggestions, modelState, modelSelection, cle
     createChat,
     deleteChat,
     startRename,
-    updateActiveSession,
-    commitSession,
-  } = useChatSessions(userId);
+    stream,
+    sessionsSorted,
+  } = useChat();
 
-  const stream = useChatStream({
-    role,
-    activeSession,
-    messages,
-    fallbackSelection,
-    modelLoadingLabel: localLoading,
-    clearTrigger,
-    commitSession,
-  });
-
-  // Un cambio explícito desde el selector del encabezado actualiza solo el chat abierto.
-  const initializedSelectionRef = useRef(false);
-  const selectionKey = `${fallbackSelection.provider}:${fallbackSelection.model}:${fallbackSelection.label}`;
-  useEffect(() => {
-    if (!initializedSelectionRef.current) {
-      initializedSelectionRef.current = true;
-      return;
-    }
-    updateActiveSession({ modelSelection: fallbackSelection });
-    // La clave representa una elección manual; no dependemos del objeto mutable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectionKey]);
-
-  // Al cambiar de chat se reencuadra el contexto mostrado.
   const currentSelection = stream.currentSelection;
-  useEffect(() => {
-    stream.resetContext(currentSelection.contextWindow || (currentSelection.provider ? 131072 : 4096));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChatId, currentSelection.contextWindow, currentSelection.model]);
-
-  // El trigger de "Limpiar chat" vacía los mensajes del chat abierto.
-  useEffect(() => {
-    if (clearTrigger > 0) {
-      updateActiveSession({ messages: [], modelSelection: stream.currentSelection });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clearTrigger]);
 
   const handleCreateChat = () => {
     if (stream.isLoading) return;

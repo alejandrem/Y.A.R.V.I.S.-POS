@@ -65,7 +65,7 @@ Y.A.R.V.I.S.-POS/
     │   ├── App.tsx                    # Orquestador: setup (paso 0) -> login (1) -> AdminDashboard (2)/EmployeeDashboard (3).
     │   ├── hooks/                     # ThemeContext/useTheme (el progreso del lote vive en BatchProgressProvider, parseador/tickets/).
     │   ├── front-admin/               # Modulos del Administrador.
-    │   │   ├── AdminDashboard.tsx     # Sidebar + keep-alive perezoso de pestañas.
+    │   │   ├── AdminDashboard.tsx     # Sidebar + montaje condicional (providers persistentes arriba del switch).
     │   │   ├── PrimerInicio.tsx       # Asistente de configuracion inicial (admin + tienda + empleado).
     │   │   ├── types.ts               # Tipos TypeScript compartidos.
     │   │   └── ventanas/

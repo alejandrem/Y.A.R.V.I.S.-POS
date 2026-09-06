@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { obtenerInventario, type InventoryItem } from "../../../services/inventario";
 import ModalVenta from "./modalventa";
 import ModalTicket from "./modalticket";
-import { useCarrito } from "./hooks/useCarrito";
+import { useCart } from "./CartProvider";
 import BuscadorProductos from "./componentes/buscador-productos";
 import TablaCarrito from "./componentes/tabla-carrito";
 import PieCobro from "./componentes/pie-cobro";
@@ -47,8 +47,13 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { cart, addToCart, updateQuantity, removeFromCart, limpiarCarrito, cartTotal } =
-    useCarrito({ inputRef });
+  const { cart, addToCart: agregarAlCarrito, updateQuantity, removeFromCart, limpiarCarrito, cartTotal } =
+    useCart();
+  // El foco del buscador es del módulo (el provider no conoce su DOM).
+  const addToCart = (product: InventoryItem) => {
+    agregarAlCarrito(product);
+    inputRef.current?.focus();
+  };
 
   useEffect(() => {
     if (activeTab === "nueva_venta") loadInventory();
