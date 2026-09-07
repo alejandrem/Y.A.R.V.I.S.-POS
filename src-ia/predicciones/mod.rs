@@ -23,4 +23,4 @@ pub mod holt_winters;
 pub mod ventas;
 
 pub use holt_winters::{predecir, PrediccionError, PuntoPrediccion};
-pub use ventas::{predecir_ventas, PuntoConFecha};
+pub use ventas::{historia_y_pronostico, predecir_ventas, PuntoConFecha, PuntoHistorial};

@@ -241,7 +241,7 @@ const Parseador = () => {
   const deteccionEfectiva = batchCtx.meta?.deteccion ?? deteccion;
 
   return (
-    <div className="max-w-5xl animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto w-full">
+    <div className="max-w-[1200px] animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto w-full">
       <header className="mb-8 text-left relative">
         <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight mb-2">Parseador de Tickets</h2>
         <div className="h-1.5 w-12 bg-neutral-900 rounded-full"></div>

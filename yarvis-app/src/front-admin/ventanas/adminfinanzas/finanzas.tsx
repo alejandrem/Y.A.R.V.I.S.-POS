@@ -196,7 +196,7 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
   // ── RENDER ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
+    <div className="max-w-[1200px] mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
 
       {/* ═══ HEADER ═══════════════════════════════════════════════════════ */}
       <header className="space-y-6">

@@ -79,6 +79,10 @@ pub fn run() {
             backventanas::backadmin::admintickets::tickets::get_cortes,
             backventanas::backadmin::admintickets::tickets::guardar_ticket_parseado,
             backventanas::backadmin::admintickets::tickets::get_predictions,
+            backventanas::backadmin::admintickets::tickets::get_ventas_con_pronostico,
+            backventanas::backadmin::admintickets::tickets::get_kpis_ventas,
+            backventanas::backadmin::admintickets::tickets::get_ventas_por_empleado_dia,
+            backventanas::backadmin::admintickets::tickets::get_top_productos,
             // Empleados - Dashboard
             backventanas::backadmin::adminempleados::empleados::get_empleados,
             backventanas::backadmin::adminempleados::empleados::get_empleado_ventas,

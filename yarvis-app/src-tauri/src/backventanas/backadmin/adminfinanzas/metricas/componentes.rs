@@ -10,7 +10,7 @@ use sqlx::{Row, SqlitePool};
 /// vienen en centavos (i64); los agregados que mezclan cantidad REAL ×
 /// precio en centavos llegan como f64 en unidades de centavos y se
 /// redondean al centavo exacto antes de convertir.
-pub(super) fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
+pub(crate) fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     match row.try_get::<i64, _>(col) {
         Ok(v) => a_pesos(v),
         Err(_) => row
@@ -20,7 +20,7 @@ pub(super) fn decode_dinero(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     }
 }
 
-pub(super) async fn calcular_costo_ventas(
+pub(crate) async fn calcular_costo_ventas(
     pool: &SqlitePool,
     fecha_inicio: &str,
     fecha_fin: &str,
@@ -40,7 +40,7 @@ pub(super) async fn calcular_costo_ventas(
     Ok(decode_dinero(&row, "cogs"))
 }
 
-pub(super) async fn calcular_gastos_operativos(
+pub(crate) async fn calcular_gastos_operativos(
     pool: &SqlitePool,
     fecha_inicio: &str,
     fecha_fin: &str,
@@ -58,7 +58,7 @@ pub(super) async fn calcular_gastos_operativos(
     Ok(decode_dinero(&row, "total_gastos"))
 }
 
-pub(super) async fn calcular_impuestos_comisiones(
+pub(crate) async fn calcular_impuestos_comisiones(
     pool: &SqlitePool,
     fecha_inicio: &str,
     fecha_fin: &str,
@@ -77,7 +77,7 @@ pub(super) async fn calcular_impuestos_comisiones(
     Ok(decode_dinero(&row, "total_iva"))
 }
 
-pub(super) async fn calcular_ventas_totales(
+pub(crate) async fn calcular_ventas_totales(
     pool: &SqlitePool,
     fecha_inicio: &str,
     fecha_fin: &str,
@@ -93,7 +93,7 @@ pub(super) async fn calcular_ventas_totales(
     Ok(decode_dinero(&row, "total"))
 }
 
-pub(super) async fn calcular_ventas_por_metodo(
+pub(crate) async fn calcular_ventas_por_metodo(
     pool: &SqlitePool,
     fecha_inicio: &str,
     fecha_fin: &str,

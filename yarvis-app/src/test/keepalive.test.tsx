@@ -34,16 +34,16 @@ beforeEach(() => {
 describe("dashboard · sin árboles ocultos", () => {
   it("la pestaña inactiva NO queda en el DOM (ni siquiera oculta)", () => {
     const { rerender } = render(<AdminDashboard activeTab="ventas" {...baseProps} />);
-    expect(screen.getByText("Ventas y predicciones")).toBeInTheDocument();
+    expect(screen.getByText("El pulso de tu tienda, aprendido de tus tickets")).toBeInTheDocument();
 
     rerender(<AdminDashboard activeTab="parseador" {...baseProps} />);
     expect(screen.getByText("Parseador de Tickets")).toBeInTheDocument();
     // Sin `hidden`, sin display:none: desmontada de verdad.
-    expect(screen.queryByText("Ventas y predicciones")).toBeNull();
+    expect(screen.queryByText("El pulso de tu tienda, aprendido de tus tickets")).toBeNull();
     expect(document.querySelectorAll("div.hidden").length).toBe(0);
 
     rerender(<AdminDashboard activeTab="ventas" {...baseProps} />);
-    expect(screen.getByText("Ventas y predicciones")).toBeInTheDocument();
+    expect(screen.getByText("El pulso de tu tienda, aprendido de tus tickets")).toBeInTheDocument();
     expect(screen.queryByText("Parseador de Tickets")).toBeNull();
   });
 });

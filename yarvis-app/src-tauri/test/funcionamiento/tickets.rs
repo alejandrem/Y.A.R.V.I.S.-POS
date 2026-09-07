@@ -114,3 +114,126 @@ async fn importacion_es_atomica_todo_o_nada() {
     assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await, 0);
     assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM detalle_ventas").await, 0);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VISTA VENTAS — KPIs, desglose por empleado, top productos y pronóstico.
+// ═══════════════════════════════════════════════════════════════════════════
+
+use yarvis_app_lib::backventanas::backadmin::admintickets::tickets::{
+    get_kpis_ventas_impl, get_top_productos_impl, get_ventas_con_pronostico_impl,
+    get_ventas_por_empleado_dia_impl,
+};
+
+async fn seed_venta(pool: &sqlx::SqlitePool, fecha: &str, total_centavos: i64, cajero: &str) -> i64 {
+    let r = sqlx::query("INSERT INTO ventas (fecha, total, estado, cajero) VALUES (?, ?, 'completada', ?)")
+        .bind(fecha)
+        .bind(total_centavos)
+        .bind(cajero)
+        .execute(pool)
+        .await
+        .unwrap();
+    r.last_insert_rowid()
+}
+
+#[tokio::test]
+async fn kpis_hoy_vs_ayer_suman_y_promedian() {
+    let pool = db().await;
+    let hoy: String = sqlx::query_scalar("SELECT date('now','localtime')")
+        .fetch_one(&pool).await.unwrap();
+    let ayer: String = sqlx::query_scalar("SELECT date('now','localtime','-1 day')")
+        .fetch_one(&pool).await.unwrap();
+
+    seed_venta(&pool, &format!("{hoy} 10:00:00"), 10_000, "MARIA").await;
+    seed_venta(&pool, &format!("{hoy} 18:00:00"), 20_000, "JUAN").await;
+    seed_venta(&pool, &format!("{ayer} 12:00:00"), 5_000, "MARIA").await;
+
+    let v = get_kpis_ventas_impl(&pool, 1, 0).await.unwrap();
+    assert_eq!(v["actual"]["total"], 300.0);
+    assert_eq!(v["actual"]["tickets"], 2);
+    assert_eq!(v["actual"]["ticket_promedio"], 150.0);
+    assert_eq!(v["anterior"]["total"], 50.0);
+    assert_eq!(v["anterior"]["tickets"], 1);
+    assert!(v["actual"]["margen_pct"].is_number(), "falta margen");
+}
+
+#[tokio::test]
+async fn ventas_por_empleado_agrupa_y_marca_sin_asignar() {
+    let pool = db().await;
+    let hoy: String = sqlx::query_scalar("SELECT date('now','localtime')")
+        .fetch_one(&pool).await.unwrap();
+
+    seed_venta(&pool, &format!("{hoy} 09:00:00"), 10_000, "MARIA").await;
+    seed_venta(&pool, &format!("{hoy} 10:00:00"), 20_000, "JUAN").await;
+    seed_venta(&pool, &format!("{hoy} 11:00:00"), 5_000, "").await;
+
+    let filas = get_ventas_por_empleado_dia_impl(&pool, 7).await.unwrap();
+    assert_eq!(filas.len(), 3);
+    let sin = filas.iter().find(|f| f.cajero == "SIN ASIGNAR").expect("falta SIN ASIGNAR");
+    assert_eq!(sin.total, 50.0);
+    let juan = filas.iter().find(|f| f.cajero == "JUAN").unwrap();
+    assert_eq!(juan.total, 200.0);
+}
+
+#[tokio::test]
+async fn top_productos_ordena_por_ingreso_y_recorta_a_5() {
+    let pool = db().await;
+    let hoy: String = sqlx::query_scalar("SELECT date('now','localtime')")
+        .fetch_one(&pool).await.unwrap();
+
+    // 6 productos; debe volver el top 5 ordenado por subtotal.
+    for (i, (nombre, subtotal_c)) in
+        [("F", 1_000), ("E", 2_000), ("D", 3_000), ("C", 4_000), ("B", 5_000), ("A", 6_000)]
+            .iter()
+            .enumerate()
+    {
+        let vid = seed_venta(&pool, &format!("{hoy} 10:0{i}:00"), *subtotal_c, "MARIA").await;
+        sqlx::query("INSERT INTO detalle_ventas (venta_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES (?, ?, 1, ?, ?)")
+            .bind(vid)
+            .bind(nombre)
+            .bind(*subtotal_c)
+            .bind(*subtotal_c)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    let top = get_top_productos_impl(&pool, 30).await.unwrap();
+    assert_eq!(top.len(), 5);
+    assert_eq!(top[0].nombre, "A");
+    assert_eq!(top[0].total, 60.0);
+    assert_eq!(top[4].nombre, "E");
+}
+
+#[tokio::test]
+async fn ventas_con_pronostico_engancha_historia_y_futuro() {
+    // La DB de pruebas del pool es sqlx (async); el pronóstico usa rusqlite
+    // por archivo, así que se siembra un temporal aparte.
+    let path = std::env::temp_dir().join(format!(
+        "yarvis_pron_{}.db",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE ventas (id INTEGER PRIMARY KEY, fecha TEXT, total INTEGER, estado TEXT);")
+            .unwrap();
+        for i in 0..10 {
+            conn.execute(
+                "INSERT INTO ventas (fecha, total, estado) VALUES (?1, ?2, 'completada')",
+                rusqlite::params![format!("2026-08-{:02} 12:00:00", 1 + i), 10_000 + i * 1_000],
+            )
+            .unwrap();
+        }
+    }
+
+    let (historial, pronostico) =
+        get_ventas_con_pronostico_impl(path.clone(), 7).await.unwrap();
+    assert_eq!(historial.len(), 10);
+    assert_eq!(historial.first().unwrap().fecha, "2026-08-01");
+    assert_eq!(historial.last().unwrap().fecha, "2026-08-10");
+    assert_eq!(pronostico.len(), 7);
+    assert_eq!(pronostico.first().unwrap().fecha, "2026-08-11");
+    for p in &pronostico {
+        assert!(p.minimo <= p.prediccion + 1e-9 && p.prediccion - 1e-9 <= p.maximo);
+    }
+    let _ = std::fs::remove_file(&path);
+}

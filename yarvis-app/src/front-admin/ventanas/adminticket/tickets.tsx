@@ -127,7 +127,7 @@ const Tickets = ({ active = true }: TicketsProps) => {
   }, [filteredTickets, filteredCortes]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10 animate-in fade-in duration-500">
+    <div className="max-w-[1200px] mx-auto space-y-10 animate-in fade-in duration-500">
       {/* HEADER DE SECCIÓN */}
       <header className="flex justify-between items-end border-b border-neutral-100 pb-8">
         <div>

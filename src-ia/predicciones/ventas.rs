@@ -33,6 +33,13 @@ const MAX_DIAS_HISTORIA: i64 = 365;
 /// Mínimos puntos para estimar siquiera una tendencia (igual que el núcleo).
 const MIN_DIAS_HISTORIA: usize = 4;
 
+/// Un punto del histórico con fecha real (`YYYY-MM-DD`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PuntoHistorial {
+    pub fecha: String,
+    pub total: f64,
+}
+
 /// Predice `horizonte` días de ventas a partir del histórico de la DB.
 pub fn predecir_ventas(ruta_db: &Path, horizonte: usize) -> Result<Vec<PuntoConFecha>, String> {
     let conn =
@@ -40,15 +47,21 @@ pub fn predecir_ventas(ruta_db: &Path, horizonte: usize) -> Result<Vec<PuntoConF
     predecir_desde_conn(&conn, horizonte)
 }
 
-/// Flujo completo (consulta + suavizado + fechas). Separado de
-/// `predecir_ventas` para poder testearlo con una DB en memoria.
-pub fn predecir_desde_conn(
-    conn: &Connection,
+/// Histórico denso + pronóstico en un solo viaje: la gráfica dibuja la
+/// curva continua sin pegar dos fuentes con fechas desfasadas.
+pub fn historia_y_pronostico(
+    ruta_db: &Path,
     horizonte: usize,
-) -> Result<Vec<PuntoConFecha>, String> {
-    if horizonte == 0 {
-        return Err("El horizonte de predicción debe ser mayor a 0".to_string());
-    }
+) -> Result<(Vec<PuntoHistorial>, Vec<PuntoConFecha>), String> {
+    let conn =
+        Connection::open(ruta_db).map_err(|e| format!("No se pudo abrir la base de datos: {e}"))?;
+    historia_y_pronostico_desde_conn(&conn, horizonte)
+}
+
+/// Serie densa (últimos MAX_DIAS_HISTORIA como máximo, huecos con 0) +
+/// último día con datos. Base compartida del pronóstico y del histórico
+/// que se grafica; la matemática vive en `holt_winters`, aquí solo datos.
+fn serie_densa(conn: &Connection) -> Result<(Vec<(NaiveDate, f64)>, NaiveDate), String> {
 
     // Histórico de ventas completadas, agregado por día (YYYY-MM-DD → total).
     let mut stmt = conn
@@ -92,14 +105,40 @@ pub fn predecir_desde_conn(
     let inicio = primer_dia.max(ultimo - Duration::days(MAX_DIAS_HISTORIA - 1));
 
     let mapa: std::collections::HashMap<NaiveDate, f64> = filas.into_iter().collect();
-    let mut serie: Vec<f64> = Vec::new();
+    let mut densa: Vec<(NaiveDate, f64)> = Vec::new();
     let mut dia = inicio;
     while dia <= ultimo {
         let total = mapa.get(&dia).copied().unwrap_or(0.0);
-        serie.push(total);
+        densa.push((dia, total));
         dia = dia + Duration::days(1);
     }
 
+    Ok((densa, ultimo))
+}
+
+/// Flujo completo (consulta + suavizado + fechas). Separado de
+/// `predecir_ventas` para poder testearlo con una DB en memoria.
+pub fn predecir_desde_conn(
+    conn: &Connection,
+    horizonte: usize,
+) -> Result<Vec<PuntoConFecha>, String> {
+    let (_, puntos) = historia_y_pronostico_desde_conn(conn, horizonte)?;
+    Ok(puntos)
+}
+
+/// Histórico + pronóstico desde una conexión abierta (testeable en memoria).
+/// Misma validación y misma matemática que `predecir_desde_conn`.
+pub fn historia_y_pronostico_desde_conn(
+    conn: &Connection,
+    horizonte: usize,
+) -> Result<(Vec<PuntoHistorial>, Vec<PuntoConFecha>), String> {
+    if horizonte == 0 {
+        return Err("El horizonte de predicción debe ser mayor a 0".to_string());
+    }
+
+    let (densa, ultimo) = serie_densa(conn)?;
+
+    let serie: Vec<f64> = densa.iter().map(|(_, total)| *total).collect();
     if serie.len() < MIN_DIAS_HISTORIA {
         return Err(format!(
             "Datos insuficientes para predecir (solo se tienen {} días de ventas).",
@@ -121,7 +160,15 @@ pub fn predecir_desde_conn(
         });
     }
 
-    Ok(puntos)
+    let historial = densa
+        .into_iter()
+        .map(|(dia, total)| PuntoHistorial {
+            fecha: dia.format("%Y-%m-%d").to_string(),
+            total,
+        })
+        .collect();
+
+    Ok((historial, puntos))
 }
 
 #[cfg(test)]
@@ -275,5 +322,26 @@ mod tests {
     fn horizonte_cero_es_error() {
         let conn = conexion_con_datos(&[("2026-07-01", 500.0), ("2026-07-02", 700.0)]);
         assert!(predecir_desde_conn(&conn, 0).is_err());
+    }
+
+    #[test]
+    fn historia_y_pronostico_enganchan_fechas() {
+        let conn = conexion_con_datos(&[
+            ("2026-07-01", 100.0),
+            ("2026-07-02", 200.0),
+            ("2026-07-03", 300.0),
+            ("2026-07-04", 400.0),
+        ]);
+        let (historial, pronostico) = historia_y_pronostico_desde_conn(&conn, 3).unwrap();
+        // El historial trae la serie densa con fechas reales...
+        assert_eq!(historial.len(), 4);
+        assert_eq!(historial.first().unwrap().fecha, "2026-07-01");
+        assert_eq!(historial.last().unwrap().fecha, "2026-07-04");
+        assert_eq!(historial.last().unwrap().total, 400.0);
+        // ...y el pronóstico arranca al día siguiente, continuo.
+        assert_eq!(pronostico.len(), 3);
+        assert_eq!(pronostico.first().unwrap().fecha, "2026-07-05");
+        // Y equivale a predecir_desde_conn (misma matemática, mismo origen).
+        assert_eq!(pronostico, predecir_desde_conn(&conn, 3).unwrap());
     }
 }
