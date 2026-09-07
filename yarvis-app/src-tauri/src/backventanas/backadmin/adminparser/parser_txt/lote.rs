@@ -6,6 +6,7 @@
 // bloquea al emisor, así el 0% no se congela con 12,000 tickets).
 // ============================================================
 
+use super::super::empleados_auto::{resolver_empleados_desde_ventas, ResultadoEmpleadosAuto};
 use crate::backventanas::auth::AuthState;
 use src_ia::cerebro::analizador_tickets::{parsear_linea, MapeoColumnas};
 use src_ia::cerebro::parseador_masivo::{
@@ -77,11 +78,25 @@ pub fn parsear_carpeta(
     let mapeo: MapeoColumnas =
         serde_json::from_value(mapeo).map_err(|e| format!("Mapeo inválido: {}", e))?;
 
-    let stats = procesar_carpeta_impl(archivos, mapeo, db_path);
+    let stats = procesar_carpeta_impl(archivos, mapeo, db_path.clone());
     let mut valor =
         serde_json::to_value(&stats).map_err(|e| format!("Error serializando resultado: {}", e))?;
     if let Some(obj) = valor.as_object_mut() {
         obj.insert("status".to_string(), serde_json::json!("ok"));
+        // Alta automática de empleados (igual que en el stream); las
+        // credenciales se consultan en el historial, aquí solo el conteo.
+        let empleados = resolver_empleados_desde_ventas(&db_path).unwrap_or(ResultadoEmpleadosAuto {
+            creados: Vec::new(),
+            vinculados: 0,
+        });
+        obj.insert(
+            "empleados_creados".to_string(),
+            serde_json::json!(empleados.creados.len()),
+        );
+        obj.insert(
+            "ventas_vinculadas_empleados".to_string(),
+            serde_json::json!(empleados.vinculados),
+        );
     }
     Ok(valor)
 }
@@ -188,6 +203,14 @@ fn emitir_stream_batch(
         }
     }
 
+    // Lote terminado: alta automática de empleados detectados en tickets
+    // (sistema, no manual) + vinculación de sus ventas vía cajero_id.
+    // Si falla no se aborta la importación: ya quedó guardada arriba.
+    let empleados = resolver_empleados_desde_ventas(db_path).unwrap_or(ResultadoEmpleadosAuto {
+        creados: Vec::new(),
+        vinculados: 0,
+    });
+
     let _ = app.emit("batch-progress", serde_json::json!({
         "type": "complete",
         "total_archivos": total,
@@ -201,6 +224,8 @@ fn emitir_stream_batch(
         "duplicados_detectados": duplicados_detectados,
         "productos_nuevos_lista": productos_nuevos_set.into_iter().take(100).collect::<Vec<_>>(),
         "tickets_fallidos": tickets_fallidos.iter().take(500).collect::<Vec<_>>(),
+        "empleados_creados": empleados.creados,
+        "ventas_vinculadas_empleados": empleados.vinculados,
     }));
 
     Ok("ok".to_string())

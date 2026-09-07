@@ -44,7 +44,7 @@ Stack verificado:
 ## 2. Arquitectura del Sistema
 
 ```
-  Frontend (React + Vite)  --invoke-->  Backend Rust (Tauri, 98 comandos)  -->  SQLite (WAL)
+  Frontend (React + Vite)  --invoke-->  Backend Rust (Tauri, 99 comandos)  -->  SQLite (WAL)
          |                                        |
          +---- respuesta IPC <--------------------+
    Motor IA (crate src-ia, en proceso): chat cloud (SSE) + chat local (llama.cpp) + parseador + predicciones.
@@ -113,7 +113,7 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 
 ### 5.1 lib.rs — Setup principal
 
-Inicializa DB, registra 98 comandos en el invoke_handler, plugins (opener, dialog), job de alertas cada hora, tracing con RUST_LOG.
+Inicializa DB, registra 99 comandos en el invoke_handler, plugins (opener, dialog), job de alertas cada hora, tracing con RUST_LOG.
 
 ### 5.2 db.rs — Inicializacion de SQLite
 
@@ -182,7 +182,7 @@ SQLite, un archivo (yarvis.db), modo WAL, acceso asincrono con sqlx. Unico escri
 
 ## 9. Comandos Tauri (Rust)
 
-98 comandos #[tauri::command] en lib.rs. Resumen por modulo:
+99 comandos #[tauri::command] en lib.rs. Resumen por modulo:
 
 Auth / Setup (adminconfig/auth.rs, google.rs)
 check_setup_done, guardar_admin, validar_login_admin, get_admin_data, update_admin_data, guardar_empleado, validar_login_empleado, cerrar_sesion, login_con_google

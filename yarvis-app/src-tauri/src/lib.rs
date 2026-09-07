@@ -91,6 +91,7 @@ pub fn run() {
             // Empleados - Modal empleado
             backventanas::backadmin::adminempleados::modalempleado::editar_empleado,
             backventanas::backadmin::adminempleados::modalempleado::set_estado_empleado,
+            backventanas::backadmin::adminempleados::modalempleado::aviso_password_defecto,
             // Empleados - Modal metas
             backventanas::backadmin::adminempleados::modalmetas::get_employee_goals,
             backventanas::backadmin::adminempleados::modalmetas::save_employee_goal,

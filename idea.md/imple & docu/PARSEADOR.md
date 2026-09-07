@@ -77,6 +77,7 @@ parseador_de_tickets/
 | parser_txt/lote.rs | parsear_con_mapeo, parsear_carpeta, parsear_carpeta_stream |
 | parser_csv.rs | parsear_catalogo_csv (auto-detect separador/header/columnas numericas) |
 | parser_excel.rs | parsear_excel |
+| empleados_auto.rs | (interno) resolver_empleados_desde_ventas al terminar cada lote |
 | parser_commands.rs | get_db_path, vincular_inventario, guardar_vinculacion, descargar_modelos |
 | utils.rs | Utilidades compartidas (rutas, precio limpio) |
 
@@ -118,6 +119,32 @@ que la matemática nunca dependió del orden físico.
 **Confianza de familia C**: el denominador son solo las líneas de
 productos repetidos (las únicas observables), no toda la muestra. Una
 carpeta real con precios perfectos daba 37% por este bug; hoy da 100%.
+
+---
+
+## 1c. Alta automática de empleados desde tickets (2026-09)
+
+Como el inventario se rellena solo, la sección de empleados también: al
+terminar cada importación, `adminparser/empleados_auto.rs` resuelve los
+cajeros sin vincular de `ventas`.
+
+- **Mismo nombre normalizado = misma persona** (mayúsculas, espacios
+  colapsados, sin punto final): se reutiliza, nunca se duplica solo — si
+  no, cada re-importe crearía usuarios sin fin. Si ≥2 usuarios comparten
+  nombre, se vincula al más antiguo (lo único estable entre corridas).
+- **Contraseña = nombre + "123"** (`"1234"`, `"12345"…` si choca con la de
+  otra persona — obligatorio porque el login de empleado es solo-password:
+  dos passwords iguales = uno nunca entra). Se guarda hasheada (Argon2);
+  la plana se muestra UNA vez en el resumen final para comunicarla.
+- **Se omiten**: SISTEMA, IMPORTADOR, SIN ASIGNAR y vacíos.
+- **Vinculación**: pone `cajero_id` en sus tickets (nuevos e históricos
+  pendientes) para que cuenten en sus estadísticas. Idempotente.
+- **Lo demás es manual**: rol empleado, estado activo, salario 0; sueldo,
+  horarios y días los captura el admin en Empleados.
+- **Aviso cada login**: los auto-creados traen `password_defecto=1` y ven
+  un banner hasta que el admin les cambie la contraseña (comando
+  `aviso_password_defecto`; `editar_empleado` apaga el flag al guardar
+  una nueva). Migración 0008.
 
 ---
 
@@ -210,8 +237,12 @@ La gestion descargar_modelos() de Python (auto-unload en finally, endpoints /unl
 3. parsear_carpeta_stream procesa cada archivo con mapeo + fallback por
    archivo (el archivo cuyo formato no cuadra recibe deteccion propia).
    - Idempotencia: tickets con folio ya importado se omiten enteros.
-4. El frontend muestra progreso en vivo y un resumen (ventas creadas,
-   omitidas por folio, archivos con formato distinto rescatados).
+4. Al terminar el lote: alta automática de empleados detectados en tickets
+   (ver 1c) + vinculación de sus ventas. Las credenciales se muestran UNA
+   vez en el resumen final.
+5. El frontend muestra progreso en vivo y un resumen (ventas creadas,
+   omitidas por folio, archivos con formato distinto rescatados,
+   empleados creados con sus contraseñas).
 ```
 
 ### Flujo de Parseo de Catalogo

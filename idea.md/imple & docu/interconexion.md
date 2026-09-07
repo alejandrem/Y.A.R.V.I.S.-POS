@@ -34,7 +34,7 @@ No hay HTTP local. No hay puertos libres. No hay ai_service. No hay externalBin 
 
 1. El usuario ejecuta yarvis-app (el binario unico).
 2. lib.rs abre el pool SQLite (db/db.rs): crea el archivo yarvis.db si no existe, activa WAL, aplica migraciones (dos fases para foreign_keys), crea tablas.
-3. Se registran 98 comandos Tauri en el invoke_handler y se inicia el job de alertas cada hora.
+3. Se registran 99 comandos Tauri en el invoke_handler y se inicia el job de alertas cada hora.
 4. main.tsx monta React: el orquestador App.tsx decide la pantalla segun check_setup_done (comando real):
    - Paso 0 PrimerInicio: primer registro de administrador + tienda + empleado (solo se muestra una vez).
    - Paso 1 Login con seleccion de rol y contrasena.

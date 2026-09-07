@@ -83,7 +83,7 @@ Pendiente en produccion:
 | Backend Rust (comandos) | yarvis-app/src-tauri/src/backventanas/ |
 | Motor de IA (Rust) | src-ia/ |
 | Predicciones | src-ia/predicciones/ |
-| Registro de comandos | yarvis-app/src-tauri/src/lib.rs (98 comandos) |
+| Registro de comandos | yarvis-app/src-tauri/src/lib.rs (99 comandos) |
 | DB (init + WAL + migraciones) | yarvis-app/src-tauri/src/backventanas/db/db.rs |
 | Conversion monetaria | yarvis-app/src-tauri/src/dinero.rs |
 | Build de produccion | yarvis-app/build.sh |

@@ -33,6 +33,11 @@ export interface DeteccionMapeo {
   archivos_muestra: number;
 }
 
+export interface CredencialAuto {
+  nombre: string;
+  password_plana: string;
+}
+
 export interface BatchProgress {
   type: "progress" | "complete";
   procesados: number;
@@ -49,6 +54,10 @@ export interface BatchProgress {
   productos_nuevos?: number;
   productos_existentes?: number;
   duplicados_detectados?: number;
+  /** Empleados creados solos desde cajeros de tickets (credencial una sola vez). */
+  empleados_creados?: CredencialAuto[];
+  /** Ventas vinculadas a empleados vía cajero_id (nuevas + históricas). */
+  ventas_vinculadas_empleados?: number;
 }
 
 export type Phase = "catalogo" | "carpeta" | "procesando" | "completo" | "historial";

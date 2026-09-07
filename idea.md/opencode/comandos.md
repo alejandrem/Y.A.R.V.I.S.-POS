@@ -48,7 +48,7 @@ cd ../..
 ## Tests y verificacion
 
 ```bash
-# Backend Rust + motor IA (98 comandos + predicciones + parseador)
+# Backend Rust + motor IA (99 comandos + predicciones + parseador)
 cargo test --manifest-path yarvis-app/src-tauri/Cargo.toml
 cargo test --manifest-path src-ia/Cargo.toml
 

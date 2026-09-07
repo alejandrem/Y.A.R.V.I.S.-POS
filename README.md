@@ -36,7 +36,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Binario único** — Tauri v2 empaqueta frontend + backend + motor IA juntos.
 
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **98 comandos Tauri** registrados en 21 módulos de backend.
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **99 comandos Tauri** registrados en 21 módulos de backend.
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Parseador 100% Rust, sin IA de por medio** — el formato del ticket se detecta verificando `cantidad × precio ≈ total` línea por línea. Instantáneo incluso en laptops viejas; el Qwen 1.7B queda solo para el chat.
 
@@ -90,7 +90,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 │   │   ├── front-empleado/    #   Punto de venta del operador
 │   │   └── hooks/             #   ThemeContext/useTheme
 │   └── src-tauri/             # Backend Rust + configuración Tauri
-│       └── src/backventanas/  #   ~98 comandos (backadmin/ y backempleado/)
+│       └── src/backventanas/  #   ~99 comandos (backadmin/ y backempleado/)
 ├── idea.md/                   # Documentación completa (arquitectura, stack,
 │                              #   parseador, migración, bugs)
 ├── run.sh / run.bat           # Lanzadores (dev)

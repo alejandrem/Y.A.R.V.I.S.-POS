@@ -1,7 +1,26 @@
 use crate::backventanas::auth::AuthState;
 use crate::backventanas::backadmin::adminconfig::auth::{verify_password, hash_password, BloqueHorario};
 use crate::dinero::a_centavos;
-use sqlx::SqlitePool;#[tauri::command]
+use sqlx::SqlitePool;
+
+/// ¿El operador logueado sigue con la contraseña débil predeterminada?
+/// El frontend lo pregunta tras cada login para mostrar el aviso.
+#[tauri::command]
+pub async fn aviso_password_defecto(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<bool, String> {
+    let sesion = auth.require_operator()?;
+    let flag: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(password_defecto, 0) FROM usuarios WHERE id = ?",
+    )
+    .bind(sesion.user_id)
+    .fetch_one(&*state)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(flag != 0)
+}
+#[tauri::command]
 pub async fn editar_empleado(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
@@ -88,7 +107,7 @@ pub async fn editar_empleado_impl(
     .map_err(|e| e.to_string())?;
 
     if let Some(hashed) = pass_nueva {
-        sqlx::query("UPDATE usuarios SET password = ? WHERE id = ?")
+        sqlx::query("UPDATE usuarios SET password = ?, password_defecto = 0 WHERE id = ?")
             .bind(&hashed)
             .bind(empleado_id)
             .execute(pool)

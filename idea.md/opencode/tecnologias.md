@@ -25,7 +25,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 
 ## Backend (Rust — verificado en Cargo.toml)
 
-> Comunicacion con Frontend: Tauri IPC (comandos #[tauri::command], 98 registrados) via invoke().
+> Comunicacion con Frontend: Tauri IPC (comandos #[tauri::command], 99 registrados) via invoke().
 > Framework: Tauri 2.11.
 > Runtime Asincrono: Tokio 1.38 full.
 > Serializacion: Serde / serde_json.

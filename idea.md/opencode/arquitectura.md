@@ -97,7 +97,7 @@ Y.A.R.V.I.S.-POS/
         ├── Cargo.toml                 # tauri 2.11, sqlx 0.8, tokio 1.38, serde, reqwest, argon2, chrono, src-ia.
         └── src/
             ├── main.rs                # Entry (windows_subsystem) -> yarvis_app_lib::run().
-            ├── lib.rs                 # Builder Tauri: setup DB, registra 98 comandos, plugins.
+            ├── lib.rs                 # Builder Tauri: setup DB, registra 99 comandos, plugins.
             ├── models.rs              # Structs serde compartidas.
             ├── dinero.rs              # a_centavos / a_pesos (conversion centavos).
             ├── api_config.rs          # guardar_api_keys / leer_api_keys (archivo 0600).
@@ -150,7 +150,7 @@ Y.A.R.V.I.S.-POS/
 
 ## Comandos registrados
 
-98 comandos en lib.rs. Ver tecnologias.md para el conteo por dominio.
+99 comandos en lib.rs. Ver tecnologias.md para el conteo por dominio.
 
 ## Casos pendientes (stubs) — devuelven error claro, no rompen la caja
 

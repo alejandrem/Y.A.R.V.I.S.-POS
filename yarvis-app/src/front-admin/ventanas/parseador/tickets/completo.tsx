@@ -19,6 +19,28 @@ const Completo = ({ batch, ticketFiles, deteccion, onReset }: CompletoProps) => 
     </div>
     {!!batch?.ventas_omitidas && <p className="text-[10px] text-amber-400 mt-4">{batch.ventas_omitidas} ticket(s) se omitieron porque ya estaban importados (mismo folio o misma fecha y contenido): no se duplicó nada.</p>}
     {!!batch?.archivos_formato_distinto && <p className="text-[10px] text-sky-400 mt-2">{batch.archivos_formato_distinto} archivo(s) traían otro formato y se rescataron con detección propia.</p>}
+    {!!batch?.empleados_creados?.length && (
+      <div className="mt-4 rounded-2xl bg-white/10 p-4 text-left">
+        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+          {batch.empleados_creados.length} empleado(s) creados solos desde los tickets
+        </p>
+        <p className="text-[10px] text-neutral-400 mt-1">
+          Anota sus contraseñas y dáselas: solo se muestran esta vez. Pídeles que el admin las cambie en Empleados (salario y horarios se capturan manual).
+        </p>
+        <ul className="mt-2 space-y-1">
+          {batch.empleados_creados.map((c) => (
+            <li key={c.nombre} className="text-xs font-bold text-neutral-100">
+              {c.nombre} · contraseña: <span className="font-black text-white">{c.password_plana}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {!!batch?.ventas_vinculadas_empleados && (
+      <p className="text-[10px] text-neutral-400 mt-2">
+        {batch.ventas_vinculadas_empleados} venta(s) vinculadas a sus empleados (ya cuentan en sus estadísticas).
+      </p>
+    )}
     <button onClick={onReset} className="mt-8 rounded-2xl bg-neutral-100 text-neutral-950 px-8 py-4 text-[10px] font-black uppercase tracking-widest">Procesar otra carpeta</button>
     {deteccion && <p className="text-[10px] text-neutral-500 mt-5">Mapeo detectado sin IA: cuadra el {Math.round(deteccion.confianza * 100)}% de {deteccion.lineas_evaluadas} líneas de {deteccion.archivos_muestra} archivos de muestra.</p>}
   </section>

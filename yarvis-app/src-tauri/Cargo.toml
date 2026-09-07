@@ -69,6 +69,10 @@ name = "func_empleados"
 path = "test/funcionamiento/empleados.rs"
 
 [[test]]
+name = "func_empleados_auto"
+path = "test/funcionamiento/empleados_auto.rs"
+
+[[test]]
 name = "func_auth"
 path = "test/funcionamiento/auth.rs"
 
