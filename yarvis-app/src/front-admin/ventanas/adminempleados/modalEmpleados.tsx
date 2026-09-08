@@ -14,12 +14,14 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import {
   ModalShell, Campo, inputCls,
   ICONO_USUARIO, ICONO_OJO, ICONO_OJO_OCULTO, ICONO_CHECK, ICONO_EDITAR,
 } from "../../../components/ui";
+import { notificarError, notificarExito } from "../../../components/notificaciones";
+import { reportarError } from "../../../services/tauri";
+import { guardarEmpleado, editarEmpleado, cambiarEstadoEmpleado } from "../../../services/empleados";
 import SelectorHorarios from "./componentes/selector-horarios";
 import CampoSalario from "./componentes/campo-salario";
 import SeccionEstado from "./componentes/seccion-estado";
@@ -74,13 +76,13 @@ const ModalEmpleados = ({ onClose, onSaved, empleado }: ModalEmpleadosProps) => 
     if (!empleado) return;
     setCambiandoEstado(true);
     try {
-      await invoke("set_estado_empleado", { empleadoId: empleado.id, estado: nuevoEstado });
+      await cambiarEstadoEmpleado(empleado.id, nuevoEstado);
       setEstadoActual(nuevoEstado);
       setConfirmarDesactivar(false);
+      notificarExito(`Empleado ${nuevoEstado === "activo" ? "activado" : "desactivado"}`);
       onSaved();
     } catch (error) {
-      console.error("Error al cambiar estado del empleado:", error);
-      alert(String(error));
+      reportarError("No se pudo cambiar el estado del empleado", error);
     } finally {
       setCambiandoEstado(false);
     }
@@ -88,39 +90,39 @@ const ModalEmpleados = ({ onClose, onSaved, empleado }: ModalEmpleadosProps) => 
 
   const handleSave = async () => {
     if (!name.trim()) {
-      alert("El nombre es obligatorio");
+      notificarError("El nombre es obligatorio");
       return;
     }
     // En edición la contraseña es opcional (vacía = no cambiar).
     if (!modoEdicion || pass || confirmPass) {
       if (pass.length < 6 || !/[A-Za-z]/.test(pass) || !/[0-9]/.test(pass)) {
-        alert("La contraseña debe tener al menos 6 caracteres, con letras y números");
+        notificarError("La contraseña debe tener al menos 6 caracteres, con letras y números");
         return;
       }
       if (pass !== confirmPass) {
-        alert("Las contraseñas no coinciden");
+        notificarError("Las contraseñas no coinciden");
         return;
       }
     }
     for (let i = 0; i < bloques.length; i++) {
       if (bloques[i].dias.length === 0) {
-        alert(`El horario #${i + 1} no tiene días seleccionados`);
+        notificarError(`El horario #${i + 1} no tiene días seleccionados`);
         return;
       }
       if (!bloques[i].inicio || !bloques[i].fin) {
-        alert(`Define la hora de entrada y salida del horario #${i + 1}`);
+        notificarError(`Define la hora de entrada y salida del horario #${i + 1}`);
         return;
       }
     }
     if (diasSemana === 0) {
-      alert("Selecciona al menos un día de trabajo");
+      notificarError("Selecciona al menos un día de trabajo");
       return;
     }
     setGuardando(true);
     try {
       const horarios = bloques.map((b) => ({ dias: b.dias, horaInicio: b.inicio, horaFin: b.fin }));
       if (modoEdicion && empleado) {
-        await invoke("editar_empleado", {
+        await editarEmpleado({
           empleadoId: empleado.id,
           nombre: name.trim(),
           salarioSemanal,
@@ -128,13 +130,13 @@ const ModalEmpleados = ({ onClose, onSaved, empleado }: ModalEmpleadosProps) => 
           nuevaPassword: pass || null,
         });
       } else {
-        await invoke("guardar_empleado", { name: name.trim(), pass, salarioSemanal, horarios });
+        await guardarEmpleado({ name: name.trim(), pass, salarioSemanal, horarios });
       }
+      notificarExito(modoEdicion ? "Empleado actualizado" : "Empleado guardado");
       onSaved();
       onClose();
     } catch (error) {
-      console.error("Error al guardar empleado:", error);
-      alert(String(error));
+      reportarError("No se pudo guardar el empleado", error);
     } finally {
       setGuardando(false);
     }

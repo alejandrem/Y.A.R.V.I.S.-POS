@@ -7,9 +7,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { ModalShell, ICONO_CAJA } from "../../../../components/ui";
-import { notificarError } from "../../../../components/notificaciones";
+import { reportarError } from "../../../../services/tauri";
+import { notificarExito } from "../../../../components/notificaciones";
+import { obtenerMovimientosCorte, cerrarCorte } from "../../../../services/finanzas";
 import type { CorteCaja, CierreCorte, MovimientoCaja } from "../../../types";
 import { moneda } from "../nucleo/utilidades";
 
@@ -28,20 +29,20 @@ export default function ModalDetalleCorte({ corte, onCerrar, onActualizado }: Pr
   const [resumen, setResumen] = useState<CierreCorte | null>(null);
 
   useEffect(() => {
-    invoke<MovimientoCaja[]>("get_movimientos_corte", { corteId: corte.id })
+    obtenerMovimientosCorte(corte.id)
       .then(setMovimientos)
-      .catch((e) => { console.error("Error cargando movimientos:", e); notificarError("No se pudieron cargar los movimientos del corte", e); });
+      .catch((e) => reportarError("No se pudieron cargar los movimientos del corte", e));
   }, [corte.id]);
 
   const abierto = corte.estado === "abierto";
 
-  const cerrarCorte = async () => {
+  const cerrarCorteHandler = async () => {
     setCerrando(true);
     setError("");
     try {
       // Los totales de venta/métodos van solo por compatibilidad del
       // contrato: el servidor recalcula TODO desde la tabla de ventas.
-      const r = await invoke<CierreCorte>("cerrar_corte", {
+      const r = await cerrarCorte({
         corteId: corte.id,
         totalVentas: corte.total_ventas,
         totalEfectivo: corte.total_efectivo,
@@ -51,9 +52,10 @@ export default function ModalDetalleCorte({ corte, onCerrar, onActualizado }: Pr
         retirosManuales: parseFloat(retiros) || 0,
       });
       setResumen(r);
+      notificarExito("Corte cerrado y recalculado");
       onActualizado?.();
     } catch (e) {
-      console.error("[FINANZAS] error al cerrar corte:", e);
+      reportarError("No se pudo cerrar el corte", e);
       setError(String(e));
     } finally {
       setCerrando(false);
@@ -119,7 +121,7 @@ export default function ModalDetalleCorte({ corte, onCerrar, onActualizado }: Pr
             </div>
             {error && <p className="text-xs font-black text-red-500">{error}</p>}
             <button
-              onClick={cerrarCorte}
+              onClick={cerrarCorteHandler}
               disabled={cerrando}
               className="w-full py-3 rounded-2xl bg-neutral-950 text-white text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >

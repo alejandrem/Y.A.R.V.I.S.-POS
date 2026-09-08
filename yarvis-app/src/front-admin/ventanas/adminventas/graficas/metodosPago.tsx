@@ -1,20 +1,16 @@
 // Ventas por método de pago en el rango (agregado client-side de tickets).
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { obtenerTickets, type TicketDb } from "../../../../services/tickets";
 import { RangoDropdown, RANGOS_VENTANA, moneda, Tarjeta, TituloSeccion, Vacio, Cargando } from "./controles";
-
-interface TicketDb {
-  id: number;
-  fecha: string;
-  total: number;
-  metodo_pago: string;
-}
 
 const COLORES = ["#171717", "#737373", "#22c55e", "#3b82f6", "#f59e0b"];
 
 /** Agrega tickets por método de pago en los últimos `dias` (puro, testeable). */
-export const agregarPorMetodo = (tickets: TicketDb[], dias: number) => {
+export const agregarPorMetodo = (
+  tickets: Pick<TicketDb, "id" | "fecha" | "total" | "metodo_pago">[],
+  dias: number,
+) => {
   const corte = Date.now() - dias * 86400000;
   const agg = new Map<string, number>();
   for (const t of tickets) {
@@ -35,7 +31,7 @@ const MetodosPago = () => {
   useEffect(() => {
     let vivo = true;
     setTickets(null);
-    invoke<TicketDb[]>("get_tickets")
+    obtenerTickets(500, 0)
       .then((r) => vivo && setTickets(r || []))
       .catch(() => vivo && setTickets([]));
     return () => {

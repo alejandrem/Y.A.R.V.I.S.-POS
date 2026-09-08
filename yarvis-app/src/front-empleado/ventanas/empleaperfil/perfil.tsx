@@ -4,8 +4,8 @@
 // reloj vivo y compone las cards visuales de ./componentes.
 // ══════════════════════════════════════════════════════════════════
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { notificarError } from "../../../components/notificaciones";
+import { invokeTauri, reportarError } from "../../../services/tauri";
+import { obtenerMiTurno, obtenerMisHorasExtra } from "../../../services/turno";
 import {
   geometriaBarra,
   type MiTurno, type DiaExtra,
@@ -53,8 +53,8 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
 
   useEffect(() => {
     if (activeTab === "perfil") {
-      invoke<MiTurno>("get_mi_turno").then(setTurno).catch((e) => { console.error("Error al cargar turno:", e); notificarError("No se pudo cargar tu turno", e); });
-      invoke<DiaExtra[]>("get_mis_horas_extra").then(setExtras).catch((e) => { console.error("Error al cargar extras:", e); notificarError("No se pudieron cargar tus horas extra", e); });
+      obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar tu turno", e));
+      obtenerMisHorasExtra().then(setExtras).catch((e) => reportarError("No se pudieron cargar tus horas extra", e));
     }
   }, [activeTab]);
 
@@ -68,11 +68,9 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
 
   const loadProfile = async () => {
     try {
-      const result = await invoke<EmployeeProfileFull>("get_employee_profile", { nombre: operatorName });
-      setData(result);
+      setData(await invokeTauri<EmployeeProfileFull>("get_employee_profile", { nombre: operatorName }));
     } catch (error) {
-      console.error("Error al cargar perfil:", error);
-      notificarError("No se pudo cargar tu perfil", error);
+      reportarError("No se pudo cargar tu perfil", error);
     }
   };
 

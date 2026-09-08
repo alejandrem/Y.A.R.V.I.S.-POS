@@ -8,8 +8,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { obtenerInventario, type InventoryItem } from "../../../services/inventario";
+import { reportarError } from "../../../services/tauri";
+import { buscarProductoSimilar } from "../../../services/venta";
 import ModalVenta from "./modalventa";
 import ModalTicket from "./modalticket";
 import { useCart } from "./CartProvider";
@@ -79,7 +80,7 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
 
   const loadInventory = async () => {
     try { setInventory(await obtenerInventario()); }
-    catch (error) { console.error("Error al cargar inventario:", error); }
+    catch (error) { reportarError("No se pudo cargar el inventario para la venta", error); }
   };
 
   const searchProducts = useCallback(
@@ -104,7 +105,7 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
       if (localResults.length === 0 && query.length > 2) {
         setIaStatus("loading");
         try {
-          const aiResults = await invoke<{ id: number; contenido: string; score: number }[]>("buscar_producto_similar", { query, topK: 5 });
+          const aiResults = await buscarProductoSimilar(query, 5);
           if (aiResults && aiResults.length > 0) {
             const matched = aiResults.map((r) => inventory.find((p) => p.id === r.id)).filter(Boolean) as InventoryItem[];
             if (matched.length > 0) {

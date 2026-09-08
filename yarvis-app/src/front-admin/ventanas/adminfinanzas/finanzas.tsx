@@ -10,10 +10,16 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import { BotonAnimado, ICONO_REINICIAR, ICONO_CHECK, ICONO_GRAFICA } from "../../../components/ui";
-import { notificarError } from "../../../components/notificaciones";
+import { reportarError } from "../../../services/tauri";
+import { notificarExito } from "../../../components/notificaciones";
+import {
+  obtenerResumenPeriodo, obtenerPuntoEquilibrio, obtenerDatosGraficaPL,
+  obtenerGastosPorCategoria, obtenerVentasVsGastos, obtenerTendenciaCortesZ,
+  obtenerPrediccionesFinancieras, obtenerGastos, obtenerCortes, obtenerAlertas,
+  obtenerMetricasDiarias, marcarAlertaLeida, exportarGastosCsv, exportarBalancePdf,
+} from "../../../services/finanzas";
 import type {
   ResumenPeriodo, DatoGraficaPL, DatoGraficaGastosCategoria, DatoGraficaCortesZ,
   PuntoEquilibrio, AlertaFinanciera, GastoRecurrente, CorteCaja, MetricasUtilidad,
@@ -58,105 +64,80 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
 
   const cargarResumen = useCallback(async () => {
     try {
-      const r = await invoke<ResumenPeriodo>("get_resumen_periodo", { fechaInicio: rango.inicio, fechaFin: rango.fin });
-      setResumen(r);
+      setResumen(await obtenerResumenPeriodo(rango));
     } catch (e) {
-      console.error("[FINANZAS] Error en get_resumen_periodo:", e);
-      notificarError("No se pudo cargar el resumen financiero", e);
+      reportarError("No se pudo cargar el resumen financiero", e);
     }
   }, [rango]);
 
   const cargarPuntoEq = useCallback(async () => {
     try {
-      const pe = await invoke<PuntoEquilibrio>("get_punto_equilibrio");
-      setPuntoEq(pe);
+      setPuntoEq(await obtenerPuntoEquilibrio());
     } catch (e) {
-      console.error("[FINANZAS] Error en get_punto_equilibrio:", e);
-      notificarError("No se pudo cargar el punto de equilibrio", e);
+      reportarError("No se pudo cargar el punto de equilibrio", e);
     }
   }, []);
 
   const cargarGraficas = useCallback(async () => {
     try {
-      const pl = await invoke<DatoGraficaPL[]>("get_datos_grafica_pl", { fechaInicio: rango.inicio, fechaFin: rango.fin, granularidad: "dia" });
-      setPlData(pl);
+      setPlData(await obtenerDatosGraficaPL(rango));
     } catch (e) {
-      console.error("[FINANZAS] Error en get_datos_grafica_pl:", e);
-      notificarError("No se pudo cargar la gráfica de pérdidas y ganancias", e);
+      reportarError("No se pudo cargar la gráfica de pérdidas y ganancias", e);
     }
     try {
-      const gc = await invoke<DatoGraficaGastosCategoria[]>("get_gastos_por_categoria", { fechaInicio: rango.inicio, fechaFin: rango.fin });
-      setGastosCat(gc);
+      setGastosCat(await obtenerGastosPorCategoria(rango));
     } catch (e) {
-      console.error("[FINANZAS] Error en get_gastos_por_categoria:", e);
-      notificarError("No se pudo cargar el desglose de gastos por categoría", e);
+      reportarError("No se pudo cargar el desglose de gastos por categoría", e);
     }
     try {
-      const vz = await invoke<DatoGraficaPL[]>("get_ventas_vs_gastos_mensual", { meses: 6 });
-      setVentasGastos(vz);
+      setVentasGastos(await obtenerVentasVsGastos(6));
     } catch (e) {
-      console.error("[FINANZAS] Error en get_ventas_vs_gastos_mensual:", e);
-      notificarError("No se pudo cargar la comparativa de ventas vs gastos", e);
+      reportarError("No se pudo cargar la comparativa de ventas vs gastos", e);
     }
     try {
-      const cz = await invoke<DatoGraficaCortesZ[]>("get_tendencia_cortes_z", { fechaInicio: rango.inicio, fechaFin: rango.fin });
-      setCortesZ(cz);
+      setCortesZ(await obtenerTendenciaCortesZ(rango));
     } catch (e) {
-      console.error("[FINANZAS] Error en get_tendencia_cortes_z:", e);
-      notificarError("No se pudo cargar la tendencia de cortes Z", e);
+      reportarError("No se pudo cargar la tendencia de cortes Z", e);
     }
   }, [rango]);
 
   const cargarPredicciones = useCallback(async () => {
     try {
-      const res = await invoke<{ data: any[] }>("get_predicciones_financieras", { days: diasPrediccion });
-      setPredicciones(res.data ?? []);
+      setPredicciones(await obtenerPrediccionesFinancieras(diasPrediccion));
     } catch (e) {
-      console.error("[FINANZAS] Error en cargarPredicciones:", e);
-      notificarError("No se pudieron cargar las predicciones financieras", e);
+      reportarError("No se pudieron cargar las predicciones financieras", e);
     }
   }, [diasPrediccion]);
 
   const cargarGastos = useCallback(async () => {
     try {
-      const g = await invoke<GastoRecurrente[]>("get_gastos_recurrentes");
-      setGastos(g);
+      setGastos(await obtenerGastos());
     } catch (e) {
-      console.error("[FINANZAS] Error en cargarGastos:", e);
-      notificarError("No se pudo cargar la lista de gastos", e);
+      reportarError("No se pudo cargar la lista de gastos", e);
     }
   }, []);
 
   const cargarCortes = useCallback(async () => {
     try {
-      const c = await invoke<CorteCaja[]>("get_cortes_caja", {
-        filtros: { cajero_id: null, fecha_inicio: rango.inicio, fecha_fin: rango.fin, turno: null, tipo_corte: null, estado: null },
-      });
-      setCortes(c);
+      setCortes(await obtenerCortes(rango));
     } catch (e) {
-      console.error("[FINANZAS] Error en cargarCortes:", e);
-      notificarError("No se pudo cargar el historial de cortes de caja", e);
+      reportarError("No se pudo cargar el historial de cortes de caja", e);
     }
   }, [rango]);
 
   const cargarAlertas = useCallback(async () => {
     try {
-      await invoke("generar_alertas_automaticas");
-      const a = await invoke<AlertaFinanciera[]>("get_alertas", { soloNoLeidas: false });
-      setAlertas(a);
+      setAlertas(await obtenerAlertas());
     } catch (e) {
-      console.error("[FINANZAS] Error en cargarAlertas:", e);
-      notificarError("No se pudieron cargar las alertas financieras", e);
+      reportarError("No se pudieron cargar las alertas financieras", e);
     }
   }, []);
 
   const cargarMetricas = useCallback(async () => {
     try {
-      const m = await invoke<MetricasUtilidad[]>("get_metricas_diarias", { fechaInicio: rango.inicio, fechaFin: rango.fin });
-      setMetricas(m);
+      setMetricas(await obtenerMetricasDiarias(rango));
     } catch (e) {
-      console.error("[FINANZAS] Error en cargarMetricas:", e);
-      notificarError("No se pudieron cargar las métricas diarias", e);
+      reportarError("No se pudieron cargar las métricas diarias", e);
     }
   }, [rango]);
 
@@ -182,11 +163,28 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
   const recargarGastos = () => { cargarGastos(); cargarResumen(); cargarPuntoEq(); cargarGraficas(); };
   const marcarLeida = async (id: number) => {
     try {
-      await invoke("marcar_alerta_leida", { id });
+      await marcarAlertaLeida(id);
       cargarAlertas();
     } catch (e) {
-      console.error("[FINANZAS] Error marcando alerta:", e);
-      notificarError("No se pudo marcar la alerta como leída", e);
+      reportarError("No se pudo marcar la alerta como leída", e);
+    }
+  };
+
+  const manejarExportCsv = async () => {
+    try {
+      await exportarGastosCsv(rango);
+      notificarExito("Gastos exportados a CSV");
+    } catch (e) {
+      reportarError("No se pudo exportar el CSV de gastos", e);
+    }
+  };
+
+  const manejarExportPdf = async () => {
+    try {
+      await exportarBalancePdf(rango);
+      notificarExito("Balance exportado a PDF");
+    } catch (e) {
+      reportarError("No se pudo exportar el balance a PDF", e);
     }
   };
 
@@ -205,14 +203,32 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
             <h2 className="text-3xl font-black text-neutral-950 uppercase tracking-tight">Finanzas</h2>
             <p className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em]">Panel financiero completo</p>
           </div>
-          <BotonAnimado
-            icono={ICONO_REINICIAR}
-            iconoHover={ICONO_CHECK}
-            onClick={cargarTodo}
-            className="bg-neutral-950 text-neutral-50 hover:bg-neutral-800 shadow-xl shadow-neutral-200"
-          >
-            Actualizar
-          </BotonAnimado>
+          <div className="flex flex-wrap gap-2">
+            <BotonAnimado
+              icono={ICONO_REINICIAR}
+              iconoHover={ICONO_CHECK}
+              onClick={manejarExportCsv}
+              className="bg-white text-neutral-950 border border-neutral-200 hover:bg-neutral-50 shadow-xl shadow-neutral-200"
+            >
+              CSV gastos
+            </BotonAnimado>
+            <BotonAnimado
+              icono={ICONO_GRAFICA}
+              iconoHover={ICONO_CHECK}
+              onClick={manejarExportPdf}
+              className="bg-white text-neutral-950 border border-neutral-200 hover:bg-neutral-50 shadow-xl shadow-neutral-200"
+            >
+              Balance PDF
+            </BotonAnimado>
+            <BotonAnimado
+              icono={ICONO_REINICIAR}
+              iconoHover={ICONO_CHECK}
+              onClick={cargarTodo}
+              className="bg-neutral-950 text-neutral-50 hover:bg-neutral-800 shadow-xl shadow-neutral-200"
+            >
+              Actualizar
+            </BotonAnimado>
+          </div>
         </div>
 
         {/* ── TABS GORDITOS ──────────────────────────────────────────── */}

@@ -5,13 +5,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import {
   geometriaBarra, fmtHM, type MiTurno,
 } from "../components/turno";
+import { invokeTauri, reportarError } from "../services/tauri";
+import { obtenerMiTurno } from "../services/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
-import { notificarError } from "../components/notificaciones";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
 import { ticketsNav } from "./ventanas/empleaticket/ticket";
 import { clientesNav } from "./ventanas/empleaclientes/clientes";
@@ -58,7 +58,7 @@ export const AvisoPasswordDefecto = () => {
   const [avisar, setAvisar] = useState(false);
 
   useEffect(() => {
-    invoke<boolean>("aviso_password_defecto")
+    invokeTauri<boolean>("aviso_password_defecto")
       .then(setAvisar)
       .catch(() => setAvisar(false));
   }, []);
@@ -109,7 +109,7 @@ const EmployeeDashboard = ({
   const [ahora, setAhora] = useState(() => new Date());
 
   useEffect(() => {
-    invoke<MiTurno>("get_mi_turno").then(setTurno).catch((e) => { console.error("Error al cargar turno:", e); notificarError("No se pudo cargar la información de tu turno", e); });
+    obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar la información de tu turno", e));
     const t = window.setInterval(() => setAhora(new Date()), 30000);
     return () => window.clearInterval(t);
   }, []);

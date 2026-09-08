@@ -6,9 +6,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, lazy, Suspense } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../../hooks/useTheme";
-import { notificarError } from "../../../components/notificaciones";
+import { reportarError } from "../../../services/tauri";
+import { obtenerTiendaInfo, type TiendaInfo } from "../../../services/turno";
 import PastillaTema from "./componentes/pastilla-tema";
 import DatosSesion from "./componentes/datos-sesion";
 
@@ -25,28 +25,18 @@ const ajustesNav = {
   ),
 };
 
-/** Forma del comando get_tienda_info (backend: models::TiendaInfo). */
-interface TiendaInfoBackend {
-  nombre: string | null;
-  ubicacion: string | null;
-  cp: string | null;
-}
-
 interface AjustesProps {
   operatorName?: string;
 }
 
 function Ajustes({ operatorName = "" }: AjustesProps) {
   const { theme, setTheme } = useTheme();
-  const [tiendaInfo, setTiendaInfo] = useState<TiendaInfoBackend | null>(null);
+  const [tiendaInfo, setTiendaInfo] = useState<TiendaInfo | null>(null);
 
   useEffect(() => {
-    invoke<TiendaInfoBackend>("get_tienda_info")
+    obtenerTiendaInfo()
       .then(setTiendaInfo)
-      .catch((e) => {
-        console.error("[AJUSTES] no se pudo cargar la información de la tienda:", e);
-        notificarError("No se pudo cargar la información de la tienda", e);
-      });
+      .catch((e) => reportarError("No se pudo cargar la información de la tienda", e));
   }, []);
 
   return (

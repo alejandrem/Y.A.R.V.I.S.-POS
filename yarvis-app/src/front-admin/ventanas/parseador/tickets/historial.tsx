@@ -1,48 +1,51 @@
 // Historial de parseos: tablas maestras y tickets ya procesados.
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { reportarError } from "../../../../services/tauri";
+import { obtenerTickets, obtenerTotalTickets, PAGE_SIZE_TICKETS, type TicketDb } from "../../../../services/tickets";
+import { obtenerCatalogosImportados, type CatalogoImportado } from "../../../../services/inventario";
 
-interface CatalogoImportado {
-  id: number;
-  hash: string;
-  ruta_archivo: string;
-  fecha_importacion: string;
-  total_productos: number;
-}
-
-interface TicketDb {
-  id: number;
-  folio_ticket: string | null;
-  fecha: string;
-  total: number;
-  metodo_pago: string;
-}
+const PAGE_SIZE = PAGE_SIZE_TICKETS;
 
 const Historial = () => {
   const [catalogos, setCatalogos] = useState<CatalogoImportado[]>([]);
   const [tickets, setTickets] = useState<TicketDb[]>([]);
   const [totalTickets, setTotalTickets] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         const [cats, tks, total] = await Promise.all([
-          invoke<CatalogoImportado[]>("get_catalogos_importados").catch(() => []),
-          invoke<TicketDb[]>("get_tickets").catch(() => []),
-          invoke<number>("get_tickets_total").catch(() => 0),
+          obtenerCatalogosImportados().catch(() => []),
+          obtenerTickets(PAGE_SIZE, 0).catch(() => []),
+          obtenerTotalTickets().catch(() => 0),
         ]);
         setCatalogos(cats || []);
-        // Sin recorte artificial: se muestran los 500 más recientes que
-        // trae el backend; el total real va en el contador.
+        // Paginado: primera página de 100; el resto se carga con "Ver más".
         setTickets(tks || []);
         setTotalTickets(total || (tks || []).length);
+      } catch (e) {
+        reportarError("No se pudo cargar el historial", e);
       } finally {
         setLoading(false);
       }
     };
     load();
   }, []);
+
+  const cargarMas = async () => {
+    if (loadingMore || tickets.length >= totalTickets) return;
+    setLoadingMore(true);
+    try {
+      const mas = await obtenerTickets(PAGE_SIZE, tickets.length).catch(() => []);
+      setTickets((prev) => [...prev, ...(mas || [])]);
+    } catch (e) {
+      reportarError("No se pudieron cargar más tickets", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -93,7 +96,7 @@ const Historial = () => {
           <span className="rounded-xl bg-neutral-950 text-white px-3 py-1.5 text-[10px] font-black">{totalTickets} tickets</span>
         </div>
         {totalTickets > tickets.length && (
-          <p className="text-[10px] text-neutral-400 mb-4">Mostrando los {tickets.length} más recientes.</p>
+          <p className="text-[10px] text-neutral-400 mb-4">Mostrando {tickets.length} de {totalTickets} (los más recientes).</p>
         )}
         {tickets.length === 0 ? (
           <p className="text-sm text-neutral-400 text-center py-10 border-2 border-dashed border-neutral-100 rounded-2xl">No se han parseado tickets</p>
@@ -111,6 +114,15 @@ const Historial = () => {
                 </div>
               </div>
             ))}
+            {tickets.length < totalTickets && (
+              <button
+                onClick={cargarMas}
+                disabled={loadingMore}
+                className="mt-2 w-full rounded-2xl border-2 border-dashed border-neutral-200 py-3 text-xs font-black text-neutral-500 hover:text-neutral-900 hover:border-neutral-900 transition disabled:opacity-50"
+              >
+                {loadingMore ? "Cargando..." : `Ver más (${totalTickets - tickets.length} restantes)`}
+              </button>
+            )}
           </div>
         )}
       </section>

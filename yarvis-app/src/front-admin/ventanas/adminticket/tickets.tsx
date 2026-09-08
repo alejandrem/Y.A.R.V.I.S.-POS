@@ -1,15 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { notificarError } from "../../../components/notificaciones";
+import { invokeTauri, reportarError } from "../../../services/tauri";
+import { obtenerTickets, type TicketDb } from "../../../services/tickets";
 import Graficas from "./graficas";
-
-interface TicketDb {
-  id: number;
-  folio_ticket?: string | null;
-  fecha: string;
-  total: number;
-  metodo_pago: string;
-}
 
 interface CorteDb {
   id: number;
@@ -33,14 +25,12 @@ const Tickets = ({ active = true }: TicketsProps) => {
 
   const fetchData = async () => {
     try {
-      const resTickets = await invoke("get_tickets");
-      setTickets(resTickets as TicketDb[]);
-      
-      const resCortes = await invoke("get_cortes");
+      setTickets(await obtenerTickets(500, 0));
+
+      const resCortes = await invokeTauri("get_cortes");
       setCortes(resCortes as CorteDb[]);
     } catch (error) {
-      console.error("Error al cargar datos:", error);
-      notificarError("No se pudieron cargar los tickets y cortes", error);
+      reportarError("No se pudieron cargar los tickets y cortes", error);
     }
   };
 

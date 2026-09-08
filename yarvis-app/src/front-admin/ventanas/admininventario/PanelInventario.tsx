@@ -6,6 +6,8 @@ import {
   eliminarProductoInventario,
   type InventoryItem,
 } from "../../../services/inventario";
+import { reportarError } from "../../../services/tauri";
+import { notificarExito } from "../../../components/notificaciones";
 
 type Rol = "admin" | "empleado";
 
@@ -46,7 +48,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
       const items = await obtenerInventario();
       setInventory(items);
     } catch (error) {
-      console.error("Error al cargar inventario:", error);
+      reportarError("No se pudo cargar el inventario", error);
     }
   };
 
@@ -93,12 +95,11 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
         await agregarProductoInventario(cleanedItem);
       }
 
-      alert("¡Producto guardado con éxito!");
+      notificarExito("Producto guardado con éxito");
       loadInventory();
       setEditingId(null);
     } catch (error) {
-      console.error("Error al guardar producto:", error);
-      alert("Error al guardar en la DB: " + error);
+      reportarError("No se pudo guardar el producto", error);
     }
   };
 
@@ -108,7 +109,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
         await eliminarProductoInventario(id);
         loadInventory();
       } catch (error) {
-        console.error("Error al eliminar producto:", error);
+        reportarError("No se pudo eliminar el producto", error);
       }
     }
   };

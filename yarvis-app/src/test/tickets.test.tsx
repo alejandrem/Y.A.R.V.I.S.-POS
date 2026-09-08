@@ -30,7 +30,7 @@ beforeEach(() => {
 describe("tickets · carga", () => {
   it("carga tickets y cortes al activarse la pestaña", async () => {
     render(<Tickets active={true} />);
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_tickets"));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_tickets", expect.anything()));
     expect(mockInvoke).toHaveBeenCalledWith("get_cortes");
   });
 });

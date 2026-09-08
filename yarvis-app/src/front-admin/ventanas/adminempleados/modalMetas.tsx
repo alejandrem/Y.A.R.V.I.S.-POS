@@ -6,9 +6,13 @@
 // (los bloques de empleado_horarios son la fuente canónica).
 // ═══════════════════════════════════════════════════════════════════════════
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import type { EmpleadoProfile } from "../../../services/empleado";
+import { reportarError } from "../../../services/tauri";
+import { notificarExito } from "../../../components/notificaciones";
+import {
+  obtenerMetasEmpleado, guardarMetaSistema, guardarMetaCustom, eliminarMeta,
+} from "../../../services/empleados";
 import { ModalShell, Campo, inputCls, ICONO_TARGET, ICONO_CHECK, ICONO_USUARIO, ICONO_MAS, ICONO_PREMIO, ICONO_BORRAR, ICONO_TRENDING, ICONO_RELOJ } from "../../../components/ui";
 
 interface EmployeeGoal {
@@ -57,7 +61,7 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
   const loadGoals = async () => {
     if (!selectedId) return;
     try {
-      const g = await invoke<EmployeeGoal[]>("check_employee_goals", { empleadoId: selectedId });
+      const g = await obtenerMetasEmpleado(selectedId);
       setGoals(g);
 
       const ventas = g.find((x) => x.goal_type === "ventas");
@@ -74,7 +78,7 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
         setPuntualidadBonus(punt.bonus_amount);
       }
     } catch (e) {
-      console.error(e);
+      reportarError("No se pudieron cargar las metas del empleado", e);
     }
   };
 
@@ -94,7 +98,7 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
   const handleSaveAll = async () => {
     if (!selectedId) return;
     try {
-      await invoke("save_employee_goal", {
+      await guardarMetaSistema({
         empleadoId: selectedId,
         goalType: "ventas",
         goalName: null,
@@ -102,7 +106,7 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
         bonusPercentage: ventasBonusPct,
         bonusAmount: 0,
       });
-      await invoke("save_employee_goal", {
+      await guardarMetaSistema({
         empleadoId: selectedId,
         goalType: "puntualidad",
         goalName: null,
@@ -110,36 +114,32 @@ const ModalMetas = ({ empleados, onClose, onSaved }: ModalMetasProps) => {
         bonusPercentage: 0,
         bonusAmount: puntualidadBonus,
       });
+      notificarExito("Metas guardadas");
       onSaved();
       onClose();
     } catch (e) {
-      console.error(e);
-      alert("Error al guardar");
+      reportarError("No se pudieron guardar las metas", e);
     }
   };
 
   const handleAddCustom = async () => {
     if (!selectedId || !customName.trim() || customBonus <= 0) return;
     try {
-      await invoke("save_custom_goal", {
-        empleadoId: selectedId,
-        goalName: customName.trim(),
-        bonusAmount: customBonus,
-      });
+      await guardarMetaCustom(selectedId, customName.trim(), customBonus);
       await loadGoals();
       setCustomName("");
       setCustomBonus(0);
     } catch (e) {
-      console.error("Error guardando meta custom:", e);
+      reportarError("No se pudo guardar la meta personalizada", e);
     }
   };
 
   const handleDeleteGoal = async (goalId: number) => {
     try {
-      await invoke("delete_employee_goal", { goalId });
+      await eliminarMeta(goalId);
       setGoals((prev) => prev.filter((g) => g.id !== goalId));
     } catch (e) {
-      console.error(e);
+      reportarError("No se pudo eliminar la meta", e);
     }
   };
 

@@ -12,10 +12,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { MorphIcon, type IconInput } from "morphicons/react";
-import { notificarError } from "../../../components/notificaciones";
+import { reportarError } from "../../../services/tauri";
+import {
+  leerApiKeys, guardarApiKeys, setLocalModelPath as guardarRutaModelo,
+  cargarModeloLocal, obtenerModelStatus, obtenerCloudModels,
+} from "../../../services/yarvis";
 import ChatWidget, {
   type ChatModelSelection,
   type CloudModel,
@@ -56,14 +59,6 @@ const SUGERENCIAS_EMPLEADO = [
   "¿Cómo hago un corte de caja?",
 ];
 
-interface ModelStatus {
-  models: Record<string, boolean>;
-  ram_libre_gb?: number;
-  local_model_path?: string;
-  local_model_name?: string;
-  local_context_window?: number;
-}
-
 interface PanelYarvisProps {
   rol: Rol;
   active?: boolean;
@@ -89,9 +84,9 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const [cloudModels, setCloudModels] = useState<Record<string, CloudModel[]>>({});
 
   useEffect(() => {
-    invoke<Record<string, string>>("leer_api_keys")
+    leerApiKeys()
       .then((keys) => { if (Object.keys(keys).length > 0) { setApiKeys(keys); setApiKeysCache(keys); } })
-      .catch((e) => { console.error("[YARVIS] no se pudieron leer las API keys:", e); notificarError("No se pudieron leer las API keys guardadas", e); });
+      .catch((e) => reportarError("No se pudieron leer las API keys guardadas", e));
   }, []);
   const [cloudModelsLoading, setCloudModelsLoading] = useState<Record<string, boolean>>({});
   const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({ "1.7B": false });
@@ -133,7 +128,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const status = await invoke<ModelStatus>("get_model_status");
+      const status = await obtenerModelStatus();
       setLoadedModels(status.models || {});
       setRamGb(status.ram_libre_gb || 0);
       if (status.local_model_name && status.local_model_name !== "modelo_no_encontrado.gguf") setLocalModelName(status.local_model_name);
@@ -151,7 +146,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   useEffect(() => {
     const storedPath = localStorage.getItem("yarvis_local_model_path");
     if (storedPath) {
-      invoke("set_local_model_path", { path: storedPath }).catch((e) => { console.error("[YARVIS] no se pudo restaurar la ruta del modelo local:", e); notificarError("No se pudo restaurar el modelo local configurado", e); });
+      guardarRutaModelo(storedPath).catch((e) => reportarError("No se pudo restaurar el modelo local configurado", e));
     }
   }, []);
 
@@ -168,7 +163,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
     if (!apiKey) return;
     setCloudModelsLoading((previous) => ({ ...previous, [provider]: true }));
     try {
-      const result = await invoke<{ models: CloudModel[] }>("get_cloud_models", { provider, apiKey });
+      const result = await obtenerCloudModels(provider, apiKey);
       const models = result.models || [];
       setCloudModels((previous) => ({ ...previous, [provider]: models }));
       setSelectedCloudModels((previous) => {
@@ -231,7 +226,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const saveLocalPath = async (path: string) => {
     setConfigMessage("");
     try {
-      const result = await invoke<{ name: string; path: string }>("set_local_model_path", { path });
+      const result = await guardarRutaModelo(path);
       setLocalModelPath(result.path);
       setLocalModelName(result.name);
       localStorage.setItem("yarvis_local_model_path", result.path);
@@ -258,8 +253,8 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
     setLoadingModel("local");
     setRamWarning("");
     try {
-      await invoke("set_local_model_path", { path: localModelPath });
-      const result = await invoke<ModelStatus>("load_chat_model", { model: "1.7B" });
+      await guardarRutaModelo(localModelPath);
+      const result = await cargarModeloLocal();
       setLoadedModels(result.models || { "1.7B": true });
       setRamGb(result.ram_libre_gb || 0);
       setSelectedProvider("");
@@ -296,10 +291,10 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const saveApiConfig = async () => {
     if (rol === "admin") {
       try {
-        await invoke("guardar_api_keys", { keys: apiKeys });
+        await guardarApiKeys(apiKeys);
         setApiKeysCache(apiKeys);
       } catch (e) {
-        console.error("[YARVIS] no se pudieron guardar las API keys:", e);
+        // El error ya queda visible en el panel vía configMessage.
         setConfigMessage(`Error guardando claves: ${e}`);
         return;
       }
@@ -319,9 +314,8 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
     // no tiene una. Las previas se leen del backend (disco 0600).
     let previas: Record<string, string> = {};
     try {
-      previas = await invoke<Record<string, string>>("leer_api_keys");
+      previas = await leerApiKeys();
     } catch (e) {
-      console.error("[YARVIS] no se pudieron leer las API keys previas:", e);
       setConfigMessage(`Error leyendo claves: ${e}`);
       return;
     }
@@ -332,10 +326,9 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
     });
     setApiKeys(fusionadas);
     try {
-      await invoke("guardar_api_keys", { keys: fusionadas });
+      await guardarApiKeys(fusionadas);
       setApiKeysCache(fusionadas);
     } catch (e) {
-      console.error("[YARVIS] no se pudieron guardar las API keys:", e);
       setConfigMessage(`Error guardando claves: ${e}`);
       return;
     }

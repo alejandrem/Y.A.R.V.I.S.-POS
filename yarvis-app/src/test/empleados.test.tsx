@@ -24,8 +24,20 @@ const EMPLEADO = {
 beforeEach(() => {
   mockInvoke.mockReset();
   mockInvoke.mockResolvedValue("ok");
-  vi.spyOn(window, "alert").mockImplementation(() => {});
 });
+
+// Los avisos de validación ahora son toasts (evento yarvis:toast), no alert().
+// Escucha sincrónica: se registra ANTES de disparar la acción.
+const escucharToasts = (): string[] => {
+  const titulos: string[] = [];
+  const handler = (e: Event) => {
+    titulos.push((e as CustomEvent<{ titulo: string }>).detail.titulo);
+  };
+  window.addEventListener("yarvis:toast", handler);
+  // Limpieza diferida: el test termina antes, el listener muere con el DOM.
+  window.setTimeout(() => window.removeEventListener("yarvis:toast", handler), 0);
+  return titulos;
+};
 
 // Campo no asocia htmlFor, así que localizamos el input hermano del label.
 const inputDe = (label: string | RegExp): HTMLInputElement => {
@@ -39,28 +51,31 @@ const escribir = (label: string | RegExp, valor: string) => {
 
 describe("empleados · alta de empleado", () => {
   it("rechaza guardar sin nombre", () => {
+    const toasts = escucharToasts();
     render(<ModalEmpleados onClose={() => {}} onSaved={() => {}} />);
     fireEvent.click(screen.getByText(/Registrar Empleado/i));
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("nombre"));
+    expect(toasts.some((t) => t.toLowerCase().includes("nombre"))).toBe(true);
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
   it("rechaza contraseña sin números", () => {
+    const toasts = escucharToasts();
     render(<ModalEmpleados onClose={() => {}} onSaved={() => {}} />);
     escribir(/Nombre del Empleado/, "Gwen Stacy");
     escribir(/^Contraseña$/, "solo-letras");
     fireEvent.click(screen.getByText(/Registrar Empleado/i));
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("contraseña"));
+    expect(toasts.some((t) => t.toLowerCase().includes("contraseña"))).toBe(true);
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
   it("rechaza contraseñas que no coinciden", () => {
+    const toasts = escucharToasts();
     render(<ModalEmpleados onClose={() => {}} onSaved={() => {}} />);
     escribir(/Nombre del Empleado/, "Gwen Stacy");
     escribir(/^Contraseña$/, "clave123");
     escribir(/Confirmar Contraseña/, "clave456");
     fireEvent.click(screen.getByText(/Registrar Empleado/i));
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("coinciden"));
+    expect(toasts.some((t) => t.toLowerCase().includes("coinciden"))).toBe(true);
   });
 
   it("guarda via guardar_empleado con pago semanal y bloques de horario", async () => {
@@ -74,14 +89,14 @@ describe("empleados · alta de empleado", () => {
     fireEvent.click(screen.getByTitle("Viernes"));
 
     fireEvent.click(screen.getByText(/Registrar Empleado/i));
-    await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(onSaved).toHaveBeenCalled());
 
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
     const [cmd, args] = mockInvoke.mock.calls[0];
     expect(cmd).toBe("guardar_empleado");
     expect(args.name).toBe("Gwen Stacy");
     expect(args.salarioSemanal).toBe(0);
     expect(args.horarios[0].dias).toEqual([0, 1, 2, 3]); // L-J (sin V)
-    expect(onSaved).toHaveBeenCalled();
   });
 });
 

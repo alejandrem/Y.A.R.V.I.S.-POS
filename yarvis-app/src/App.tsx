@@ -1,7 +1,6 @@
 // Punto de entrada de la app: asistente de primer inicio y login por rol.
 // Los iconos morpheables compartidos viven en src/icons.ts.
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import type { IconInput } from "morphicons/react";
 import { ICONO_CHECK, ICONO_FLECHA, ICONO_OJO, ICONO_OJO_OCULTO } from "./icons";
@@ -9,6 +8,11 @@ import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
 import { Toaster, notificarError } from "./components/notificaciones";
+import { reportarError } from "./services/tauri";
+import {
+  verificarSetup, guardarAdmin, loginAdmin, obtenerAdminData,
+  guardarEmpleadoInicial, loginEmpleado, cerrarSesion,
+} from "./services/auth";
 import "./App.css";
 
 const ICONOS_LOGO: IconInput[] = [
@@ -89,12 +93,11 @@ function AppInner() {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const setupDone = await invoke<boolean>("check_setup_done");
+        const setupDone = await verificarSetup();
         setSetupFinished(setupDone);
         setStep(setupDone ? 1 : 0);
       } catch (error) {
-        console.error("Error checking setup:", error);
-        notificarError("Error al verificar el estado inicial del sistema", error);
+        reportarError("Error al verificar el estado inicial del sistema", error);
         setStep(0);
       }
     };
@@ -113,18 +116,11 @@ function AppInner() {
       }
 
       try {
-        await invoke("guardar_admin", {
-          data: {
-            name: adminName,
-            store: storeName,
-            pass: password,
-          }
-        });
+        await guardarAdmin(adminName, storeName, password);
         setSetupFinished(true);
         setStep(1);
       } catch (error) {
-        console.error("Error al guardar admin:", error);
-        notificarError("Error al guardar en la base de datos", error);
+        reportarError("Error al guardar en la base de datos", error);
       }
     } else {
       notificarError("Por favor rellena todos los campos correctamente");
@@ -133,10 +129,10 @@ function AppInner() {
 
   const handleLoginAdmin = async () => {
     try {
-      const isValid = await invoke<boolean>("validar_login_admin", { pass: loginPass });
+      const isValid = await loginAdmin(loginPass);
       if (isValid) {
         // Cargar datos completos del admin
-        const profile = await invoke<{ nombre: string; tienda: string; ubicacion: string | null; cp: string | null }>("get_admin_data");
+        const profile = await obtenerAdminData();
         if (profile) {
           setAdminName(profile.nombre);
           setStoreName(profile.tienda);
@@ -151,8 +147,7 @@ function AppInner() {
         notificarError("Contraseña incorrecta. Inténtalo de nuevo.");
       }
     } catch (error) {
-      console.error("Error en login:", error);
-      notificarError("Error al conectar con la base de datos", error);
+      reportarError("Error al conectar con la base de datos", error);
     }
   };
 
@@ -164,21 +159,20 @@ function AppInner() {
 
     if (newEmployeeName && newEmployeePass === newEmployeeConfirmPass) {
       try {
-        await invoke("guardar_empleado", { name: newEmployeeName, pass: newEmployeePass });
+        await guardarEmpleadoInicial(newEmployeeName, newEmployeePass);
         setNewEmployeeName("");
         setNewEmployeePass("");
         setNewEmployeeConfirmPass("");
         setShowAddEmployeeForm(false);
       } catch (error) {
-        console.error("Error al guardar empleado:", error);
-        notificarError("Error al guardar empleado en la base de datos", error);
+        reportarError("Error al guardar empleado en la base de datos", error);
       }
     }
   };
 
   const handleLoginEmployee = async () => {
     try {
-      const empName = await invoke<string | null>("validar_login_empleado", { pass: employeeLoginPass });
+      const empName = await loginEmpleado(employeeLoginPass);
       if (empName) {
         setCurrentOperator(empName);
         setStep(3);
@@ -188,17 +182,15 @@ function AppInner() {
         notificarError("Contraseña de empleado incorrecta.");
       }
     } catch (error) {
-      console.error("Error en login empleado:", error);
-      notificarError("Error al conectar con la base de datos", error);
+      reportarError("Error al conectar con la base de datos", error);
     }
   };
 
   const handleLogout = async () => {
     try {
-      await invoke("cerrar_sesion");
+      await cerrarSesion();
     } catch (error) {
-      console.error("Error al cerrar sesión nativa:", error);
-      notificarError("No se pudo cerrar la sesión en el servidor", error);
+      reportarError("No se pudo cerrar la sesión en el servidor", error);
     } finally {
       setStep(1);
       setSelectedRole(null);

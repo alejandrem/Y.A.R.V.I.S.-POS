@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { obtenerTiendaInfo, type TiendaInfo } from "../../../services/turno";
 
 interface CartItem {
   id?: number;
@@ -7,12 +7,6 @@ interface CartItem {
   precio_venta: number;
   cantidad: number;
   stock: number;
-}
-
-interface TiendaInfo {
-  nombre: string | null;
-  ubicacion: string | null;
-  cp: string | null;
 }
 
 interface ModalTicketProps {
@@ -38,7 +32,7 @@ export default function ModalTicket({
   const [tienda, setTienda] = useState<TiendaInfo | null>(null);
 
   useEffect(() => {
-    invoke<TiendaInfo>("get_tienda_info")
+    obtenerTiendaInfo()
       .then(setTienda)
       .catch(() => setTienda({ nombre: null, ubicacion: null, cp: null }));
   }, []);

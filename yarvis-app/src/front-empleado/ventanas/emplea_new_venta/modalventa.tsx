@@ -6,8 +6,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
+import { completarVenta } from "../../../services/venta";
 import {
   ICONO_BILLETE, ICONO_TARJETA, ICONO_CELULAR,
   ICONO_CHECK, ICONO_EQUIS, ICONO_CAJA,
@@ -76,7 +76,7 @@ export default function ModalVenta({ onClose, onVentaCompletada, cart, cartTotal
         cliente_id: null,
       };
 
-      const result = await invoke<{ venta_id: number; ticket_number: number }>("completar_venta", { venta });
+      const result = await completarVenta(venta);
       onVentaCompletada(result.venta_id, result.ticket_number, montoEfectivo, montoTarjeta, montoTransferencia);
     } catch (err) {
       setError(String(err));

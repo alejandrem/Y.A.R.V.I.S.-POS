@@ -2,8 +2,7 @@
 // los datos generales del administrador y la tienda (nombres, ubicación, etc).
 
 import { useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { notificarError } from "../../../../components/notificaciones";
+import { invokeTauri, reportarError } from "../../../../services/tauri";
 
 export const PASS_PLACEHOLDER = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
 
@@ -30,7 +29,7 @@ export function useDatosAdmin(
     try {
       // Solo mandar contraseña si el usuario la cambió y no está vacía
       const passToSend = passwordChanged && currentPass.trim() !== "" ? currentPass : "";
-      await invoke("update_admin_data", {
+      await invokeTauri("update_admin_data", {
         nombre: currentAdminName,
         tienda: currentStoreName,
         pass: passToSend,
@@ -44,15 +43,14 @@ export function useDatosAdmin(
       }
       showSuccess("Contraseña actualizada exitosamente");
     } catch (error) {
-      console.error("Error al actualizar:", error);
-      notificarError("Hubo una falla al guardar los datos.", error);
+      reportarError("Hubo una falla al guardar los datos.", error);
     }
   }, [currentAdminName, currentStoreName, currentPass, passwordChanged, location, cp, showSuccess]);
 
   // Botón independiente para guardar solo Datos de Identidad (nombre, tienda, ubicación, CP)
   const handleSaveIdentity = useCallback(async () => {
     try {
-      await invoke("update_admin_data", {
+      await invokeTauri("update_admin_data", {
         nombre: currentAdminName,
         tienda: currentStoreName,
         pass: "",  // vacío → Rust no re-hashea
@@ -61,8 +59,7 @@ export function useDatosAdmin(
       });
       showSuccess("Cambios guardados exitosamente");
     } catch (error) {
-      console.error("Error al guardar datos de identidad:", error);
-      notificarError("Hubo una falla al guardar los datos.", error);
+      reportarError("Hubo una falla al guardar los datos.", error);
     }
   }, [currentAdminName, currentStoreName, location, cp, showSuccess]);
 

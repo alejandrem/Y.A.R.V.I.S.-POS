@@ -29,7 +29,7 @@ beforeEach(() => {
 describe("estres tickets · historial masivo", () => {
   it("renderiza 3,000 tickets y sobrevive cambios de rango repetidos", async () => {
     render(<Tickets active={true} />);
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_tickets"));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_tickets", expect.anything()));
 
     for (let i = 0; i < 20; i++) {
       fireEvent.click(await screen.findByText(/7 DÍAS/i));

@@ -8,16 +8,38 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use src_ia::embeddings::{cosine_similarity, normalizar, HashEmbedder, Embedder};
 
+/// Límite máximo por página (protege la UI con 12k+ tickets: traer todo
+/// de golpe congela el render y la memoria del webview).
+pub const TICKETS_LIMITE_MAX: i64 = 500;
+/// Tamaño de página por defecto (compatible con el comportamiento anterior).
+pub const TICKETS_LIMITE_DEFAULT: i64 = 500;
+
 #[tauri::command]
 pub async fn get_tickets(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 ) -> Result<Vec<TicketDb>, String> {
     auth.require_admin()?;
+    get_tickets_impl(&state, limit.unwrap_or(TICKETS_LIMITE_DEFAULT), offset.unwrap_or(0)).await
+}
+
+/// Núcleo paginado, testeable sin runtime de Tauri.
+/// `limit` se recorta a [1, 500], `offset` a >= 0.
+pub async fn get_tickets_impl(
+    pool: &SqlitePool,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<TicketDb>, String> {
+    let limit = limit.clamp(1, TICKETS_LIMITE_MAX);
+    let offset = offset.max(0);
     let rows = sqlx::query_as::<_, (i32, Option<String>, String, i64, String)>(
-        "SELECT id, folio_ticket, strftime('%Y-%m-%d %H:%M:%S', fecha) as fecha, total, metodo_pago FROM ventas ORDER BY fecha DESC LIMIT 500"
+        "SELECT id, folio_ticket, strftime('%Y-%m-%d %H:%M:%S', fecha) as fecha, total, metodo_pago FROM ventas ORDER BY fecha DESC LIMIT ?1 OFFSET ?2"
     )
-    .fetch_all(&*state)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
 

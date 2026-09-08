@@ -49,8 +49,10 @@ const Nomina = () => {
       ),
     ]).then(([e, r]) => {
       if (!vivo) return;
-      setEmpleados(e.filter((x) => x.estado === "activo"));
-      setVentaSemanal(r.total_ventas);
+      // Guard defensivo: un mock o un backend viejo puede resolver no-array
+      // (antes reventaba con `undefined.filter` como rejection sin manejar).
+      setEmpleados((Array.isArray(e) ? e : []).filter((x) => x.estado === "activo"));
+      setVentaSemanal(r?.total_ventas ?? 0);
     });
     return () => {
       vivo = false;

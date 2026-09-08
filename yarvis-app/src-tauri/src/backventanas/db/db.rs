@@ -8,6 +8,7 @@
 // futuro = archivo nuevo en `migrations/`, nunca editar uno aplicado.
 // ============================================================
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
@@ -23,6 +24,9 @@ pub struct DbPath(pub String);
 /// añade una nueva con numeración creciente).
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
+/// Cuántos backups se conservan (rotación simple, los más nuevos).
+pub const MAX_BACKUPS: usize = 5;
+
 pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
     let app_dir = app
         .path()
@@ -34,6 +38,16 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
 
     let db_path = app_dir.join("yarvis.db");
     let db_path_str = db_path.to_string_lossy().to_string();
+
+    // Backup automático ANTES de migrar: si la migración falla a la mitad,
+    // el dueño puede restaurar el .db de `backups/`. Nunca debe tumbar el
+    // arranque: un backup fallido solo se registra con warn.
+    if db_path.exists() {
+        match backup_db_antes_de_migrar(&app_dir, &db_path) {
+            Some(ruta) => tracing::info!("[DB] backup pre-migración: {}", ruta.display()),
+            None => tracing::warn!("[DB] no se pudo crear backup pre-migración, se continúa sin él"),
+        }
+    }
 
     tauri::async_runtime::block_on(async move {
         // Journal=WAL, FK y busy_timeout van en las OPTIONS de conexión y NO
@@ -79,4 +93,111 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
 
         (pool, db_path_str)
     })
+}
+
+/// Crea una copia consistente de `yarvis.db` en `<app_dir>/backups/` con
+/// nombre `yarvis-YYYYMMDD-HHMMSS.db` y rota para conservar solo los
+/// últimos [`MAX_BACKUPS`].
+///
+/// Usa `VACUUM INTO` (snapshot consistente aunque haya WAL pendiente) con
+/// fallback a `fs::copy` si VACUUM falla. Devuelve la ruta del backup o
+/// `None` si no se pudo crear (el arranque debe continuar igual).
+pub fn backup_db_antes_de_migrar(app_dir: &Path, db_path: &Path) -> Option<PathBuf> {
+    let backups_dir = app_dir.join("backups");
+    if fs::create_dir_all(&backups_dir).is_err() {
+        return None;
+    }
+    let sello = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let destino = backups_dir.join(format!("yarvis-{sello}.db"));
+
+    // Ruta 1 (preferida): VACUUM INTO produce un .db compacto y consistente
+    // sin copiar los -wal/-shm a mano.
+    let vacuum_ok = rusqlite::Connection::open(db_path)
+        .ok()
+        .and_then(|conn| {
+            // El path va como literal SQL: se escapan comillas simples.
+            let dest_sql = destino.to_string_lossy().replace('\'', "''");
+            conn.execute_batch(&format!("VACUUM INTO '{dest_sql}';"))
+                .ok()
+        })
+        .is_some()
+        && destino.exists();
+
+    if !vacuum_ok {
+        // Ruta 2 (fallback): copia cruda del archivo principal.
+        if fs::copy(db_path, &destino).is_err() {
+            return None;
+        }
+    }
+
+    rotar_backups(&backups_dir);
+    Some(destino)
+}
+
+/// Borra los backups más viejos dejando solo los últimos [`MAX_BACKUPS`].
+/// Los errores de limpieza se ignoran a propósito (no deben romper nada).
+fn rotar_backups(backups_dir: &Path) {
+    let mut archivos: Vec<PathBuf> = fs::read_dir(backups_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.extension().is_some_and(|ext| ext == "db")
+                        && p.file_name()
+                            .is_some_and(|n| n.to_string_lossy().starts_with("yarvis-"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    archivos.sort();
+    if archivos.len() > MAX_BACKUPS {
+        for viejo in archivos.iter().take(archivos.len() - MAX_BACKUPS) {
+            let _ = fs::remove_file(viejo);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rotar_backups_conserva_solo_los_ultimos_5() {
+        let base = std::env::temp_dir().join(format!(
+            "yarvis_backup_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        for i in 1..=7 {
+            std::fs::write(base.join(format!("yarvis-2026010{i}-120000.db")), b"x").unwrap();
+        }
+        rotar_backups(&base);
+        let restantes = std::fs::read_dir(&base).unwrap().count();
+        assert_eq!(restantes, MAX_BACKUPS);
+        // Sobreviven los más nuevos (orden lexicográfico = cronológico).
+        assert!(!base.join("yarvis-20260101-120000.db").exists());
+        assert!(!base.join("yarvis-20260102-120000.db").exists());
+        assert!(base.join("yarvis-20260107-120000.db").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn backup_ignora_nombres_que_no_son_yarvis() {
+        let base = std::env::temp_dir().join(format!(
+            "yarvis_backup_test2_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("otro.db"), b"x").unwrap();
+        std::fs::write(base.join("yarvis-20260101-120000.db"), b"x").unwrap();
+        rotar_backups(&base);
+        assert!(base.join("otro.db").exists(), "no debe borrar archivos ajenos");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

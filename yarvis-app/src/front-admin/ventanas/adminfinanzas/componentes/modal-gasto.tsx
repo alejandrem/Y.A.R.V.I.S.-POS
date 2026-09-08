@@ -6,9 +6,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { ModalShell, Campo, inputCls, ICONO_CALCULADORA } from "../../../../components/ui";
-import { notificarError } from "../../../../components/notificaciones";
+import { reportarError } from "../../../../services/tauri";
+import { notificarError, notificarExito } from "../../../../components/notificaciones";
+import { invokeTauri } from "../../../../services/tauri";
 import type { GastoRecurrente, CrearGastoRequest } from "../../../types";
 import { inputFecha } from "../nucleo/constantes";
 
@@ -32,18 +33,25 @@ export default function ModalGasto({ gasto, onCerrar, onGuardado }: { gasto?: Ga
     setForm((p) => ({ ...p, [k]: v }));
 
   const guardar = async () => {
-    if (!form.nombre || form.monto_proyectado <= 0) return;
+    if (!form.nombre.trim()) {
+      notificarError("El nombre del gasto es obligatorio");
+      return;
+    }
+    if (form.monto_proyectado <= 0) {
+      notificarError("El monto proyectado debe ser mayor a cero");
+      return;
+    }
     setGuardando(true);
     try {
       if (gasto) {
-        await invoke("actualizar_gasto", { id: gasto.id, gasto: form });
+        await invokeTauri("actualizar_gasto", { id: gasto.id, gasto: form });
       } else {
-        await invoke("crear_gasto", { gasto: form });
+        await invokeTauri("crear_gasto", { gasto: form });
       }
+      notificarExito(gasto ? "Gasto actualizado" : "Gasto creado");
       onGuardado();
     } catch (e) {
-      console.error("Error guardando gasto:", e);
-      notificarError("No se pudo guardar el gasto", e);
+      reportarError("No se pudo guardar el gasto", e);
     } finally {
       setGuardando(false);
     }

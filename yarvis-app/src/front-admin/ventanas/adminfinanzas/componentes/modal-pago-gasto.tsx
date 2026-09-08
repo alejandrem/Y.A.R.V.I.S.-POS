@@ -6,9 +6,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { ModalShell, Campo, inputCls, ICONO_BILLETE } from "../../../../components/ui";
-import { notificarError } from "../../../../components/notificaciones";
+import { reportarError } from "../../../../services/tauri";
+import { notificarError, notificarExito } from "../../../../components/notificaciones";
+import { invokeTauri } from "../../../../services/tauri";
 import type { GastoRecurrente } from "../../../types";
 
 export default function ModalPagoGasto({ gasto, onCerrar, onGuardado }: { gasto: GastoRecurrente; onCerrar: () => void; onGuardado: () => void }) {
@@ -18,10 +19,13 @@ export default function ModalPagoGasto({ gasto, onCerrar, onGuardado }: { gasto:
   const [guardando, setGuardando] = useState(false);
 
   const guardar = async () => {
-    if (monto <= 0) return;
+    if (monto <= 0) {
+      notificarError("El monto debe ser mayor a cero");
+      return;
+    }
     setGuardando(true);
     try {
-      await invoke("registrar_pago_gasto", {
+      await invokeTauri("registrar_pago_gasto", {
         pago: {
           gasto_id: gasto.id,
           fecha_pago: new Date().toISOString().slice(0, 19).replace("T", " "),
@@ -31,10 +35,10 @@ export default function ModalPagoGasto({ gasto, onCerrar, onGuardado }: { gasto:
           notas: notas || null,
         },
       });
+      notificarExito("Pago registrado");
       onGuardado();
     } catch (e) {
-      console.error("Error registrando pago:", e);
-      notificarError("No se pudo registrar el pago", e);
+      reportarError("No se pudo registrar el pago", e);
     } finally {
       setGuardando(false);
     }

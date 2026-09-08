@@ -2,7 +2,8 @@
 // Compone el estado del ChatProvider (sesiones + streaming persistentes)
 // con la UI (sidebar, mensajes e input) y define los tipos compartidos
 // (Message, ChatSession, selección de modelo).
-import { invoke } from "@tauri-apps/api/core";
+import { reportarError } from "../../../services/tauri";
+import { leerApiKeys } from "../../../services/yarvis";
 import ChatSidebar from "./components/ChatSidebar";
 import ChatMessages from "./components/ChatMessages";
 import ChatInput from "./components/ChatInput";
@@ -32,11 +33,7 @@ export const CLOUD_PROVIDERS: { id: "google" | "opencode"; display: string; defa
   { id: "opencode", display: "OpenCode", defaultModel: "mimo-v2.5-free" },
 ];
 
-export interface CloudModel {
-  id: string;
-  name: string;
-  context_window?: number;
-}
+export type { CloudModel } from "../../../services/yarvis";
 
 export interface ChatModelSelection {
   provider: "" | "google" | "opencode";
@@ -56,9 +53,9 @@ let apiKeysCache: Record<string, string> = {};
 /** Refresca el caché desde el disco (vía backend). Llamar al montar el panel. */
 export async function refrescarApiKeysCache(): Promise<void> {
   try {
-    apiKeysCache = await invoke<Record<string, string>>("leer_api_keys");
+    apiKeysCache = await leerApiKeys();
   } catch (e) {
-    console.error("[YARVIS] no se pudo refrescar el caché de API keys:", e);
+    reportarError("No se pudo refrescar el caché de API keys", e);
   }
 }
 

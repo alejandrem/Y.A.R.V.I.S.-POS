@@ -2,7 +2,7 @@
 // Orquestador: estado, cargas (loadData/loadDetalle/recargar), header
 // con botones y composición de los componentes del detalle.
 import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeTauri, reportarError } from "../../../services/tauri";
 import { MorphIcon } from "morphicons/react";
 import type { EmpleadoProfile } from "../../../services/empleado";
 import type { MiTurno, DiaExtra } from "../../../components/turno";
@@ -75,13 +75,13 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
     setLoading(true);
     try {
       const [emp, res] = await Promise.all([
-        invoke<EmpleadoProfile[]>("get_empleados"),
-        invoke<EmpleadoResumen>("get_resumen_empleados"),
+        invokeTauri<EmpleadoProfile[]>("get_empleados"),
+        invokeTauri<EmpleadoResumen>("get_resumen_empleados"),
       ]);
       setEmpleados(emp);
       setResumen(res);
     } catch (error) {
-      console.error("Error al cargar empleados:", error);
+      reportarError("No se pudieron cargar los empleados", error);
     } finally {
       setLoading(false);
     }
@@ -101,20 +101,20 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   const loadDetalle = async (id: number) => {
     try {
       const [ventas, cortesData] = await Promise.all([
-        invoke<EmpleadoVentas>("get_empleado_ventas", { empleadoId: id }),
-        invoke<CorteEmpleado[]>("get_cortes_empleado", { empleadoId: id }),
+        invokeTauri<EmpleadoVentas>("get_empleado_ventas", { empleadoId: id }),
+        invokeTauri<CorteEmpleado[]>("get_cortes_empleado", { empleadoId: id }),
       ]);
       setVentasDetalle(ventas);
       setCortes(cortesData);
       setSelectedId(id);
     } catch (error) {
-      console.error("Error al cargar detalle:", error);
+      reportarError("No se pudo cargar el detalle del empleado", error);
     }
     // Asistencia de hoy (independiente: si falla no rompe el resto)
-    invoke<MiTurno>("get_asistencia_empleado", { empleadoId: id })
+    invokeTauri<MiTurno>("get_asistencia_empleado", { empleadoId: id })
       .then(setAsistenciaDetalle)
       .catch(() => setAsistenciaDetalle(null));
-    invoke<DiaExtra[]>("get_horas_extra_empleado", { empleadoId: id })
+    invokeTauri<DiaExtra[]>("get_horas_extra_empleado", { empleadoId: id })
       .then(setExtrasDetalle)
       .catch(() => setExtrasDetalle(null));
   };
