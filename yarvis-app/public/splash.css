@@ -1,0 +1,166 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SPLASH YARVIS — Pantalla de carga instantánea (antes de React).
+   Se pinta con el primer paint: sin JS pesado, sin bundle, sin espera.
+   El color lo decide la clase `dark` en <html> (tema claro/oscuro).
+   El fondo de html/body va en el color del tema para que NINGUNA zona
+   sin pintar se vea negra mientras el WebView compone por partes.
+   ═══════════════════════════════════════════════════════════════════ */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+}
+
+html.dark,
+html.dark body {
+  background: #000000;
+}
+
+#yarvis-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  transition: opacity 0.35s ease;
+}
+
+html.dark #yarvis-splash {
+  background: #000000;
+}
+
+#yarvis-splash.done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#yarvis-splash .splash-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+#yarvis-splash .splash-box svg {
+  width: min(440px, 78vmin);
+  height: auto;
+}
+
+#yarvis-splash .splash-title {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.55em;
+  text-indent: 0.55em;
+  color: #000000;
+}
+
+html.dark #yarvis-splash .splash-title {
+  color: #ffffff;
+}
+
+/* ── Arte HUD: tinta y cortes se invierten con el tema ── */
+
+#yarvis-splash .hud-line {
+  stroke: #000000;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+html.dark #yarvis-splash .hud-line {
+  stroke: #ffffff;
+}
+
+#yarvis-splash .hud-ink {
+  fill: #000000;
+}
+
+html.dark #yarvis-splash .hud-ink {
+  fill: #ffffff;
+}
+
+#yarvis-splash .hud-cut {
+  fill: none;
+  stroke: #ffffff;
+}
+
+html.dark #yarvis-splash .hud-cut {
+  stroke: #000000;
+}
+
+/* ── Animaciones ultra lentas ── */
+/* will-change: cada anillo compone en su propia capa y no repinta
+   toda la pantalla por cuadro (pintado parcial más rápido). */
+
+#yarvis-splash .spin-cw-slow {
+  animation: yarvis-spin 60s linear infinite;
+  transform-origin: 250px 250px;
+  will-change: transform;
+}
+
+#yarvis-splash .spin-ccw-slow {
+  animation: yarvis-spin-reverse 40s linear infinite;
+  transform-origin: 250px 250px;
+  will-change: transform;
+}
+
+#yarvis-splash .spin-cw-med {
+  animation: yarvis-spin 50s linear infinite;
+  transform-origin: 250px 250px;
+  will-change: transform;
+}
+
+#yarvis-splash .pulse-opacity {
+  animation: yarvis-opacity-pulse 8s infinite ease-in-out;
+  transform-origin: 250px 250px;
+}
+
+#yarvis-splash .hud-glow {
+  animation: yarvis-core-pulse 6s infinite ease-in-out;
+  transform-origin: 250px 250px;
+}
+
+@keyframes yarvis-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes yarvis-spin-reverse {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes yarvis-opacity-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.25; }
+}
+
+@keyframes yarvis-core-pulse {
+  0%, 100% { filter: drop-shadow(0px 0px 3px rgba(0, 0, 0, 0.3)); }
+  50% { filter: drop-shadow(0px 0px 8px rgba(0, 0, 0, 0.6)); }
+}
+
+html.dark #yarvis-splash .hud-glow {
+  animation-name: yarvis-core-pulse-dark;
+}
+
+@keyframes yarvis-core-pulse-dark {
+  0%, 100% { filter: drop-shadow(0px 0px 3px rgba(255, 255, 255, 0.6)); }
+  50% { filter: drop-shadow(0px 0px 10px rgba(255, 255, 255, 1)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #yarvis-splash .spin-cw-slow,
+  #yarvis-splash .spin-ccw-slow,
+  #yarvis-splash .spin-cw-med,
+  #yarvis-splash .pulse-opacity,
+  #yarvis-splash .hud-glow {
+    animation: none;
+  }
+}

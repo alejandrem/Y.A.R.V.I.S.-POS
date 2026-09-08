@@ -8,12 +8,27 @@ import AdminDashboard from "./front-admin/AdminDashboard";
 import PrimerInicio from "./front-admin/PrimerInicio";
 import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
 import { Toaster, notificarError } from "./components/notificaciones";
-import { reportarError } from "./services/tauri";
+import { reportarError, invokeTauri } from "./services/tauri";
 import {
   verificarSetup, guardarAdmin, loginAdmin, obtenerAdminData,
   guardarEmpleadoInicial, loginEmpleado, cerrarSesion,
 } from "./services/auth";
 import "./App.css";
+
+declare global {
+  interface Window {
+    __yarvisHideSplash?: () => void;
+  }
+}
+
+/** Oculta el splash instantáneo de index.html (con fade + failsafe en splash.js). */
+function ocultarSplash() {
+  try {
+    window.__yarvisHideSplash?.();
+  } catch {
+    document.getElementById("yarvis-splash")?.remove();
+  }
+}
 
 const ICONOS_LOGO: IconInput[] = [
   "m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10",
@@ -89,20 +104,69 @@ function AppInner() {
   const [hoverLoginCheck, setHoverLoginCheck] = useState(false);
   const [hoverEmployeeCheck, setHoverEmployeeCheck] = useState(false);
 
-  // Al cargar la app, checar si ya se hizo el registro inicial
+  // Al cargar la app, checar si ya se hizo el registro inicial.
+  // Con splash nativo el backend puede seguir arrancando (DB +
+  // migraciones en hilo aparte): los fallos tempranos se reintentan en
+  // silencio y solo se avisa si de verdad no levanta en 30s.
+  // Cuando el step queda fijado, se avisa al backend (principal_lista)
+  // para que RECIÉN ahí muestre la ventana: su primer frame visible ya
+  // trae el login montado, nunca un render vacío en negro.
   useEffect(() => {
+    let vivo = true;
+    const avisarLista = () => {
+      // ~80ms para que React commitee el login antes del primer paint
+      // visible. Sin Tauri (navegador en dev) falla y se ignora.
+      window.setTimeout(() => {
+        invokeTauri("principal_lista").catch(() => {});
+      }, 80);
+    };
     const checkSetup = async () => {
-      try {
-        const setupDone = await verificarSetup();
-        setSetupFinished(setupDone);
-        setStep(setupDone ? 1 : 0);
-      } catch (error) {
-        reportarError("Error al verificar el estado inicial del sistema", error);
-        setStep(0);
+      const limite = Date.now() + 30_000;
+      for (;;) {
+        try {
+          const setupDone = await verificarSetup();
+          if (!vivo) return;
+          setSetupFinished(setupDone);
+          setStep(setupDone ? 1 : 0);
+          avisarLista();
+          return;
+        } catch (error) {
+          if (!vivo) return;
+          if (Date.now() > limite) {
+            reportarError("Error al verificar el estado inicial del sistema", error);
+            setStep(0);
+            avisarLista();
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 300));
+        }
       }
     };
     checkSetup();
+    return () => {
+      vivo = false;
+    };
   }, []);
+
+  // El splash se va solo cuando la pantalla real ya PINTÓ, no cuando
+  // terminó el query: dos frames aseguran commit de React + paint del
+  // navegador. Junto al mínimo de splash.js, el logo luce mientras todo
+  // carga y se va hasta que el login/primer inicio es visible de verdad.
+  // Idempotente: llamadas de más no hacen nada.
+  useEffect(() => {
+    let vivo = true;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (vivo) ocultarSplash();
+      });
+    });
+    return () => {
+      vivo = false;
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [step]);
 
   const isPasswordValid = (pass: string) => {
     return pass.length >= 6 && /[A-Za-z]/.test(pass) && /[0-9]/.test(pass);
@@ -200,7 +264,11 @@ function AppInner() {
     }
   };
 
-  if (step === null) return null;
+  if (step === null) {
+    // Placeholder opaco del color del tema (nunca `null`): si esta rama
+    // llega a pintarse, se ve fondo liso en vez de ventana en negro.
+    return <div className="h-screen w-full bg-white dark:bg-black" />;
+  }
 
   // --- RENDERING LOGIC ---
 

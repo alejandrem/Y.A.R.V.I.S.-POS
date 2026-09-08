@@ -522,3 +522,23 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 **Lección del camino:** primero se probó keep-alive perezoso (pestañas ocultas con `hidden`), pero mantener 9 árboles en el DOM contradice el rendimiento en hardware modesto (renders ocultos, RAM, a11y). La forma correcta es desmontar + elevar estado, no ocultar.
 
 **Leccion aprendida:** "no se ve nada pero el backend sigue" siempre es estado muerto en un componente desmontado: el fix es mover el estado arriba del punto de desmontaje, no re-suscribirse al volver.
+
+---
+
+### Bug V1: flash negro antes del splash + ventana que nace chica y se estira — ALTO (RESUELTO)
+
+**Sintoma:** al abrir el software se veía pantalla negra 0.3-0.8s antes del logo, y la principal aparecía a 1200x800 para luego "estirarse" a completa. Con la analogía de la casa: x² (splash) pintaba bien pero el hueco de a·x/a² quedaba en negro puro.
+
+**Causa raiz (triple):**
+1. `if (step === null) return null` en `App.tsx`: mientras `check_setup_done` hablaba con el backend (1-3s con migraciones), React renderizaba literalmente NADA → ventana transparente/negra.
+2. La ventana splash mapeaba en negro nativo antes de pintar su HTML (el fondo por CSS solo cubre DESPUÉS de cargar el CSS, no el mapeo). Callejón sin salida intermedio: pintar `html/body` del color del tema no sirvió para esto.
+3. La principal se mostraba a 1200x800 y el WM la maximizaba después (el `maximize()` de Rust llegaba con la ventana aún sin mapear). Callejón sin salida intermedio: quitar `maximized` del config fue contraproducente, el WM necesita ver el estado ANTES de mapear.
+
+**Solucion (show coordinado con pintado):**
+1. Splash nativo Tauri (`public/splash.html` estático + ventana `splash` 480x600 sin bordes, `transparent: true`, `skipTaskbar`): pinta al instante sin esperar bundle ni backend. Ojo CSP: va en archivos propios (`splash.css`/`splash.js`), un `<script>` inline lo bloquearía `script-src 'self'`.
+2. `lib.rs`: init pesado (backup + SQLite + migraciones) en `std::thread::spawn` dedicado — NO `tokio::spawn` porque `initialize_db` usa `block_on` por dentro y eso en un worker es panic seguro. La principal nace oculta.
+3. Nuevo comando `principal_lista`: el frontend avisa ~80ms después de fijar el step (da tiempo al commit de React) y RECIÉN ahí Rust hace `maximize()` → `show()` → `set_focus()` + cierra el splash. Primer frame visible = login montado. Failsafe de 20s en Rust por si el frontend muere (idempotente).
+4. `check_setup_done` con reintentos silenciosos 300ms/30s (la principal bootea su React antes de que exista el pool) + placeholder opaco en vez de `null` + el splash HTML que se oculta por doble rAF tras el primer paint visible.
+5. Iconos regenerados del `yarvis blanco.png`: `icon.ico` multi-tamaño 16→256, `icon.png` 512, `128x128`, `@2x`, `32x32` + favicon; `Square*.png`/`StoreLogo.png` eliminados (restos de MSIX sin configurar, nada los referenciaba).
+
+**Leccion aprendida:** el negro nunca era "el splash lento": era pintar ventanas antes de tener qué mostrar. La regla es mostrar cada ventana solo cuando su primer frame ya existe (splash = HTML estático inmediato, principal = tras commit de React), y el estado de maximizado debe fijarse ANTES de mapear, no después.

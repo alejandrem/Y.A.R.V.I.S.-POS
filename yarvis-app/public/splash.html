@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- ═══════════════════════════════════════════════════════════════════
+     VENTANA SPLASH NATIVA de Tauri (label "splash", ver tauri.conf.json).
+     Se pinta al instante porque es HTML/CSS/SVG estático: no espera al
+     bundle de React ni al backend (DB, migraciones, modelo IA).
+     El backend la cierra y muestra la ventana principal cuando el init
+     pesado termina (ver lib.rs). Sin JS propio: el tema lo lee splash.js
+     igual que index.html. Mantener sincronizado con el splash de index.html.
+     ═══════════════════════════════════════════════════════════════════ -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Y.A.R.V.I.S. POS</title>
+    <link rel="stylesheet" href="./splash.css" />
+    <script src="./splash.js"></script>
+    <style>
+      /* La ventana nativa ya es chica y sin bordes: el arte respira. */
+      #yarvis-splash .splash-box svg {
+        width: min(400px, 86vmin);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="yarvis-splash">
+      <div class="splash-box">
+        <svg viewBox="0 0 500 500" width="400" height="400" aria-hidden="true">
+          <g class="hud-line">
+            <circle class="spin-cw-slow" cx="250" cy="250" r="180" stroke-width="1.5" stroke-dasharray="4, 10" opacity="0.35" />
+            <circle class="spin-ccw-slow" cx="250" cy="250" r="160" stroke-width="2" stroke-dasharray="90, 20, 30, 20, 150, 20" opacity="0.75" />
+            <circle class="spin-cw-med" cx="250" cy="250" r="135" stroke-width="3" stroke-dasharray="220, 25, 50, 25" opacity="0.9" />
+            <circle class="spin-ccw-slow" cx="250" cy="250" r="125" stroke-width="1.5" stroke-dasharray="8, 8" opacity="0.5" />
+            <circle cx="250" cy="250" r="95" stroke-width="3.5" opacity="1" />
+          </g>
+          <g class="spin-cw-slow pulse-opacity hud-ink">
+            <polygon points="250,140 245,152 255,152" />
+            <polygon points="250,360 245,348 255,348" />
+            <polygon points="140,250 152,245 152,255" />
+            <polygon points="360,250 348,245 348,255" />
+            <polygon points="172,172 184,178 178,188" />
+            <polygon points="328,172 316,178 322,188" />
+            <polygon points="172,328 184,322 178,312" />
+            <polygon points="328,328 316,322 322,312" />
+          </g>
+          <g class="hud-glow">
+            <path class="hud-ink" d="M 202 190 L 235 190 L 250 220 L 265 190 L 298 190 L 266 250 L 266 310 L 234 310 L 234 250 Z" />
+            <path class="hud-cut" d="M 250 232 L 250 300" stroke-width="4" />
+            <path class="hud-cut" d="M 220 200 L 243 246" stroke-width="3" />
+            <path class="hud-cut" d="M 280 200 L 257 246" stroke-width="3" />
+            <circle class="hud-ink" cx="250" cy="250" r="5" />
+          </g>
+        </svg>
+        <p class="splash-title">Y.A.R.V.I.S.</p>
+      </div>
+    </div>
+  </body>
+</html>

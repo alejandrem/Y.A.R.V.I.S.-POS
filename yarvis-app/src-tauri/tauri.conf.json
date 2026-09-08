@@ -12,10 +12,24 @@
   "app": {
     "windows": [
       {
+        "label": "splash",
+        "url": "splash.html",
+        "title": "Y.A.R.V.I.S. POS",
+        "width": 480,
+        "height": 600,
+        "center": true,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "skipTaskbar": true
+      },
+      {
+        "label": "main",
         "title": "yarvis-app",
         "width": 1200,
         "height": 800,
-        "maximized": true
+        "maximized": true,
+        "visible": false
       }
     ],
     "security": {

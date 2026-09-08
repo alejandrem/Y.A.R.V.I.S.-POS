@@ -10,6 +10,36 @@ pub mod models;
 
 use tauri::Manager;
 
+/// El frontend ya montó su primera pantalla: recién ahí se muestra la
+/// ventana principal y se cierra el splash. Así el primer frame visible
+/// nunca es un render vacío en negro.
+static PRINCIPAL_LISTA: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Muestra la ventana principal (con el login ya montado) y cierra el
+/// splash nativo. Idempotente: llamadas de más no hacen nada.
+#[tauri::command]
+fn principal_lista(app: tauri::AppHandle) {
+    PRINCIPAL_LISTA.store(true, std::sync::atomic::Ordering::SeqCst);
+    mostrar_principal(&app);
+}
+
+/// Muestra la principal y cierra el splash (no-op si ya se hizo).
+/// La principal se maximiza ANTES de mostrarse: si se muestra a 1200x800
+/// y el sistema la maximiza después, se ve el "estirón" al abrir.
+fn mostrar_principal(app: &tauri::AppHandle) {
+    // Primero se muestra la principal y luego se cierra el splash:
+    // así nunca hay un hueco sin ventana visible.
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.maximize();
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+    if let Some(splash) = app.get_webview_window("splash") {
+        let _ = splash.close();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -24,18 +54,42 @@ pub fn run() {
                 )
                 .init();
 
-            let (pool, db_path_str) = backventanas::db::db::initialize_db(app.handle());
+            // El init pesado (backup + SQLite + migraciones + job de
+            // alertas) corre en un hilo aparte para no bloquear la
+            // pintura de la ventana splash. La ventana principal nace
+            // oculta (ver tauri.conf.json) y se muestra solo cuando el
+            // backend ya puede responder comandos.
+            // NOTA: hilo OS dedicado, NO tokio::spawn: initialize_db usa
+            // block_on por dentro y bloquear un worker del runtime es
+            // panic seguro.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let (pool, db_path_str) = backventanas::db::db::initialize_db(&handle);
 
-            // Job de fondo de finanzas: cada hora genera alertas automáticas
-            // y actualiza el estado de vencimiento de los gastos recurrentes.
-            backventanas::backadmin::adminfinanzas::alertas::iniciar_job_alertas(pool.clone());
+                // Job de fondo de finanzas: cada hora genera alertas automáticas
+                // y actualiza el estado de vencimiento de los gastos recurrentes.
+                backventanas::backadmin::adminfinanzas::alertas::iniciar_job_alertas(pool.clone());
 
-            app.manage(pool);
-            app.manage(backventanas::db::db::DbPath(db_path_str.clone()));
-            app.manage(backventanas::auth::AuthState::default());
+                handle.manage(pool);
+                handle.manage(backventanas::db::db::DbPath(db_path_str.clone()));
+                handle.manage(backventanas::auth::AuthState::default());
+
+                // Failsafe: si el frontend muere antes de avisar que montó
+                // su primera pantalla, mostrar la principal de todos modos
+                // (mostrar_principal es idempotente si ya se hizo).
+                let respaldo = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(20));
+                    if !PRINCIPAL_LISTA.load(std::sync::atomic::Ordering::SeqCst) {
+                        mostrar_principal(&respaldo);
+                    }
+                });
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Ventanas (splash nativo -> principal)
+            principal_lista,
             // Auth
             api_config::guardar_api_keys,
             api_config::leer_api_keys,
