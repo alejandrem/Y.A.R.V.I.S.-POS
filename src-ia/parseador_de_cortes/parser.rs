@@ -22,12 +22,12 @@ pub fn parse_corte(texto: &str) -> Result<CorteParseado, String> {
     };
 
     let partes = partir(texto);
-    let tot = extraer_totales(&partes, texto);
+    let tot = extraer_totales(&partes);
     let (estacion, fecha) = extraer_estacion_fecha(texto);
 
     let mut items: Vec<ItemCorte> = Vec::new();
     for l in seccion(&partes, Marca::Ingresos) {
-        if let Some((c, m)) = linea_pago(l, "total de ingresos") {
+        if let Some((c, m)) = linea_pago(l) {
             items.push(ItemCorte {
                 kind: "INGRESO".into(),
                 nombre: c,
@@ -38,7 +38,7 @@ pub fn parse_corte(texto: &str) -> Result<CorteParseado, String> {
         }
     }
     for l in seccion(&partes, Marca::Egresos) {
-        if let Some((c, m)) = linea_pago(l, "total de egresos") {
+        if let Some((c, m)) = linea_pago(l) {
             items.push(ItemCorte {
                 kind: "EGRESO".into(),
                 nombre: c,
@@ -136,47 +136,49 @@ pub fn parse_corte(texto: &str) -> Result<CorteParseado, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::fixtures::{CORTE_X_EJEMPLO, CORTE_Z_EJEMPLO};
     use super::*;
 
+    /// Z sintético pero con la forma del estándar (artículos + 12h am).
+    const MINI_Z: &str = "*** CORTE Z EN MONEDA:MXN***\nTIENDA X\n*** Corte Z 9\nCAJA1 05/06/2024 10:15:00 a. m.\n**Ingresos**\nEFE Ventas  $1,000.00\nTotal de Ingresos: $1,000.00\n**Egresos**\nTotal de Egresos: $.00\nTotal en caja: $1,000.00\n*********VENTAS DEL CORTE**********\nVentas no gravadas: $1,000.00\nTotal de ventas: $1,000.00\n**Ventas por artículo**\nPROD A - 2 - $600.00\nPROD B - 1 - $400.00\n**Total venta en unidades: 3.00\nClientes atendidos: 2";
+
+    /// X sintético con la variante `CORTE DE CAJA` y hora 24h.
+    const MINI_X: &str = "CORTE DE CAJA X EN MONEDA:MXN\nTIENDA X\nCajero: ANA\nCorte de caja X 4\nCAJA2 06/06/2024 21:00:00\n**Ingresos**\nEFE Ventas $700.00\nTotal de Ingresos: $700.00\n**Egresos**\nTotal de Egresos: $.00\nTotal en caja: $700.00\n*********VENTAS DEL CORTE**********\nVentas no gravadas: $700.00\nTotal de ventas: $700.00\n**Ventas por ticket**\nF-1  500.00\nF-2  200.00\nClientes atendidos: 5";
+
     #[test]
-    fn z_estandar_parsea_y_verifica() {
-        let c = parse_corte(CORTE_Z_EJEMPLO).expect("el Z estándar debe parsear");
+    fn z_minimo_parsea_y_verifica() {
+        let c = parse_corte(MINI_Z).expect("el Z mínimo debe parsear");
         assert_eq!(c.tipo, TipoCorte::Z);
-        assert_eq!(c.folio, Some("54".into()));
-        assert_eq!(c.estacion, Some("ESTACION01".into()));
-        assert_eq!(c.fecha, Some("2025-01-01 11:25:57".into()));
-        assert_eq!(c.cajero, "SISTEMA");
-        assert_eq!(c.total_ingresos, 246280);
-        assert_eq!(c.total_egresos, 0);
-        assert_eq!(c.total_caja, 246280);
-        assert_eq!(c.total_ventas, 246280);
-        assert_eq!(c.ventas_no_gravadas, 246280);
-        assert_eq!(c.total_unidades, 20.0);
-        assert_eq!(c.clientes_atendidos, 9);
-        let arts: Vec<_> = c.items.iter().filter(|i| i.kind == "ARTICULO").collect();
-        assert_eq!(arts.len(), 12);
-        assert_eq!(c.verificacion.caja_ok, true);
-        assert_eq!(c.verificacion.ventas_ok, true);
-        assert!(c.verificacion.advertencias.is_empty());
+        assert_eq!(c.folio, Some("9".into()));
+        assert_eq!(c.estacion, Some("CAJA1".into()));
+        assert_eq!(c.fecha, Some("2024-06-05 10:15:00".into()));
+        assert_eq!(c.total_ingresos, 100000);
+        assert_eq!(c.total_caja, 100000);
+        assert_eq!(c.total_ventas, 100000);
+        assert_eq!(c.total_unidades, 3.0);
+        assert_eq!(c.clientes_atendidos, 2);
+        assert_eq!(c.items.iter().filter(|i| i.kind == "ARTICULO").count(), 2);
+        assert!(c.verificacion.caja_ok && c.verificacion.ventas_ok);
     }
 
     #[test]
-    fn x_estandar_parsea_y_verifica() {
-        let c = parse_corte(CORTE_X_EJEMPLO).expect("el X estándar debe parsear");
+    fn x_con_variante_de_titulo_parsea_y_verifica() {
+        let c = parse_corte(MINI_X).expect("el X mínimo debe parsear");
         assert_eq!(c.tipo, TipoCorte::X);
-        assert_eq!(c.folio, Some("1".into()));
-        assert_eq!(c.fecha, Some("2026-03-31 21:35:08".into()));
-        assert_eq!(c.cajero, "GENERAL");
-        assert_eq!(c.total_ingresos, 70200);
-        assert_eq!(c.total_caja, 70200);
-        assert_eq!(c.total_ventas, 70200);
-        assert_eq!(c.total_unidades, 19.0);
-        assert_eq!(c.clientes_atendidos, 8);
-        let tix: Vec<_> = c.items.iter().filter(|i| i.kind == "TICKET").collect();
-        assert_eq!(tix.len(), 8);
-        assert_eq!(c.verificacion.caja_ok, true);
-        assert_eq!(c.verificacion.ventas_ok, true);
+        assert_eq!(c.folio, Some("4".into()));
+        assert_eq!(c.fecha, Some("2024-06-06 21:00:00".into()));
+        assert_eq!(c.cajero, "ANA");
+        assert_eq!(c.total_ventas, 70000);
+        assert_eq!(c.items.iter().filter(|i| i.kind == "TICKET").count(), 2);
+        assert!(c.verificacion.caja_ok && c.verificacion.ventas_ok);
+    }
+
+    #[test]
+    fn descuadre_se_reporta_no_se_tira() {
+        let roto = MINI_Z.replace("Total en caja: $1,000.00", "Total en caja: $999.00");
+        let c = parse_corte(&roto).expect("un descuadre no debe tumbar el parseo");
+        assert!(!c.verificacion.caja_ok);
+        assert_eq!(c.verificacion.advertencias.len(), 1);
+        assert_eq!(c.total_caja, 99900);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 // TEST FUNCIONAL — Importación histórica de cortes X/Z.
 // Carpeta mezclada (cortes + un ticket suelto): clasifica, importa,
 // omite no-cortes, es idempotente por hash y expone historial/detalle.
-// Los fixtures son ADREDE distintos a los de src-ia (otra estación,
+// Los casos son ADREDE distintos a los del parser (otra estación,
 // otro cajero, 24h) para probar generalidad, no memorización.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -11,7 +11,7 @@ mod common;
 
 use common::db;
 use std::sync::atomic::{AtomicU64, Ordering};
-use yarvis_app_lib::backventanas::backadmin::adminparser::parser_cortes::importar_carpeta_cortes_impl;
+use yarvis_app_lib::backventanas::backadmin::adminparser::cortes_import::importacion::importar_carpeta_cortes_impl;
 
 static SEQ: AtomicU64 = AtomicU64::new(0);
 
