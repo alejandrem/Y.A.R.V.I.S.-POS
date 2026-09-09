@@ -301,3 +301,76 @@ interface Producto {
 - Rust como escritor unico: el parseo lee archivos, pero la escritura en DB siempre pasa por comandos Tauri.
 - Idioma: espanol para Mexico (pesos mexicanos).
 - El mapeo de columnas es estadistico (ver seccion 9): el unico LLM del sistema es el CHAT (Qwen 3 1.7B local + cloud fallback), que nunca entra al pipeline de parseo.
+
+---
+
+## 12. Parseo de cortes de caja X/Z
+
+> Igual que tickets: **100% reglas en Rust, sin IA**. Cada número se verifica
+> con matemática exacta en centavos. Si un corte trae otro acomodo de
+> impresora, se agregan marcadores/etiquetas, nunca un modelo.
+
+### 12.1 Qué es cada uno
+
+- **Corte X**: informe parcial del día (mitad de turno, cambio de cajero). NO reinicia acumulados; puede haber varios al día. En el POS también servirá para consultar ventas del día en vivo (pendiente).
+- **Corte Z**: cierre definitivo del día. Reinicia contadores. Es el documento contable/fiscal.
+- Un corte puede traer decenas de ventas/tickets adentro; el parseador NO crea ventas en `ventas` desde cortes (evita duplicar lo que ya entró por tickets).
+
+### 12.2 Estructura (src-ia/parseador_de_cortes/)
+
+```
+parseador_de_cortes/          # 1 archivo = 1 tarea; loners en la raíz
+├── mod.rs                    # Entry point + re-exports
+├── tipos.rs                  # Contrato con backend (dinero en centavos INTEGER)
+├── parser.rs                 # Orquesta extracción + verificación (loner)
+├── valores/                  # Limpieza de primitivas impresas
+│   ├── montos.rs             #   "$2,462.80", "$.00"→0 (signo sin entero = cero)
+│   └── fechas.rs             #   dd/mm/yyyy + 12h ("a. m."/"p. m.") o 24h → ISO
+└── secciones/                # Una tarea por archivo
+    ├── encabezado.rs         #   Título (X/Z, acepta "CORTE DE CAJA X"), folio,
+    │                         #   empresa (solo zona de encabezado), estación,
+    │                         #   fecha, cajero (default SISTEMA), moneda, clasificador
+    ├── marcadores.rs         #   Partición por secciones (**Ingresos**, VENTAS DEL
+    │                         #   CORTE, Ventas por artículo/ticket/cliente, Cobranza)
+    ├── totales.rs            #   Los 13 totales, cada etiqueta SOLO en su sección
+    │                         #   ("Impuesto" pelado no se confunde con "Impuesto 16%")
+    └── renglones.rs          #   ARTICULO (`NOMBRE - cant - $`), TICKET (`REM - n`),
+                              #   pagos (`EFE...`/`04 TARJETA...`; nada con "total"
+                              #   es concepto: `Total en caja` no se cuela como egreso)
+```
+
+### 12.3 Cómo funciona el pipeline
+
+1. **Clasificar**: `clasificar_archivo` lee el título (`*** CORTE X|Z`, `CORTE DE CAJA X|Z`). Sin título → `NoEsCorte` (los tickets sueltos de la carpeta se omiten, contados, sin error).
+2. **Partir**: se troza por marcadores de sección; ruido (`---`, `***`, `p0`, blancos) se tira.
+3. **Extraer**: encabezado + 13 totales + renglones. Faltantes quedan en cero/None, no tumban el parseo.
+4. **Verificar** (centavos exactos): `caja == ingresos − egresos` y `ventas == Σ renglones vendibles`. El descuadre se REPORTA en `advertencias`, no se tira el corte.
+5. **Vincular** (backend): cada ARTICULO se cruza con el catálogo maestro (`productos`) con la misma maquinaria de tickets (exacto no-ambiguo → fuzzy 0.55/0.52). Si matchea guarda `producto_id` y acumula `vendido`; si es realmente nuevo se crea (stock 0). **El stock JAMÁS se descuenta**: son ventas de días pasados y el stock es el presente (descontarlo lo corrompería, peor si esos días ya entraron por tickets).
+
+### 12.4 Base de datos (migraciones 0009 + 0010)
+
+- `cortes_caja` NO se toca: queda solo para operativos en vivo (apertura/cierre X/Z del POS).
+- `cortes_importados`: tipo, folio, estación, cajero, empresa, moneda, fecha, 9 totales en centavos, unidades, clientes, ruta, hash SHA256 UNIQUE, creado_en.
+- `cortes_importados_items`: kind (ARTICULO|TICKET|INGRESO|EGRESO), nombre, cantidad, precio_unitario, subtotal, producto_id (FK lógica al catálogo, NULL = sin vincular).
+- Idempotencia por hash de contenido: re-importar la misma carpeta omite duplicados.
+
+### 12.5 Backend (yarvis-app/src-tauri/.../adminparser/cortes_import/)
+
+```
+cortes_import/
+├── lectura.rs      # previsualizar_corte (un archivo, sin guardar)
+├── vinculacion.rs  # cruce con catálogo (exacto + fuzzy, crear-nuevo, sin tocar stock)
+├── importacion.rs  # importar_carpeta_cortes (clasifica, omite no-cortes, todo-o-nada por corte)
+└── historial.rs    # get_cortes_importados + get_corte_importado_detalle (recalcula caja_ok/ventas_ok)
+```
+
+### 12.6 Interfaz (admin → Parseador → Cortes, espejo de Tickets)
+
+Flujo **catálogo maestro → carpeta de cortes → historial** (el catálogo es el mismo componente de tickets: los artículos se vinculan contra ese inventario). Cada bloque trae su rango independiente; la lista arranca en Todos. El detalle muestra tarjetas de montos, badges ✓/! de verificación e items agrupados. Misma estética y mismos componentes base que tickets.
+
+### 12.7 Lecciones (bugs que ya picaron)
+
+- `Total en caja` vive DENTRO de la sección Egresos pero no es un egreso: ningún concepto real contiene "total", así se filtra.
+- La empresa se busca SOLO antes de que empiecen las secciones; si no hay, es None (antes pescaba renglones de Ingresos).
+- Estaciones en minúsculas (`caja_norte`) también matchean.
+- `$.00` es cero válido, no error.
