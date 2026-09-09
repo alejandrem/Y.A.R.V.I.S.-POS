@@ -21,7 +21,7 @@ static RE_FOLIO: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?im)^\**\s*Corte\s+(?:de\s+caja\s+)?[XZ]\s+(\d+)").expect("regex folio corte")
 });
 static RE_ESTACION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^([A-Z0-9_]+)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AaPp]\.\s*[Mm]\.?)?)\s*$")
+    Regex::new(r"(?m)^([A-Za-z0-9_]+)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AaPp]\.\s*[Mm]\.?)?)\s*$")
         .expect("regex estacion")
 });
 static RE_CAJERO: LazyLock<Regex> =
@@ -50,8 +50,11 @@ pub fn extraer_folio(texto: &str) -> Option<String> {
     RE_FOLIO.captures(texto).and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
 }
 
-/// Empresa: primera línea con contenido tras el título que no sea
-/// folio, estación ni cajero (p. ej. `EMPRESA, S.A. DE C.V.`).
+/// Empresa: primera línea con contenido de la ZONA DE ENCABEZADO
+/// (antes de que empiecen las secciones), que no sea folio, estación
+/// ni cajero (p. ej. `EMPRESA, S.A. DE C.V.`). Si el corte arranca
+/// directo en secciones, no hay empresa (None), no se inventa una
+/// pescando renglones de Ingresos.
 pub fn extraer_empresa(texto: &str) -> Option<String> {
     let lineas: Vec<&str> = texto.lines().collect();
     let titulo = lineas.iter().position(|l| RE_TITULO.is_match(l))?;
@@ -60,7 +63,11 @@ pub fn extraer_empresa(texto: &str) -> Option<String> {
         if t.is_empty() || RE_FOLIO.is_match(t) || RE_ESTACION.is_match(t) || RE_CAJERO.is_match(t) {
             continue;
         }
-        // Marcadores de página sueltos (`p0`) o secciones: no son empresa.
+        // Ya empezaron las secciones: aquí no vive la empresa.
+        if super::marcadores::marca_de(t).is_some() {
+            break;
+        }
+        // Marcadores de página sueltos (`p0`): no son empresa.
         if t.len() <= 3 || t.starts_with('*') {
             continue;
         }
@@ -120,5 +127,11 @@ mod tests {
         assert_eq!(extraer_folio(t), Some("1".into()));
         assert_eq!(extraer_cajero(t), "GENERAL");
         assert_eq!(extraer_cajero("TICKET SIN ENCABEZADO"), "SISTEMA");
+    }
+
+    #[test]
+    fn sin_empresa_no_se_inventa_con_renglones() {
+        let t = "*** CORTE X EN MONEDA:MXN***\nCorte X 2\n**Ingresos**\nEFE Ventas $900.00";
+        assert_eq!(extraer_empresa(t), None);
     }
 }

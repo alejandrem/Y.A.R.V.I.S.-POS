@@ -19,7 +19,7 @@ pub fn a_iso(fecha: &str, hora: &str) -> Option<String> {
         return None;
     }
     let (d, m, y) = (p[0].parse::<u32>().ok()?, p[1].parse::<u32>().ok()?, p[2].parse::<u32>().ok()?);
-    if !(1..=31).contains(&d) || !(1..=12).contains(&m) || y < 1900 || y > 2200 {
+    if !(1..=31).contains(&d) || !(1..=12).contains(&m) || !(1900..=2200).contains(&y) {
         return None;
     }
 
@@ -36,7 +36,7 @@ pub fn a_iso(fecha: &str, hora: &str) -> Option<String> {
             let mut h = c[1].parse::<u32>().ok()?;
             let min = c[2].parse::<u32>().ok()?;
             let seg = c.get(3).map(|v| v.as_str().parse::<u32>().unwrap_or(0)).unwrap_or(0);
-            if h < 1 || h > 12 || min > 59 || seg > 59 {
+            if !(1..=12).contains(&h) || min > 59 || seg > 59 {
                 return None;
             }
             let pm = c[4].eq_ignore_ascii_case("p");

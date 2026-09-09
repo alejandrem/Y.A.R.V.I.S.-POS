@@ -44,7 +44,7 @@ fn monto_tras(lineas: &[String], etiqueta: &str) -> Option<i64> {
         if !l.to_lowercase().contains(&et) {
             continue;
         }
-        let cola = l.split(':').last().unwrap_or(l);
+        let cola = l.rsplit(':').next().unwrap_or(l);
         if let Some(c) = RE_FIN.captures(cola) {
             if let Some(v) = limpiar_monto(&c[1]) {
                 return Some(v);
@@ -61,7 +61,7 @@ fn monto_anclado(lineas: &[String], etiqueta: &str) -> Option<i64> {
     let re = Regex::new(&patron).ok()?;
     for l in lineas {
         if re.is_match(l) {
-            let cola = l.split(':').last().unwrap_or(l);
+            let cola = l.rsplit(':').next().unwrap_or(l);
             static RE_FIN: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new(r"\$?\s*([\d,]+\.\d{2}|\.\d{2}|\d+)\s*$").expect("regex monto final 2")
             });
@@ -80,35 +80,41 @@ pub fn extraer_totales(partes: &[(Marca, Vec<String>)]) -> TotalesCorte {
     let egr = seccion(partes, Marca::Egresos);
     let vc = seccion(partes, Marca::VentasCorte);
     let todas: Vec<String> = partes.iter().flat_map(|(_, ls)| ls.clone()).collect();
-    let mut t = TotalesCorte::default();
-    t.ingresos = monto_tras(ing, "total de ingresos");
-    t.egresos = monto_tras(egr, "total de egresos");
-    t.caja = monto_tras(ing, "total en caja")
-        .or_else(|| monto_tras(egr, "total en caja"))
-        .or_else(|| monto_tras(&todas, "total en caja"));
-    t.ventas_16 = monto_tras(vc, "ventas 16%");
-    t.impuesto_16 = monto_tras(vc, "impuesto 16%");
-    t.ventas_10 = monto_tras(vc, "ventas 10%");
-    t.impuesto_10 = monto_tras(vc, "impuesto 10%");
-    t.gravadas = monto_anclado(vc, "ventas gravadas");
-    t.impuesto = monto_anclado(vc, "impuesto");
-    t.no_gravadas = monto_anclado(vc, "ventas no gravadas");
-    t.redondeos = monto_tras(vc, "redondeos");
-    t.total_ventas = monto_tras(vc, "total de ventas").or_else(|| monto_tras(&todas, "total ventas del dia"));
-    t.ventas_credito = monto_tras(vc, "ventas credito");
+    let mut unidades: Option<f64> = None;
+    let mut clientes: Option<i64> = None;
     for l in todas.iter() {
         let low = l.to_lowercase();
-        if t.unidades.is_none() && low.contains("total venta en unidades") {
-            let cola = l.split(':').last().unwrap_or(l);
+        if unidades.is_none() && low.contains("total venta en unidades") {
+            let cola = l.rsplit(':').next().unwrap_or(l);
             let num: String = cola.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
-            t.unidades = num.parse::<f64>().ok();
+            unidades = num.parse::<f64>().ok();
         }
-        if t.clientes.is_none() && low.contains("clientes atendidos") {
+        if clientes.is_none() && low.contains("clientes atendidos") {
             let num: String = l.chars().filter(|c| c.is_ascii_digit()).collect();
-            t.clientes = num.parse::<i64>().ok();
+            clientes = num.parse::<i64>().ok();
         }
     }
-    t
+    TotalesCorte {
+        ingresos: monto_tras(ing, "total de ingresos"),
+        egresos: monto_tras(egr, "total de egresos"),
+        caja: monto_tras(ing, "total en caja")
+            .or_else(|| monto_tras(egr, "total en caja"))
+            .or_else(|| monto_tras(&todas, "total en caja")),
+        ventas_16: monto_tras(vc, "ventas 16%"),
+        impuesto_16: monto_tras(vc, "impuesto 16%"),
+        ventas_10: monto_tras(vc, "ventas 10%"),
+        impuesto_10: monto_tras(vc, "impuesto 10%"),
+        gravadas: monto_anclado(vc, "ventas gravadas"),
+        impuesto: monto_anclado(vc, "impuesto"),
+        no_gravadas: monto_anclado(vc, "ventas no gravadas"),
+        redondeos: monto_tras(vc, "redondeos"),
+        total_ventas: monto_tras(vc, "total de ventas")
+            .or_else(|| monto_tras(&todas, "total ventas del dia")),
+        ventas_credito: monto_tras(vc, "ventas credito"),
+        unidades,
+        clientes,
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]

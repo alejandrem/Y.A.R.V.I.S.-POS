@@ -185,4 +185,26 @@ mod tests {
     fn ticket_normal_no_es_corte() {
         assert!(parse_corte("2 Pan Bimbo 42.00 84.00\nTOTAL: $84.00").is_err());
     }
+
+    /// Formato variante: estación minúscula, hora 24h, egresos reales,
+    /// X con artículos en vez de tickets y sin línea de empresa.
+    /// Prueba que el parser no está memorizando el estándar.
+    const VARIANTE: &str = "*** CORTE X EN MONEDA:MXN***\nCorte X 2\ncaja_norte 15/07/2024 14:05:09\n**Ingresos**\nEFE Ventas $900.00\nTotal de Ingresos: $900.00\n**Egresos**\nRetiro socio $100.00\nTotal de Egresos: $100.00\nTotal en caja: $800.00\n*********VENTAS DEL CORTE**********\nVentas no gravadas: $800.00\nTotal de ventas: $800.00\n**Ventas por artículo**\nREFRESCO - 4 - $800.00\nClientes atendidos: 3";
+
+    #[test]
+    fn variante_con_egresos_y_sin_empresa_verifica() {
+        let c = parse_corte(VARIANTE).expect("la variante debe parsear");
+        assert_eq!(c.tipo, TipoCorte::X);
+        assert_eq!(c.folio, Some("2".into()));
+        assert_eq!(c.estacion, Some("caja_norte".into()));
+        assert_eq!(c.fecha, Some("2024-07-15 14:05:09".into()));
+        assert_eq!(c.empresa, None);
+        assert_eq!(c.total_ingresos, 90000);
+        assert_eq!(c.total_egresos, 10000);
+        assert_eq!(c.total_caja, 80000);
+        assert_eq!(c.total_ventas, 80000);
+        assert_eq!(c.items.iter().filter(|i| i.kind == "EGRESO").count(), 1);
+        assert!(c.verificacion.caja_ok && c.verificacion.ventas_ok);
+        assert!(c.verificacion.advertencias.is_empty());
+    }
 }

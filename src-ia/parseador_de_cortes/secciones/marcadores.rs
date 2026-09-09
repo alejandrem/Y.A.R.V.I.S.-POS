@@ -32,7 +32,9 @@ fn es_ruido(linea: &str) -> bool {
 }
 
 /// Marca de sección si la línea es encabezado (sin importar adornos).
-fn marca_de(linea: &str) -> Option<Marca> {
+/// `pub(crate)` porque `encabezado` la usa para saber dónde termina
+/// la zona de encabezado (la empresa nunca vive dentro de secciones).
+pub(crate) fn marca_de(linea: &str) -> Option<Marca> {
     let l = linea.to_lowercase();
     let compacta: String = l.chars().filter(|c| !matches!(c, '*' | ' ')).collect();
     if compacta.contains("ventasporart") || l.contains("ventas por art") {
