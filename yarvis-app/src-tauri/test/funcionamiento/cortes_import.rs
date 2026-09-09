@@ -140,6 +140,52 @@ async fn reimportar_es_idempotente_por_hash() {
 }
 
 #[tokio::test]
+async fn vincula_catalogo_y_no_toca_stock() {
+    use common::seed_producto;
+    let pool = db().await;
+    // Catálogo maestro ya importado (paso 01): coincide exacto.
+    seed_producto(&pool, "PROD A", 10.0, 500.0).await;
+
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("cortes_vinc_{}_{}", std::process::id(), n));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("z.txt"),
+        CORTE_Z_MINI.replace("PROD A -       2 -   $1,000.00", "PROD A -       2 -   $1,000.00\nCOSA RARA NUEVA XYZ -       1 -   $50.00"),
+    )
+    .unwrap();
+    // OJO: el reemplazo rompe la suma (1050 != 1000) a propósito: la
+    // importación guarda igual y lo reporta (ventas_ok=false), lo que aquí
+    // se prueba es el vínculo, no la verificación.
+    let r = importar_carpeta_cortes_impl(&pool, &dir.to_string_lossy()).await.unwrap();
+    assert_eq!(r.cortes_z, 1);
+    assert_eq!(r.productos_vinculados, 1);
+    assert_eq!(r.productos_nuevos, 1);
+
+    // Ambos items con producto_id; el histórico NO movió el stock.
+    let vinculados: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM cortes_importados_items WHERE producto_id IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(vinculados, 2);
+    let (stock, vendido): (f64, f64) =
+        sqlx::query_as("SELECT stock, vendido FROM productos WHERE nombre = 'PROD A'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stock, 10.0);
+    assert_eq!(vendido, 2.0);
+    let stock_nuevo: f64 =
+        sqlx::query_scalar("SELECT stock FROM productos WHERE nombre = 'COSA RARA NUEVA XYZ'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stock_nuevo, 0.0);
+}
+
+#[tokio::test]
 async fn detalle_trae_totales_items_y_verificacion() {
     let pool = db().await;
     let carpeta = carpeta_mezclada();
