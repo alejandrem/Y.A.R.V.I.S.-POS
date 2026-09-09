@@ -125,6 +125,10 @@ pub fn run() {
             backventanas::backadmin::adminparser::parser_commands::vincular_inventario,
             backventanas::backadmin::adminparser::parser_commands::guardar_vinculacion,
             backventanas::backadmin::adminparser::parser_commands::get_db_path,
+            backventanas::backadmin::adminparser::parser_cortes::previsualizar_corte,
+            backventanas::backadmin::adminparser::parser_cortes::importar_carpeta_cortes,
+            backventanas::backadmin::adminparser::parser_cortes::get_cortes_importados,
+            backventanas::backadmin::adminparser::parser_cortes::get_corte_importado_detalle,
             backventanas::backadmin::adminparser::parser_commands::descargar_modelos,
             backventanas::backadmin::adminparser::listar_archivos_carpeta,
             // Tickets

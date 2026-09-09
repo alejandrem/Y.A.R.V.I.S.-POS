@@ -1,5 +1,6 @@
 pub mod empleados_auto;
 pub mod parser_commands;
+pub mod parser_cortes;
 pub mod parser_csv;
 pub mod parser_excel;
 pub mod parser_txt;

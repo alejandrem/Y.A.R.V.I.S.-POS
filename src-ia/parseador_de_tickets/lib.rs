@@ -9,6 +9,11 @@ pub mod cerebro;
 pub mod formatos;
 pub mod rutas;
 
+// Parseador de cortes de caja X/Z (vive en `src-ia/parseador_de_cortes/`,
+// hermano de este módulo). Determinista como el de tickets: sin IA.
+#[path = "../parseador_de_cortes/mod.rs"]
+pub mod parseador_de_cortes;
+
 // Embeddings interino (TF-IDF + fuzzy / trait Embedder) — vive en `src-ia/embeddings/`.
 // Se expone desde la raiz para que `src_ia::embeddings::*` sea la ruta canonica;
 // el modulo viejo en `cerebro/vinculador_inventario/similitud.rs` re-exporta desde aqui.
