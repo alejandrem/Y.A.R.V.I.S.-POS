@@ -1,5 +1,8 @@
 // Libro abierto - Datos Inutiles
 // Manual del POS con animacion de hoja real, separadores por modulo y paginas con SVG
+// Compartido por ADMIN y EMPLEADO (mismo patron que PanelInventario / PanelYarvis):
+// el canonical vive aqui y cada rol lo usa con `rol="admin" | "empleado"`.
+// Solo cambia el subtitulo de portada; el contenido es el mismo manual.
 import { useState } from "react";
 import Separador from "./componentes/Separador";
 import { cobrarSeparador, CobrarIzq, CobrarDer } from "./modulos/Cobrar";
@@ -17,8 +20,12 @@ type Spread = {
   right: React.ReactNode;
 };
 
+type Rol = "admin" | "empleado";
+
+export type { Rol as LibroRol };
+
 // Portada - Izquierda (titulo)
-const PortadaIzq = () => (
+const PortadaIzq = ({ rol = "empleado" }: { rol?: Rol }) => (
   <div className="flex-1 bg-white border-r-[3px] border-neutral-900 p-10 flex flex-col relative overflow-hidden">
     <div className="absolute top-8 left-10 right-10 h-[1px] bg-neutral-900/10" />
     <div className="absolute top-12 left-10 right-10 h-[1px] bg-neutral-900/10" />
@@ -29,7 +36,9 @@ const PortadaIzq = () => (
       <h3 className="font-mono text-[44px] sm:text-[52px] font-black tracking-[0.12em] text-neutral-900 leading-none mt-6">DATOS</h3>
       <h3 className="font-mono text-[44px] sm:text-[52px] font-black tracking-[0.12em] text-neutral-900 leading-none">INUTILES</h3>
       <div className="w-20 h-[4px] bg-neutral-900 mt-6" />
-      <p className="font-mono text-[13px] font-black tracking-[0.2em] text-neutral-800 uppercase mt-4">MANUAL DEL EMPLEADO</p>
+      <p className="font-mono text-[13px] font-black tracking-[0.2em] text-neutral-800 uppercase mt-4">
+        {rol === "admin" ? "MANUAL DEL ADMINISTRADOR" : "MANUAL DEL EMPLEADO"}
+      </p>
       <p className="font-mono text-[11px] font-bold tracking-widest text-neutral-500 mt-2">ED. 2026 — BLANCO & NEGRO</p>
     </div>
     <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center">— 01 —</p>
@@ -88,7 +97,7 @@ const IndiceDer = ({ onJump }: { onJump: (id: string) => void }) => (
   </div>
 );
 
-const Libro = () => {
+const Libro = ({ rol = "empleado" }: { rol?: Rol }) => {
   const [actual, setActual] = useState(0);
   const [siguiente, setSiguiente] = useState<number | null>(null);
   const [girando, setGirando] = useState(false);
@@ -127,7 +136,7 @@ const Libro = () => {
   };
 
   const spreads: Spread[] = [
-    { id: "indice", left: <PortadaIzq />, right: <IndiceDer onJump={goTo} /> },
+    { id: "indice", left: <PortadaIzq rol={rol} />, right: <IndiceDer onJump={goTo} /> },
     { id: "cobrar", left: <CobrarIzq />, right: <CobrarDer /> },
     { id: "inventario", left: <InventarioIzq />, right: <InventarioDer /> },
     { id: "tickets", left: <TicketsIzq />, right: <TicketsDer /> },

@@ -79,7 +79,7 @@ function Ajustes({ operatorName = "" }: AjustesProps) {
           </div>
         }
       >
-        <Libro />
+        <Libro rol="empleado" />
       </Suspense>
 
       {/* Espacio reservado para futuras secciones */}

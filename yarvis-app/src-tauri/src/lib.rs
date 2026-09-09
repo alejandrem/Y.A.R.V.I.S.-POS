@@ -162,6 +162,11 @@ pub fn run() {
             backventanas::backempleado::empleaperfil::asistencia::get_asistencia_empleado,
             backventanas::backempleado::empleaperfil::asistencia::get_mis_horas_extra,
             backventanas::backempleado::empleaperfil::asistencia::get_horas_extra_empleado,
+            // Empleado - Mis tickets (operator-scoped por session.user_id)
+            backventanas::backempleado::empleatickets::mis_tickets::get_mis_tickets,
+            backventanas::backempleado::empleatickets::mis_tickets::get_mis_kpis,
+            backventanas::backempleado::empleatickets::mis_tickets::get_mis_ventas_por_dia,
+            backventanas::backempleado::empleatickets::mis_tickets::get_mi_ticket_detalle,
             // Finanzas - Gastos
             backventanas::backadmin::adminfinanzas::gastos::get_gastos_recurrentes,
             backventanas::backadmin::adminfinanzas::gastos::crear_gasto,
