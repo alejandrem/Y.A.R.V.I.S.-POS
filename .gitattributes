@@ -1,0 +1,17 @@
+# Y.A.R.V.I.S. POS - normalización de finales de línea
+# Por qué existe: sqlx calcula el checksum de cada migración .sql al compilar.
+# Si Windows convierte LF->CRLF (core.autocrlf=true) el hash cambia y el
+# arranque falla con VersionMismatch aunque nadie editó nada. Con esto el
+# checkout SIEMPRE deja LF, en Linux y en Windows.
+*.sql text eol=lf
+*.rs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.toml text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
