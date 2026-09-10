@@ -139,6 +139,8 @@ Toda la documentación vive en `idea.md/`:
 | `imple & docu/implementacion.md` | Estado por fases (completadas y pendientes) |
 | `imple & docu/que es yarvis?.md` | Documentación completa de implementación |
 | `imple & docu/PARSEADOR.md` | El módulo de parseo a detalle |
+| `imple & docu/IMPRESORA.md` | Impresión térmica ESC/POS (spooler RAW + ticket `escpos` con QR y red) |
+| `imple & docu/ESCANER.md` | Escáner de códigos de barras (HID, normalización, índice 0011) |
 | `imple & docu/migracion_rust.md` | Historia de la migración Python → Rust |
 | `imple & docu/Bugs resueltos uwu.md` | Bitácora de bugs y lecciones aprendidas |
 
