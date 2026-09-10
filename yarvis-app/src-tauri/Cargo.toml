@@ -48,6 +48,11 @@ src-ia = { path = "../../src-ia", features = ["llm-local"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Camino C Fase 2 (ticket de venta enriquecido): crate `escpos` en el backend.
+# Defaults: std + barcodes + codes_2d (texto, formato, QR, EAN). Sin USB/serie:
+# el envio sale por el spooler RAW de Fase 1 o por TCP directo (9100).
+escpos = "0.20"
+
 # Camino A Fase 1 (impresora termica): WinAPI del spooler solo en Windows.
 # EnumPrintersW + OpenPrinterW/WritePrinter con datatype RAW.
 [target.'cfg(windows)'.dependencies]
