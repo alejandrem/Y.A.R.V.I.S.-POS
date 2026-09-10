@@ -48,6 +48,11 @@ src-ia = { path = "../../src-ia", features = ["llm-local"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Camino A Fase 1 (impresora termica): WinAPI del spooler solo en Windows.
+# EnumPrintersW + OpenPrinterW/WritePrinter con datatype RAW.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Foundation"] }
+
 # ═══════════════════════════════════════════════════════════════════
 # Tests de backend — 1 binario por módulo (carpetas: funcionamiento/ y estres/)
 # Correr con: cargo test --test func_ventas ... o todos con `cargo test`

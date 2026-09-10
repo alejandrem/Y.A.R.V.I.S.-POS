@@ -6,6 +6,7 @@
 pub mod api_config;
 pub mod backventanas;
 pub mod dinero;
+pub mod impresora;
 pub mod models;
 
 use tauri::Manager;
@@ -217,6 +218,10 @@ pub fn run() {
             backventanas::backadmin::admintarvis::chat::set_local_model_path,
             backventanas::backadmin::admintarvis::chat::load_chat_model,
             backventanas::backadmin::admintarvis::chat::unload_chat_model,
+            // Impresora termica — Camino A Fase 1 (spooler Windows RAW)
+            impresora::commands::listar_impresoras,
+            impresora::commands::imprimir_bytes_raw,
+            impresora::commands::imprimir_lista_conciliacion,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

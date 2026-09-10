@@ -8,6 +8,11 @@ import {
 } from "../../../services/inventario";
 import { reportarError } from "../../../services/tauri";
 import { notificarExito } from "../../../components/notificaciones";
+import {
+  listarImpresoras,
+  imprimirListaConciliacion,
+  type ImpresoraInfo,
+} from "../../../services/impresora";
 
 type Rol = "admin" | "empleado";
 
@@ -24,6 +29,11 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   const [inventoryFilter, setInventoryFilter] = useState("A-Z");
   const [searchQuery, setSearchQuery] = useState("");
   const [conciliacion, setConciliacion] = useState<Record<number, { fisico: number; sistema: number }>>({});
+  const [showPrint, setShowPrint] = useState(false);
+  const [impresoras, setImpresoras] = useState<ImpresoraInfo[]>([]);
+  const [impresoraSel, setImpresoraSel] = useState("");
+  const [cargandoImp, setCargandoImp] = useState(false);
+  const [imprimiendo, setImprimiendo] = useState(false);
 
   useEffect(() => {
     if (activeTab === "inventario") {
@@ -133,6 +143,52 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
     const newInv = [...inventory];
     newInv[inventory.indexOf(item)] = { ...item, [field]: value };
     setInventory(newInv);
+  };
+
+  // ── Impresión térmica Camino A Fase 1: spooler Windows RAW ──
+  const abrirPrint = async () => {
+    setShowPrint(true);
+    setCargandoImp(true);
+    try {
+      const lista = await listarImpresoras();
+      setImpresoras(lista);
+      const def = lista.find((i) => i.predeterminada) ?? lista[0];
+      setImpresoraSel(def?.nombre ?? "");
+    } catch (error) {
+      reportarError("No se pudo listar impresoras (¿Windows?)", error);
+      setImpresoras([]);
+    } finally {
+      setCargandoImp(false);
+    }
+  };
+
+  const confirmarPrint = async () => {
+    if (!impresoraSel) {
+      reportarError("Elige una impresora instalada", "Sin selección");
+      return;
+    }
+    const filas = sortedInventory
+      .filter((item) => item.id != null && conciliacion[item.id!])
+      .map((item) => ({
+        nombre: item.nombre,
+        fisico: conciliacion[item.id!].fisico,
+        sistema: conciliacion[item.id!].sistema,
+        precio_venta: item.precio_venta || 0,
+      }));
+    if (filas.length === 0) {
+      reportarError("No hay filas que imprimir", "Lista vacía");
+      return;
+    }
+    setImprimiendo(true);
+    try {
+      const msg = await imprimirListaConciliacion(impresoraSel, filas);
+      notificarExito(msg);
+      setShowPrint(false);
+    } catch (error) {
+      reportarError("No se pudo imprimir en la térmica", error);
+    } finally {
+      setImprimiendo(false);
+    }
   };
 
   return (
@@ -374,7 +430,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
             <p className="text-[9px] text-neutral-400 uppercase font-black tracking-widest">Físico vs Sistema</p>
           </div>
           <button
-            onClick={() => {/* TODO: conectar con impresora para imprimir el contenido de la tabla */}}
+            onClick={abrirPrint}
             className="px-4 py-2 text-[8px] font-black bg-neutral-900 text-white rounded-xl hover:bg-neutral-800 transition-all uppercase tracking-widest"
           >
             Imprimir Lista
@@ -518,6 +574,92 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
           )}
         </div>
       </div>
+
+      {showPrint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-neutral-900 text-white rounded-[2rem] border border-white/10 shadow-2xl overflow-hidden">
+            <div className="px-6 pt-6 pb-4 border-b border-white/10 flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-widest">Imprimir lista</h4>
+                <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-widest mt-1">
+                  Térmica 80mm · Spooler Windows RAW
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPrint(false)}
+                aria-label="Cerrar"
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {cargandoImp ? (
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 text-center py-6 animate-pulse">
+                  Buscando impresoras instaladas…
+                </p>
+              ) : impresoras.length === 0 ? (
+                <div className="text-center py-4 space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-300">
+                    No hay impresoras instaladas
+                  </p>
+                  <p className="text-[10px] text-neutral-400 font-medium leading-relaxed">
+                    Instala tu térmica 80mm en Windows (Panel de control → Impresoras)
+                    y vuelve a intentarlo. En Fase 1 solo Windows.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-neutral-400">
+                    Impresora destino ({impresoras.length})
+                  </p>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {impresoras.map((imp) => (
+                      <button
+                        key={imp.nombre}
+                        onClick={() => setImpresoraSel(imp.nombre)}
+                        className={`w-full text-left px-4 py-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                          impresoraSel === imp.nombre
+                            ? "bg-white text-neutral-900 border-white"
+                            : "bg-white/5 border-white/10 hover:bg-white/10"
+                        }`}
+                      >
+                        <span className="text-[11px] font-bold truncate">{imp.nombre}</span>
+                        {imp.predeterminada && (
+                          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg shrink-0 ${
+                            impresoraSel === imp.nombre ? "bg-neutral-900 text-white" : "bg-white/10 text-neutral-300"
+                          }`}>
+                            Default
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-neutral-500 font-medium leading-relaxed">
+                    Se mandan {sortedInventory.length} productos en ESC/POS con corte automático.
+                    Si la térmica está apagada o sin papel verás el error aquí.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={() => setShowPrint(false)}
+                className="flex-1 px-4 py-3 text-[9px] font-black uppercase tracking-widest rounded-2xl bg-white/10 hover:bg-white/20 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarPrint}
+                disabled={cargandoImp || imprimiendo || !impresoraSel}
+                className="flex-1 px-4 py-3 text-[9px] font-black uppercase tracking-widest rounded-2xl bg-white text-neutral-900 hover:bg-neutral-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {imprimiendo ? "Imprimiendo…" : "🖨 Imprimir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
