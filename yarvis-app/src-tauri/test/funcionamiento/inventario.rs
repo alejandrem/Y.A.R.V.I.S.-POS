@@ -11,6 +11,9 @@ use common::{db, escalar_i64};
 use yarvis_app_lib::backventanas::backadmin::admininventory::inventory::{
     add_inventory_item_impl, update_inventory_item_impl,
 };
+use yarvis_app_lib::backventanas::codigos_barras::{
+    get_product_by_barcode_impl, normalizar_codigo_barras, validar_codigo_barras,
+};
 use yarvis_app_lib::models::InventoryItem;
 
 fn item(nombre: &str) -> InventoryItem {
@@ -77,6 +80,78 @@ async fn codigo_de_barras_duplicado_rechazado_por_la_db() {
     b.codigo_barras = Some("UNICO123".into());
     // La restricción UNIQUE parcial debe rechazar el clon
     assert!(add_inventory_item_impl(&pool, &b).await.is_err());
+}
+
+#[tokio::test]
+async fn alta_normaliza_codigo_antes_de_guardar() {
+    let pool = db().await;
+    let mut it = item("Coca 600ml");
+    it.codigo_barras = Some("  750-123 456 ".into());
+    let id = add_inventory_item_impl(&pool, &it).await.unwrap();
+
+    let cb: Option<String> = sqlx::query_scalar("SELECT codigo_barras FROM productos WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(cb.as_deref(), Some("750123456"));
+}
+
+#[tokio::test]
+async fn busqueda_por_codigo_exacta_y_normalizada() {
+    let pool = db().await;
+    let mut it = item("Coca 600ml");
+    it.codigo_barras = Some("7501234567890".into());
+    add_inventory_item_impl(&pool, &it).await.unwrap();
+
+    // Exacta
+    let hit = get_product_by_barcode_impl(&pool, "7501234567890")
+        .await
+        .unwrap()
+        .expect("debe encontrar la Coca");
+    assert_eq!(hit.nombre, "Coca 600ml");
+
+    // El escaner mete guiones/minusculas/espacios: igual matchea
+    let hit2 = get_product_by_barcode_impl(&pool, "  750-1234567890 ")
+        .await
+        .unwrap()
+        .expect("debe matchear normalizado");
+    assert_eq!(hit2.nombre, "Coca 600ml");
+
+    // Inexistente = None (la UI ofrece crearlo), no error
+    assert!(get_product_by_barcode_impl(&pool, "0000000000000")
+        .await
+        .unwrap()
+        .is_none());
+
+    // Vacio = error, no barrido total
+    assert!(get_product_by_barcode_impl(&pool, "   ").await.is_err());
+}
+
+#[tokio::test]
+async fn duplicado_da_mensaje_amigable() {
+    let pool = db().await;
+    let mut a = item("Original");
+    a.codigo_barras = Some("750999".into());
+    add_inventory_item_impl(&pool, &a).await.unwrap();
+
+    let mut b = item("Clon");
+    b.codigo_barras = Some(" 750-999 ".into());
+    let err = add_inventory_item_impl(&pool, &b).await.unwrap_err();
+    assert!(
+        err.contains("ya está registrado"),
+        "mensaje crudo de SQLite leaked: {err}"
+    );
+}
+
+#[test]
+fn normalizacion_y_validacion_unitarias() {
+    assert_eq!(normalizar_codigo_barras(Some(" - ")), None);
+    assert_eq!(
+        normalizar_codigo_barras(Some("unico123")),
+        Some("UNICO123".to_string())
+    );
+    assert!(validar_codigo_barras(&Some("a".repeat(65))).is_err());
 }
 
 #[tokio::test]

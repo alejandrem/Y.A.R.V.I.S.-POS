@@ -9,6 +9,9 @@
 
 use super::catalogo::{calcular_hash_catalogo, catalogo_ya_importado, contar_productos_por_nombre};
 use crate::backventanas::auth::AuthState;
+use crate::backventanas::codigos_barras::{
+    mensaje_error_codigo, normalizar_codigo_barras, validar_codigo_barras,
+};
 use crate::models::InventoryItem;
 use sqlx::SqlitePool;
 
@@ -68,6 +71,11 @@ pub async fn importar_catalogo(
             continue;
         }
 
+        let codigo = normalizar_codigo_barras(item.codigo_barras.as_deref());
+        if let Err(msg) = validar_codigo_barras(&codigo) {
+            return Err(format!("Error insertando '{}': {}", item.nombre, msg));
+        }
+
         // Intentar con catalogo_id (migración 0006), fallback sin él para DBs viejas sin migrar
         let res = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, codigo_barras, categoria, catalogo_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(&item.nombre)
@@ -76,7 +84,7 @@ pub async fn importar_catalogo(
             .bind(crate::dinero::a_centavos(item.precio_venta))
             .bind(item.stock)
             .bind(item.stock_minimo)
-            .bind(&item.codigo_barras)
+            .bind(&codigo)
             .bind(&item.categoria)
             .bind(catalogo_id)
             .execute(&mut *tx)
@@ -92,7 +100,7 @@ pub async fn importar_catalogo(
                     .bind(crate::dinero::a_centavos(item.precio_venta))
                     .bind(item.stock)
                     .bind(item.stock_minimo)
-                    .bind(&item.codigo_barras)
+                    .bind(&codigo)
                     .bind(&item.categoria)
                     .execute(&mut *tx)
                     .await
@@ -100,7 +108,13 @@ pub async fn importar_catalogo(
             Err(e) => Err(e),
         };
 
-        res.map_err(|e| format!("Error insertando '{}': {}", item.nombre, e))?;
+        res.map_err(|e| {
+            format!(
+                "Error insertando '{}': {}",
+                item.nombre,
+                mensaje_error_codigo(e)
+            )
+        })?;
 
         count += 1;
     }

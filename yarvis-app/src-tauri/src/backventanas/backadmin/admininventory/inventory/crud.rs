@@ -6,6 +6,9 @@
 // runtime de Tauri; los comandos solo validan rol y delegan.
 
 use crate::backventanas::auth::AuthState;
+use crate::backventanas::codigos_barras::{
+    mensaje_error_codigo, normalizar_codigo_barras, validar_codigo_barras,
+};
 use crate::models::InventoryItem;
 use sqlx::SqlitePool;
 
@@ -43,7 +46,12 @@ pub async fn get_inventory(
 
 #[tauri::command]
 /// Núcleo de alta de producto, testeable sin runtime de Tauri.
-pub async fn add_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem) -> Result<i32, String> {
+pub async fn add_inventory_item_impl(
+    pool: &SqlitePool,
+    item: &InventoryItem,
+) -> Result<i32, String> {
+    let codigo = normalizar_codigo_barras(item.codigo_barras.as_deref());
+    validar_codigo_barras(&codigo)?;
     let result = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .bind(&item.nombre)
         .bind(&item.descripcion)
@@ -52,11 +60,11 @@ pub async fn add_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem) ->
         .bind(item.stock)
         .bind(item.stock_minimo)
         .bind(item.vendido)
-        .bind(&item.codigo_barras)
+        .bind(&codigo)
         .bind(&item.categoria)
         .execute(pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(mensaje_error_codigo)?;
 
     Ok(result.last_insert_rowid() as i32)
 }
@@ -73,8 +81,13 @@ pub async fn add_inventory_item(
 
 #[tauri::command]
 /// Núcleo de edición de producto, testeable sin runtime de Tauri.
-pub async fn update_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem) -> Result<(), String> {
+pub async fn update_inventory_item_impl(
+    pool: &SqlitePool,
+    item: &InventoryItem,
+) -> Result<(), String> {
     if let Some(id) = item.id {
+        let codigo = normalizar_codigo_barras(item.codigo_barras.as_deref());
+        validar_codigo_barras(&codigo)?;
         sqlx::query("UPDATE productos SET nombre = ?, descripcion = ?, precio_costo = ?, precio_venta = ?, stock = ?, stock_minimo = ?, vendido = ?, codigo_barras = ?, categoria = ? WHERE id = ?")
             .bind(&item.nombre)
             .bind(&item.descripcion)
@@ -83,12 +96,12 @@ pub async fn update_inventory_item_impl(pool: &SqlitePool, item: &InventoryItem)
             .bind(item.stock)
             .bind(item.stock_minimo)
             .bind(item.vendido)
-            .bind(&item.codigo_barras)
+            .bind(&codigo)
             .bind(&item.categoria)
             .bind(id)
             .execute(pool)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mensaje_error_codigo)?;
 
         Ok(())
     } else {

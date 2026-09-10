@@ -107,6 +107,7 @@ pub fn run() {
             backventanas::backadmin::admininventory::inventory::add_inventory_item,
             backventanas::backadmin::admininventory::inventory::update_inventory_item,
             backventanas::backadmin::admininventory::inventory::delete_inventory_item,
+            backventanas::codigos_barras::get_product_by_barcode,
             backventanas::backadmin::admininventory::inventory::importar_catalogo,
             backventanas::backadmin::admininventory::inventory::buscar_producto_similar,
             backventanas::backadmin::admininventory::inventory::backfill_embeddings,
