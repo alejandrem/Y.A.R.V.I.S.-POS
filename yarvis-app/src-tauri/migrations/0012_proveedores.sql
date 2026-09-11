@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS compras (
     metodo_pago TEXT DEFAULT 'efectivo',
     comentario TEXT,
     cajero_id INTEGER,
+    -- Vínculo exacto con el egreso en caja (NULL = pendiente: se pagó
+    -- sin corte abierto o monto 0; nada de adivinar por referencia_id).
+    movimiento_id INTEGER,
     creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

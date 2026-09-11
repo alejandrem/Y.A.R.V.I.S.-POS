@@ -107,9 +107,17 @@ name = "func_cortes_import"
 path = "test/funcionamiento/cortes_import.rs"
 
 [[test]]
+name = "func_proveedores"
+path = "test/funcionamiento/proveedores.rs"
+
+[[test]]
 name = "estres_ventas"
 path = "test/estres/estres_ventas.rs"
 
 [[test]]
 name = "estres_consultas"
 path = "test/estres/estres_consultas.rs"
+
+[[test]]
+name = "estres_proveedores"
+path = "test/estres/estres_proveedores.rs"
