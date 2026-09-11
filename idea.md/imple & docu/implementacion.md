@@ -54,9 +54,9 @@ Pendiente en IA: fine-tuning final de Qwen2.5-Coder 1.5B Instruct para que gener
 ## Ola 5: Domo, seguridad, predicciones y produccion — COMPLETADA (parcial)
 
 - Autenticacion: Argon2 para admins y empleados; login por roles (adminconfig/auth.rs); Google OAuth PKCE (google.rs); estado de sesion en AuthState.
-- Gestion comercial (admin): inventario (CRUD + importar_catalogo con hash y transaccion), tickets, cortes X/Z, finanzas (gastos recurrentes, alertas, metricas, graficas, export stubs), empleados (metas/bonos, turnos, salario), clientes.
+- Gestion comercial (admin): inventario (CRUD + importar_catalogo con hash y transaccion), tickets, cortes X/Z, finanzas (gastos recurrentes, alertas, metricas, graficas, export stubs), empleados (metas/bonos, turnos, salario). El módulo CLIENTES se retiró (eran placeholders; tabla legacy).
 - Predicciones: Holt-Winters triple aditivo operativo (src-ia/predicciones/holt_winters.rs + ventas.rs). Comandos get_predictions (admintickets/tickets.rs:188) y get_predicciones_financieras (adminfinanzas/graficas.rs:195) via spawn_blocking, con validacion de horizonte 1..365 y banda 95%.
-- Gestion operativa (empleado): nueva venta con control de stock (UPDATE WHERE stock >= ? + rows_affected), perfil, tickets, cortes, chat.
+- Gestion operativa (empleado): nueva venta con control de stock (UPDATE WHERE stock >= ? + rows_affected), perfil, tickets, cortes, proveedores (recepción, pagos, rectificativas), chat.
 - Empaquetado: yarvis-app/build.sh -> binario unico + .deb + .rpm + .AppImage. Sin PyInstaller. Requiere fuse2 y NO_STRIP=1 en Arch.
 - Primer inicio: PrimerInicio.tsx (alta de admin + tienda + empleado) refactorizado.
 - Temas: ThemeProvider light/dark.
@@ -71,7 +71,7 @@ Pendiente en produccion:
 
 ## Orden de ataque de lo pendiente (actualizado)
 
-1. Finalizar todos los modulos funcionales sin bloqueos por IA (ventas, inventario, finanzas, tickets, empleados, clientes, configuracion).
+1. Finalizar todos los modulos funcionales sin bloqueos por IA (ventas, inventario, finanzas, tickets, empleados, configuracion). Proveedores (empleado) en curso: DB 0012-0014 + backend completo; falta F8 → F4 y matching fase 2.
 2. Prueba de campo de impresion termica con hardware real + facturacion electronica (XML/PAC).
 3. Fine-tuning final de Qwen2.5-Coder 1.5B Instruct para tools/SQL y despliegue del GGUF resultante.
 4. CI/CD, empaquetado .exe y pruebas finales end-to-end en Windows y Linux.

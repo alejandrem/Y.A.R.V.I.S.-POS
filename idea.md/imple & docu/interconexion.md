@@ -90,8 +90,8 @@ Interino aún: similitud TF-IDF + fuzzy en vinculador_inventario para vincular t
 
 ## Relaciones por rol
 
-- Administrador: front-admin/ + backadmin/ -> gestion total (ventas, inventario, tickets, finanzas, clientes, empleados, configuracion, yarvis). Ve finanzas, nomina y herramientas de admin.
-- Empleado: front-empleado/ + backempleado/ -> caja (nueva venta), inventario de consulta, tickets/cortes propios, perfil, ajustes y chat. La mayoria reutiliza comandos admin registrados globalmente pero con filtro de rol en tools.
+- Administrador: front-admin/ + backadmin/ -> gestion total (ventas, inventario, tickets, finanzas, empleados, configuracion, yarvis). Ve finanzas, nomina y herramientas de admin.
+- Empleado: front-empleado/ + backempleado/ -> caja (nueva venta), inventario de consulta, tickets/cortes propios, proveedores (recepción y pagos), perfil, ajustes y chat. La mayoria reutiliza comandos admin registrados globalmente pero con filtro de rol en tools.
 
 ## Clima y prediccion
 
