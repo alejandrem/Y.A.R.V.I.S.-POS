@@ -8,7 +8,6 @@ import Separador from "./componentes/Separador";
 import { cobrarSeparador, CobrarIzq, CobrarDer } from "./modulos/Cobrar";
 import { inventarioSeparador, InventarioIzq, InventarioDer } from "./modulos/Inventario";
 import { ticketsSeparador, TicketsIzq, TicketsDer } from "./modulos/Tickets";
-import { clientesSeparador, ClientesIzq, ClientesDer } from "./modulos/Clientes";
 import { perfilSeparador, PerfilIzq, PerfilDer } from "./modulos/Perfil";
 import { yarvisSeparador, YarvisIzq, YarvisDer } from "./modulos/Yarvis";
 import { inutilSeparador, InutilIzq, InutilDer } from "./modulos/Inutil";
@@ -52,17 +51,16 @@ const IndiceDer = ({ onJump }: { onJump: (id: string) => void }) => (
     <div className="absolute top-8 left-10 right-10 h-[1px] bg-neutral-900/10" />
     <div className="absolute top-12 left-10 right-10 h-[1px] bg-neutral-900/10" />
     <div className="flex-1 flex flex-col justify-center gap-2">
-      <p className="font-mono text-[11px] font-black tracking-[0.3em] text-neutral-900 border-b-2 border-neutral-900 pb-2">INDICE — 8 MODULOS</p>
+      <p className="font-mono text-[11px] font-black tracking-[0.3em] text-neutral-900 border-b-2 border-neutral-900 pb-2">INDICE — 7 MODULOS</p>
 
       {[
         { n: "01", t: "COMO COBRAR", d: "Buscar · Carrito · F5", p: "03 — 04", id: "cobrar" },
         { n: "02", t: "INVENTARIO", d: "Buscar · Stock · Alertas", p: "05 — 06", id: "inventario" },
         { n: "03", t: "TICKETS Y CORTES", d: "Proximamente", p: "07 — 08", id: "tickets" },
-        { n: "04", t: "CLIENTES", d: "Proximamente", p: "09 — 10", id: "clientes" },
-        { n: "05", t: "MI PERFIL", d: "Turno · Salario · Metas", p: "11 — 12", id: "perfil" },
-        { n: "06", t: "Y.A.R.V.I.S.", d: "Pregunta · Herramientas · Offline", p: "13 — 14", id: "yarvis" },
-        { n: "07", t: "INUTIL", d: "Creador · Contacto · Repo", p: "15 — 16", id: "inutil" },
-        { n: "08", t: "LICENCIA", d: "GPL V3 · Resumen", p: "17 — 18", id: "licencia" },
+        { n: "04", t: "MI PERFIL", d: "Turno · Salario · Metas", p: "09 — 10", id: "perfil" },
+        { n: "05", t: "Y.A.R.V.I.S.", d: "Pregunta · Herramientas · Offline", p: "11 — 12", id: "yarvis" },
+        { n: "06", t: "INUTIL", d: "Creador · Contacto · Repo", p: "13 — 14", id: "inutil" },
+        { n: "07", t: "LICENCIA", d: "GPL V3 · Resumen", p: "15 — 16", id: "licencia" },
       ].map((item) => (
         <button
           key={item.id}
@@ -140,7 +138,6 @@ const Libro = ({ rol = "empleado" }: { rol?: Rol }) => {
     { id: "cobrar", left: <CobrarIzq />, right: <CobrarDer /> },
     { id: "inventario", left: <InventarioIzq />, right: <InventarioDer /> },
     { id: "tickets", left: <TicketsIzq />, right: <TicketsDer /> },
-    { id: "clientes", left: <ClientesIzq />, right: <ClientesDer /> },
     { id: "perfil", left: <PerfilIzq />, right: <PerfilDer /> },
     { id: "yarvis", left: <YarvisIzq />, right: <YarvisDer /> },
     { id: "inutil", left: <InutilIzq />, right: <InutilDer /> },
@@ -151,7 +148,6 @@ const Libro = ({ rol = "empleado" }: { rol?: Rol }) => {
     cobrarSeparador,
     inventarioSeparador,
     ticketsSeparador,
-    clientesSeparador,
     perfilSeparador,
     yarvisSeparador,
     inutilSeparador,

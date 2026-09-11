@@ -23,10 +23,10 @@ export const YarvisIzq = () => (
         Pregunta lo que quieras.
       </p>
       <div className="mt-6 flex gap-2">
-        <span className="font-mono text-[8px] font-black tracking-widest bg-neutral-900 text-white px-2 py-1 rounded">PAG. 13 — 14</span>
+        <span className="font-mono text-[8px] font-black tracking-widest bg-neutral-900 text-white px-2 py-1 rounded">PAG. 11 — 12</span>
       </div>
     </div>
-    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center">— 13 —</p>
+    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center">— 11 —</p>
     <div className="absolute bottom-0 left-0 w-6 h-6 border-t-[2px] border-r-[2px] border-neutral-900/20 rounded-tr-xl" />
   </div>
 );
@@ -84,7 +84,7 @@ export const YarvisDer = () => (
         </div>
       </div>
     </div>
-    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center mt-2">— 14 —</p>
+    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center mt-2">— 12 —</p>
     <div className="absolute bottom-0 right-0 w-6 h-6 border-t-[2px] border-l-[2px] border-neutral-900/20 rounded-tl-xl" />
   </div>
 );

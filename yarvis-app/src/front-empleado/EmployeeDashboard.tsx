@@ -14,7 +14,6 @@ import { obtenerMiTurno } from "../services/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
 import { ticketsNav } from "./ventanas/empleaticket/ticket";
-import { clientesNav } from "./ventanas/empleaclientes/clientes";
 import { perfilNav } from "./ventanas/empleaperfil/perfil";
 import { yarvisNav } from "./ventanas/empleayarvis/yarvis";
 import { ajustesNav } from "./ventanas/empleaajustes/ajustes";
@@ -99,7 +98,6 @@ const EmployeeDashboard = ({
     nuevaVentaNav,
     inventarioNav,
     ticketsNav,
-    clientesNav,
     perfilNav,
     yarvisNav,
     ajustesNav,
