@@ -97,3 +97,37 @@ pub async fn listar_proveedores_impl(pool: &SqlitePool) -> Result<Vec<Proveedor>
         })
         .collect())
 }
+
+/// Alta exprés para pagos sin proveedor identificado: genera
+/// MOSTRADOR 00001, 00002... (primer hueco libre, anti-duplicado
+/// por el UNIQUE NOCASE aunque dos cajas lo pidan a la vez).
+#[tauri::command]
+pub async fn crear_proveedor_generico(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<Proveedor, String> {
+    auth.require_operator()?;
+    crear_proveedor_generico_impl(&state).await
+}
+
+/// Núcleo testeable sin runtime de Tauri.
+pub async fn crear_proveedor_generico_impl(pool: &SqlitePool) -> Result<Proveedor, String> {
+    for n in 1..=99999 {
+        let nombre = format!("MOSTRADOR {n:05}");
+        match guardar_proveedor_impl(pool, nombre, None, None).await {
+            Ok(id) => {
+                return Ok(Proveedor {
+                    id,
+                    nombre: format!("MOSTRADOR {n:05}"),
+                    telefono: None,
+                    correo: None,
+                    total_compras: 0,
+                    total_pagado: 0.0,
+                })
+            }
+            Err(e) if e == "Ese proveedor ya está registrado." => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err("No hay folios genéricos libres.".into())
+}

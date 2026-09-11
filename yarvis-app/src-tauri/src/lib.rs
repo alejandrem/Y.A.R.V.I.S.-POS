@@ -164,9 +164,11 @@ pub fn run() {
             backventanas::backempleado::emplea_new_venta::new_venta::get_tienda_info,
             // Empleado - Proveedores (operator-scoped; alta, sugerencia, compras, historial)
             backventanas::backempleado::empleaproveedores::proveedores::guardar_proveedor,
+            backventanas::backempleado::empleaproveedores::proveedores::crear_proveedor_generico,
             backventanas::backempleado::empleaproveedores::proveedores::listar_proveedores,
             backventanas::backempleado::empleaproveedores::sugerencia::sugerir_pago,
             backventanas::backempleado::empleaproveedores::compras::registrar_compra,
+            backventanas::backempleado::empleaproveedores::compras::rectificar_compra,
             backventanas::backempleado::empleaproveedores::compras::historial_compras,
             backventanas::backempleado::empleaproveedores::compras::get_compra_detalle,
             // Empleado - Perfil

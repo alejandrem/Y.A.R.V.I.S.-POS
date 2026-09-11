@@ -10,10 +10,53 @@ mod common;
 
 use common::{db, seed_empleado, seed_producto};
 use yarvis_app_lib::backventanas::backempleado::empleaproveedores::compras::{
-    get_compra_detalle_impl, historial_compras_impl, registrar_compra_impl, ItemCompraRequest,
+    get_compra_detalle_impl, historial_compras_impl, rectificar_compra_impl, registrar_compra_impl,
+    ItemCompraRequest,
 };
+
+#[tokio::test]
+async fn rectificar_crea_nueva_revierte_stock_y_conserva_original() {
+    let pool = db().await;
+    let prov = proveedor(&pool, "Recti").await;
+    let pid = seed_producto(&pool, "Leche", 10.0, 20.0).await;
+
+    let orig = registrar_compra_impl(&pool, 1, prov, vec![item(Some(pid), "Leche", 4.0)], 40.0, "efectivo".into(), None)
+        .await
+        .unwrap();
+
+    // Rectificativa: 2 unidades y $20. Misma factura, otros números.
+    let rect = rectificar_compra_impl(&pool, 1, orig.compra_id, vec![item(Some(pid), "Leche", 2.0)], 20.0, "efectivo".into(), Some("me equivoqué".into()))
+        .await
+        .unwrap();
+    assert_ne!(rect.compra_id, orig.compra_id);
+
+    // Stock neto: 10 +4 −4 +2 = 12 (reversa exacta, sin duplicar).
+    let stock: f64 = sqlx::query_scalar("SELECT stock FROM productos WHERE id = ?")
+        .bind(pid).fetch_one(&pool).await.unwrap();
+    assert_eq!(stock, 12.0);
+
+    // Original intacta; nueva apunta a ella; historial marca ambas caras.
+    let det_orig = get_compra_detalle_impl(&pool, orig.compra_id).await.unwrap();
+    assert_eq!(det_orig.pagado, 40.0);
+    let det_new = get_compra_detalle_impl(&pool, rect.compra_id).await.unwrap();
+    assert_eq!(det_new.rectifica_a, Some(orig.compra_id));
+    assert_eq!(det_new.comentario.as_deref(), Some("me equivoqué"));
+    let hist = historial_compras_impl(&pool, Some(prov), 100, 0).await.unwrap();
+    assert_eq!(hist.len(), 2);
+    let h_orig = hist.iter().find(|h| h.id == orig.compra_id).unwrap();
+    let h_new = hist.iter().find(|h| h.id == rect.compra_id).unwrap();
+    assert!(h_orig.rectificada);
+    assert!(!h_new.rectificada);
+    assert_eq!(h_new.rectifica_a, Some(orig.compra_id));
+
+    // Rectificar inexistente: error, nada creado.
+    assert!(rectificar_compra_impl(&pool, 1, 999999, vec![item(Some(pid), "Leche", 1.0)], 10.0, "efectivo".into(), None).await.is_err());
+    assert!(rectificar_compra_impl(&pool, 1, orig.compra_id, vec![], 10.0, "efectivo".into(), None).await.is_err());
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM compras").fetch_one(&pool).await.unwrap();
+    assert_eq!(n, 2);
+}
 use yarvis_app_lib::backventanas::backempleado::empleaproveedores::proveedores::{
-    guardar_proveedor_impl, listar_proveedores_impl,
+    crear_proveedor_generico_impl, guardar_proveedor_impl, listar_proveedores_impl,
 };
 use yarvis_app_lib::backventanas::backempleado::empleaproveedores::sugerencia::sugerir_pago_impl;
 use yarvis_app_lib::dinero::a_centavos;
@@ -40,7 +83,27 @@ fn item(pid: Option<i64>, nombre: &str, cantidad: f64) -> ItemCompraRequest {
         nombre: nombre.into(),
         presentacion: "unidad".into(),
         cantidad,
+        piezas_por_paquete: None,
+        paquetes: None,
     }
+}
+
+#[tokio::test]
+async fn generico_autoincrementa_y_rellena_huecos() {
+    let pool = db().await;
+    let g1 = crear_proveedor_generico_impl(&pool).await.unwrap();
+    assert_eq!(g1.nombre, "MOSTRADOR 00001");
+    // Hueco ocupado a mano: lo salta.
+    guardar_proveedor_impl(&pool, "MOSTRADOR 00002".into(), None, None).await.unwrap();
+    let g2 = crear_proveedor_generico_impl(&pool).await.unwrap();
+    assert_eq!(g2.nombre, "MOSTRADOR 00003");
+    // El genérico sirve para comprar de inmediato (sin corte: pendiente).
+    let pid = seed_producto(&pool, "Azúcar", 10.0, 30.0).await;
+    let r = registrar_compra_impl(&pool, 1, g2.id, vec![item(Some(pid), "Azúcar", 1.0)], 10.0, "efectivo".into(), None)
+        .await
+        .unwrap();
+    assert!(r.movimiento_pendiente);
+    assert_eq!(r.pagado, 10.0);
 }
 
 #[tokio::test]
@@ -181,6 +244,52 @@ async fn validaciones_no_dejan_basura() {
     // Nada a medias: cero compras tras todos los rechazos.
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM compras").fetch_one(&pool).await.unwrap();
     assert_eq!(n, 0);
+}
+
+#[tokio::test]
+async fn paquete_multiplica_piezas_y_guarda_desglose() {
+    let pool = db().await;
+    let prov = proveedor(&pool, "Paquetero").await;
+    let pid = seed_producto(&pool, "Refresco Lata", 0.0, 20.0).await;
+
+    let r = registrar_compra_impl(
+        &pool, 1, prov,
+        vec![ItemCompraRequest {
+            producto_id: Some(pid),
+            nombre: "Refresco Lata".into(),
+            presentacion: "paquete".into(),
+            cantidad: 999.0, // se ignora: manda piezas × paquetes
+            piezas_por_paquete: Some(12.0),
+            paquetes: Some(3.0),
+        }],
+        100.0, "efectivo".into(), None,
+    )
+    .await
+    .unwrap();
+
+    // 3 × 12 = 36 unidades al stock y en el renglón.
+    let stock: f64 = sqlx::query_scalar("SELECT stock FROM productos WHERE id = ?")
+        .bind(pid).fetch_one(&pool).await.unwrap();
+    assert_eq!(stock, 36.0);
+    let det = get_compra_detalle_impl(&pool, r.compra_id).await.unwrap();
+    assert_eq!(det.items[0].cantidad, 36.0);
+    assert_eq!(det.items[0].piezas_por_paquete, Some(12.0));
+    assert_eq!(det.items[0].paquetes, Some(3.0));
+
+    // Sin piezas o en cero: rechazo amigable, nada guardado.
+    for (pz, pq) in [(None, Some(3.0)), (Some(12.0), None), (Some(0.0), Some(3.0)), (Some(12.0), Some(-1.0))] {
+        let mala = ItemCompraRequest {
+            producto_id: Some(pid),
+            nombre: "Refresco Lata".into(),
+            presentacion: "paquete".into(),
+            cantidad: 1.0,
+            piezas_por_paquete: pz,
+            paquetes: pq,
+        };
+        assert!(registrar_compra_impl(&pool, 1, prov, vec![mala], 10.0, "efectivo".into(), None).await.is_err());
+    }
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM compras").fetch_one(&pool).await.unwrap();
+    assert_eq!(n, 1);
 }
 
 #[tokio::test]

@@ -26,6 +26,8 @@ fn recepcion(pid: i64, nombre: &str) -> (Vec<ItemCompraRequest>, f64) {
             nombre: nombre.into(),
             presentacion: "unidad".into(),
             cantidad: 2.0,
+            piezas_por_paquete: None,
+            paquetes: None,
         }],
         10.0,
     )
