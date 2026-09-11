@@ -165,6 +165,49 @@ describe("proveedores · rectificar", () => {
     expect(await screen.findByText(/Rectificando factura #12/)).toBeInTheDocument();
     expect(mockInvoke).toHaveBeenCalledWith("get_compra_detalle", { compraId: 12 });
   });
+
+  it("paquete legacy sin desglose se edita con total intacto", async () => {
+    // Factura vieja: paquete guardado sin piezas/paquetes (NULL).
+    const detalleLegacy = {
+      id: 7, proveedor: "Don Chuy", fecha: "2026-09-01 10:00:00",
+      pagado: 100, sugerido: 0, metodo_pago: "efectivo", comentario: null, movimiento_id: null,
+      rectifica_a: null, rectificada_por: [],
+      items: [{ nombre: "Galleta", presentacion: "paquete", cantidad: 24, precio_sugerido: 0, producto_id: null, piezas_por_paquete: null, paquetes: null }],
+    };
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "listar_proveedores") return Promise.resolve([]);
+      if (cmd === "historial_compras")
+        return Promise.resolve([
+          { id: 7, proveedor: "Don Chuy", fecha: "2026-09-01", pagado: 100, sugerido: 0, metodo_pago: "efectivo", items: 1, movimiento_pendiente: true, rectifica_a: null, rectificada: false },
+        ]);
+      if (cmd === "get_compra_detalle") return Promise.resolve(detalleLegacy);
+      if (cmd === "rectificar_compra")
+        return Promise.resolve({ compra_id: 8, sugerido: 0, pagado: 100, movimiento_id: null, movimiento_pendiente: true });
+      return Promise.resolve(null);
+    });
+    render(<Proveedores activeTab="proveedores" />);
+    const fila = await screen.findByText(/Don Chuy · \$100/);
+    fireEvent.click(fila.closest("button")!);
+    expect(await screen.findByText("Factura de compra")).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Editar/));
+    // El renglón legacy muestra el total intacto (24 × 1), no vacío.
+    expect(await screen.findByText(/1 paq × 24 pzas = 24 uds/)).toBeInTheDocument();
+    // Lápiz: los inputs vienen rellenos, no en blanco.
+    fireEvent.click(screen.getByLabelText("Editar renglón"));
+    expect((screen.getByPlaceholderText("12") as HTMLInputElement).value).toBe("24");
+    expect((screen.getByPlaceholderText("3") as HTMLInputElement).value).toBe("1");
+    // Guardar cambios no se bloquea y rectifica con el total intacto.
+    fireEvent.click(screen.getByText("✓ Guardar cambios"));
+    fireEvent.click(screen.getByText("Guardar rectificación"));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "rectificar_compra",
+        expect.objectContaining({
+          items: [expect.objectContaining({ cantidad: 24, piezasPorPaquete: 24, paquetes: 1 })],
+        }),
+      );
+    });
+  });
 });
 
 describe("proveedores · paquete", () => {

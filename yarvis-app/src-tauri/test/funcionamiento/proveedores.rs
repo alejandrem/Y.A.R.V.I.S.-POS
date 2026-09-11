@@ -293,6 +293,37 @@ async fn paquete_multiplica_piezas_y_guarda_desglose() {
 }
 
 #[tokio::test]
+async fn paquete_legado_sin_desglose_conserva_total() {
+    let pool = db().await;
+    let prov = proveedor(&pool, "Legado").await;
+    let pid = seed_producto(&pool, "Galleta", 0.0, 10.0).await;
+
+    // Renglón de antes del soporte de paquetes (desglose NULL): entra
+    // con el total intacto como piezas × 1, no se bloquea ni se borra.
+    let r = registrar_compra_impl(
+        &pool, 1, prov,
+        vec![ItemCompraRequest {
+            producto_id: Some(pid),
+            nombre: "Galleta".into(),
+            presentacion: "paquete".into(),
+            cantidad: 24.0,
+            piezas_por_paquete: None,
+            paquetes: None,
+        }],
+        50.0, "efectivo".into(), None,
+    )
+    .await
+    .unwrap();
+    let det = get_compra_detalle_impl(&pool, r.compra_id).await.unwrap();
+    assert_eq!(det.items[0].cantidad, 24.0);
+    assert_eq!(det.items[0].piezas_por_paquete, Some(24.0));
+    assert_eq!(det.items[0].paquetes, Some(1.0));
+    let stock: f64 = sqlx::query_scalar("SELECT stock FROM productos WHERE id = ?")
+        .bind(pid).fetch_one(&pool).await.unwrap();
+    assert_eq!(stock, 24.0);
+}
+
+#[tokio::test]
 async fn historial_filtra_pagina_y_detalle_completo() {
     let pool = db().await;
     let a = proveedor(&pool, "A").await;

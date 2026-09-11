@@ -525,6 +525,20 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 
 ---
 
+### Bug P1: rectificar un paquete viejo se atoraba (inputs vacíos + rechazo) — MEDIO (RESUELTO)
+
+**Sintoma:** al editar una factura con renglón paquete guardado sin desglose (piezas/paquetes en NULL, de antes del soporte de paquetes), los inputs salían en blanco y al guardar el backend respondía "dime cuántas piezas trae el paquete y cuántos paquetes son". No había forma de avanzar sin re-escribir datos que el usuario ya no tiene a la mano. (No hizo falta ninguna migración nueva: las columnas existen desde la 0013, era validación, no esquema.)
+
+**Causa raiz (doble):**
+1. Frontend: la precarga de rectificativa y el lápiz copiaban `piezas_por_paquete`/`paquetes` tal cual (NULL → `""`), dejando inputs vacíos.
+2. Backend: `validar_item` exigía el par piezas+paquetes siempre, sin ruta para renglones legacy.
+
+**Solucion (conservar el total, no borrar nada):** si el desglose viene NULL, se asume piezas = total y paquetes = 1 (24 uds siguen siendo 24 uds) en los 3 puntos: precarga de rectificativa, lápiz del editor (`desgloseOPiezas` en `modal-compra.tsx`) y `validar_item` en `compras.rs`. Los renglones nuevos siguen pidiendo el desglose completo.
+
+**Leccion aprendida:** todo campo agregado después necesita su ruta legacy (NULL → valor sensato que preserve el total), o los datos viejos se vuelven ineditables. Probar siempre rectificar/editar con filas creadas ANTES del feature, no solo con las nuevas.
+
+---
+
 ### Bug V1: flash negro antes del splash + ventana que nace chica y se estira — ALTO (RESUELTO)
 
 **Sintoma:** al abrir el software se veía pantalla negra 0.3-0.8s antes del logo, y la principal aparecía a 1200x800 para luego "estirarse" a completa. Con la analogía de la casa: x² (splash) pintaba bien pero el hueco de a·x/a² quedaba en negro puro.

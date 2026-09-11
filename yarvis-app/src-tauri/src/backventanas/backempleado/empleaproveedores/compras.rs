@@ -99,6 +99,15 @@ fn validar_item(it: &ItemCompraRequest) -> Result<(String, String, f64, Option<f
     if it.presentacion == "paquete" {
         let (piezas, paqs) = match (it.piezas_por_paquete, it.paquetes) {
             (Some(pz), Some(pq)) => (pz, pq),
+            // Legado: renglones guardados sin desglose (NULL, de antes del
+            // soporte de paquetes). Se conserva el total original tal cual
+            // como piezas × 1: no se borra nada ni se bloquea el guardado.
+            (None, None) => {
+                if !it.cantidad.is_finite() || it.cantidad <= 0.0 {
+                    return Err(format!("Cantidad inválida en '{}'.", nombre));
+                }
+                (it.cantidad, 1.0)
+            }
             _ => return Err(format!("En '{}' dime cuántas piezas trae el paquete y cuántos paquetes son.", nombre)),
         };
         if !piezas.is_finite() || piezas <= 0.0 || !paqs.is_finite() || paqs <= 0.0 {

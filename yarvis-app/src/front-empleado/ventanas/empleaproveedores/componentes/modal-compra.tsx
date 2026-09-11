@@ -73,20 +73,38 @@ const ModalCompra = ({ proveedor, proveedores, onProveedor, onCerrar, onRegistra
     inputRef.current?.focus();
   }, []);
 
+  // Legado: renglones paquete guardados sin desglose (NULL, de antes
+  // del soporte de paquetes). Se conserva el total original tal cual
+  // como piezas × 1: no se borra nada ni se bloquea la edición.
+  const desgloseOPiezas = (
+    presentacion: "unidad" | "paquete",
+    cantidad: number,
+    piezasPorPaquete: number | null,
+    paquetes: number | null,
+  ): { piezasPorPaquete: number | null; paquetes: number | null } => {
+    if (presentacion !== "paquete") return { piezasPorPaquete: null, paquetes: null };
+    if (piezasPorPaquete !== null && paquetes !== null) return { piezasPorPaquete, paquetes };
+    return { piezasPorPaquete: cantidad, paquetes: 1 };
+  };
+
   // Precarga de rectificativa: renglones, monto, método y comentario
   // vienen de la factura original. El proveedor NO se toca.
   useEffect(() => {
     if (!esRectificar || !compraOriginal) return;
     setRenglones(
-      compraOriginal.items.map((it) => ({
-        producto_id: it.producto_id,
-        nombre: it.nombre,
-        presentacion: (it.presentacion === "paquete" ? "paquete" : "unidad") as "unidad" | "paquete",
-        cantidad: it.cantidad,
-        piezasPorPaquete: it.piezas_por_paquete,
-        paquetes: it.paquetes,
-        sugerido: it.cantidad * it.precio_sugerido,
-      })),
+      compraOriginal.items.map((it) => {
+        const pres = (it.presentacion === "paquete" ? "paquete" : "unidad") as "unidad" | "paquete";
+        const d = desgloseOPiezas(pres, it.cantidad, it.piezas_por_paquete, it.paquetes);
+        return {
+          producto_id: it.producto_id,
+          nombre: it.nombre,
+          presentacion: pres,
+          cantidad: it.cantidad,
+          piezasPorPaquete: d.piezasPorPaquete,
+          paquetes: d.paquetes,
+          sugerido: it.cantidad * it.precio_sugerido,
+        };
+      }),
     );
     setMonto(compraOriginal.pagado.toFixed(2));
     setMontoDirty(true);
@@ -201,8 +219,9 @@ const ModalCompra = ({ proveedor, proveedores, onProveedor, onCerrar, onRegistra
     setLineaNombre(r.nombre);
     setPresentacion(r.presentacion);
     if (r.presentacion === "paquete") {
-      setPiezas(r.piezasPorPaquete !== null ? String(r.piezasPorPaquete) : "");
-      setPaquetes(r.paquetes !== null ? String(r.paquetes) : "");
+      const d = desgloseOPiezas(r.presentacion, r.cantidad, r.piezasPorPaquete, r.paquetes);
+      setPiezas(d.piezasPorPaquete !== null ? String(d.piezasPorPaquete) : "");
+      setPaquetes(d.paquetes !== null ? String(d.paquetes) : "");
     } else {
       setCantidad(String(r.cantidad));
     }
