@@ -148,7 +148,7 @@ const ModalFactura = ({ compraId, onCerrar, onEditar, onVerFactura }: ModalFactu
                       <p className="text-xs font-black text-neutral-900 uppercase truncate">{it.nombre}</p>
                       <p className="text-[10px] font-bold text-neutral-400">
                         {it.presentacion === "paquete" && it.piezas_por_paquete !== null && it.paquetes !== null
-                          ? `${it.paquetes} paq × ${it.piezas_por_paquete} pzas = ${it.cantidad} uds`
+                          ? `${it.paquetes} paq × ${it.piezas_por_paquete} pzas = ${it.cantidad} unidades`
                           : `${it.cantidad} ${it.presentacion}`} · sug. ${it.precio_sugerido.toFixed(2)}
                       </p>
                     </div>

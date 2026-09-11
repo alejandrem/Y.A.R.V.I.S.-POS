@@ -169,8 +169,12 @@ const ModalCompra = ({ proveedor, proveedores, onProveedor, onCerrar, onRegistra
 
   const sumaSugerida = renglones.reduce((a, r) => a + (r.sugerido ?? 0), 0);
   useEffect(() => {
+    // En rectificar el monto lo pone la precarga (lo que SE PAGÓ) y manda
+    // el usuario: el auto-llenado por suma correría en el mismo flush y
+    // lo borraría. Solo aplica en compra nueva.
+    if (esRectificar) return;
     if (!montoDirty) setMonto(sumaSugerida > 0 ? sumaSugerida.toFixed(2) : "");
-  }, [sumaSugerida, montoDirty]);
+  }, [sumaSugerida, montoDirty, esRectificar]);
 
   const elegir = (item: InventoryItem) => {
     setLineaId(item.id ?? null);
@@ -474,7 +478,7 @@ const ModalCompra = ({ proveedor, proveedores, onProveedor, onCerrar, onRegistra
                     />
                   </div>
                   <span className="w-full text-center text-sm font-black text-emerald-400">
-                    {Number.isFinite(unidadesTotales) && unidadesTotales > 0 ? `= ${unidadesTotales} uds en total` : "escribe piezas y paquetes"}
+                    {Number.isFinite(unidadesTotales) && unidadesTotales > 0 ? `= ${unidadesTotales} unidades en total` : "escribe piezas y paquetes"}
                   </span>
                 </div>
               )}
@@ -503,7 +507,7 @@ const ModalCompra = ({ proveedor, proveedores, onProveedor, onCerrar, onRegistra
                     <p className={`text-xs font-black uppercase truncate ${editIdx === i ? "text-white" : "text-neutral-900"}`}>{r.nombre}</p>
                     <p className={`text-[10px] font-bold ${editIdx === i ? "text-white/60" : "text-neutral-400"}`}>
                       {r.presentacion === "paquete" && r.piezasPorPaquete !== null && r.paquetes !== null
-                        ? `${r.paquetes} paq × ${r.piezasPorPaquete} pzas = ${r.cantidad} uds`
+                        ? `${r.paquetes} paq × ${r.piezasPorPaquete} pzas = ${r.cantidad} unidades`
                         : `${r.cantidad} ${r.presentacion}`} · {r.sugerido !== null ? `sug. $${r.sugerido.toFixed(2)}` : "sin recomendación"}
                     </p>
                   </div>

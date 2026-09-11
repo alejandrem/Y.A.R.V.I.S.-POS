@@ -144,6 +144,9 @@ describe("proveedores · rectificar", () => {
     fireEvent.click(screen.getByText(/Editar/));
     expect(await screen.findByText(/Rectificando factura #12/)).toBeInTheDocument();
     expect(screen.getByText("Guardar rectificación")).toBeInTheDocument();
+    // Cantidades originales intactas: renglón y monto precargados.
+    expect(screen.getByText(/12 unidad/)).toBeInTheDocument();
+    expect((screen.getByPlaceholderText("0.00") as HTMLInputElement).value).toBe("120.00");
 
     fireEvent.click(screen.getByText("Guardar rectificación"));
     await waitFor(() => {
@@ -191,7 +194,7 @@ describe("proveedores · rectificar", () => {
     expect(await screen.findByText("Factura de compra")).toBeInTheDocument();
     fireEvent.click(screen.getByText(/Editar/));
     // El renglón legacy muestra el total intacto (24 × 1), no vacío.
-    expect(await screen.findByText(/1 paq × 24 pzas = 24 uds/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 paq × 24 pzas = 24 unidades/)).toBeInTheDocument();
     // Lápiz: los inputs vienen rellenos, no en blanco.
     fireEvent.click(screen.getByLabelText("Editar renglón"));
     expect((screen.getByPlaceholderText("12") as HTMLInputElement).value).toBe("24");
@@ -227,10 +230,10 @@ describe("proveedores · paquete", () => {
     expect(screen.getByText("escribe piezas y paquetes")).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("12"), { target: { value: "12" } });
     fireEvent.change(screen.getByPlaceholderText("3"), { target: { value: "3" } });
-    expect(await screen.findByText("= 36 uds en total")).toBeInTheDocument();
+    expect(await screen.findByText("= 36 unidades en total")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("+ Agregar"));
-    expect(await screen.findByText(/3 paq × 12 pzas = 36 uds/)).toBeInTheDocument();
+    expect(await screen.findByText(/3 paq × 12 pzas = 36 unidades/)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Confirmar"));
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith(
