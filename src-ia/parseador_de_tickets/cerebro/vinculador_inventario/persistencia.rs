@@ -1,5 +1,3 @@
-use rusqlite::Connection;
-
 pub fn guardar_vinculacion(
     vinculaciones: &[serde_json::Value],
     db_path: &str,
@@ -8,8 +6,8 @@ pub fn guardar_vinculacion(
         return Err("No hay vinculaciones para guardar".to_string());
     }
 
-    let conn =
-        Connection::open(db_path).map_err(|e| format!("No se pudo abrir la base de datos: {e}"))?;
+    let conn = crate::sqlite::abrir_db(db_path)
+        .map_err(|e| format!("No se pudo abrir la base de datos: {e}"))?;
 
     let mut actualizados = 0usize;
     for v in vinculaciones {

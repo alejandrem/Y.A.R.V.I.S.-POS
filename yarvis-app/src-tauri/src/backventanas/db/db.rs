@@ -79,34 +79,27 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
         // `sqlx::migrate!` embebe los .sql al compilar, así que el esquema
         // viaja DENTRO del binario (sigue siendo portable al 100%).
         //
-        // BLINDAJE VersionMismatch: sqlx valida el checksum de cada migración
-        // ya aplicada. Si el .sql cambió de hash sin cambiar de versión
-        // (típico: checkout Windows convirtió LF->CRLF, o se editó una
-        // migración vieja), el arranque moría con panic. En vez de eso:
-        // 1) se cierra el pool, 2) se pone la DB vieja en cuarentena en
-        // `backups/` (NO se borra, se renombra con sello mismatch), 3) se
-        // reintenta desde cero. Así un PC nuevo o una DB heredada SIEMPRE
-        // abre a la primera; el dato viejo queda preservado como archivo.
+        // BLINDAJE VersionMismatch (fail-closed, issue #1): sqlx valida el
+        // checksum de cada migración ya aplicada. Si el .sql cambió de hash
+        // sin cambiar de versión (típico: checkout Windows convirtió
+        // LF->CRLF, o se editó una migración vieja), la app NO arranca y
+        // NO toca la DB: el backup pre-migración ya preserva los datos.
+        // Abrir una tienda vacía ("primer inicio") sobre un mismatch sería
+        // bifurcar la historia y hacer creer al dueño que perdió todo.
         // Prevención real: `.gitattributes` fuerza `*.sql eol=lf` y las
         // migraciones viejas nunca se editan (solo se añade 0011_...).
         if let Err(e) = MIGRATOR.run(&pool_migraciones).await {
             match e {
                 sqlx::migrate::MigrateError::VersionMismatch(version) => {
-                    tracing::error!(
+                    panic!(
                         "[DB] VersionMismatch en migración v{version}: el .sql embebido \
-                         no coincide con el aplicado. Se pone la DB en cuarentena y se recrea."
+                         no coincide con el aplicado en {}. La base de datos NO se modificó \
+                         y hay un backup previo en backups/. Causas típicas: se editó una \
+                         migración ya aplicada o un checkout cambió LF->CRLF (revisa \
+                         .gitattributes eol=lf). Restaura el backup o corrige las \
+                         migraciones y vuelve a arrancar. Ver issue #1.",
+                        db_path.display()
                     );
-                    pool_migraciones.close().await;
-                    poner_db_en_cuarentena(&app_dir, &db_path);
-                    let pool_reintento =
-                        SqlitePool::connect_with(base_options.clone().foreign_keys(false))
-                            .await
-                            .expect("Fallo al reconectar a SQLite tras cuarentena");
-                    MIGRATOR
-                        .run(&pool_reintento)
-                        .await
-                        .expect("Fallo al aplicar migraciones tras cuarentena");
-                    pool_reintento.close().await;
                 }
                 otro => panic!(
                     "Fallo al aplicar migraciones de la DB en {}: {otro} \
@@ -124,6 +117,22 @@ pub fn initialize_db(app: &tauri::AppHandle) -> (SqlitePool, String) {
         let pool = SqlitePool::connect_with(base_options.foreign_keys(true))
             .await
             .expect("Fallo al reconectar a SQLite");
+
+        // Mantenimiento WAL (issue #1, best-effort: nunca debe tumbar el
+        // arranque). Acota el -wal a 32 MiB y lo compacta al arrancar para
+        // que no crezca sin fin en la PC de la tienda.
+        if let Err(e) = sqlx::query("PRAGMA journal_size_limit = 33554432")
+            .execute(&pool)
+            .await
+        {
+            tracing::warn!("[DB] no se pudo fijar journal_size_limit: {e}");
+        }
+        if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&pool)
+            .await
+        {
+            tracing::warn!("[DB] checkpoint inicial omitido: {e}");
+        }
 
         (pool, db_path_str)
     })
@@ -145,8 +154,9 @@ pub fn backup_db_antes_de_migrar(app_dir: &Path, db_path: &Path) -> Option<PathB
     let destino = backups_dir.join(format!("yarvis-{sello}.db"));
 
     // Ruta 1 (preferida): VACUUM INTO produce un .db compacto y consistente
-    // sin copiar los -wal/-shm a mano.
-    let vacuum_ok = rusqlite::Connection::open(db_path)
+    // sin copiar los -wal/-shm a mano. El open sale del helper compartido
+    // (busy_timeout + WAL, issue #2).
+    let vacuum_ok = src_ia::sqlite::abrir_db(db_path)
         .ok()
         .and_then(|conn| {
             // El path va como literal SQL: se escapan comillas simples.
@@ -166,44 +176,6 @@ pub fn backup_db_antes_de_migrar(app_dir: &Path, db_path: &Path) -> Option<PathB
 
     rotar_backups(&backups_dir);
     Some(destino)
-}
-
-/// Mueve `yarvis.db` (+ `-wal`/`-shm`) a `backups/` con sello `mismatch`.
-/// NO borra datos: los preserva como archivo para recuperación manual.
-/// Se usa solo cuando sqlx reporta VersionMismatch (hash de migración vieja
-/// distinto al aplicado). Después de esto el arranque recrea una DB vacía.
-fn poner_db_en_cuarentena(app_dir: &Path, db_path: &Path) {
-    let backups_dir = app_dir.join("backups");
-    let _ = fs::create_dir_all(&backups_dir);
-    let sello = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    for (origen, destino) in [
-        (
-            db_path.to_path_buf(),
-            backups_dir.join(format!("yarvis-mismatch-{sello}.db")),
-        ),
-        (
-            db_path.with_extension("db-wal"),
-            backups_dir.join(format!("yarvis-mismatch-{sello}.db-wal")),
-        ),
-        (
-            db_path.with_extension("db-shm"),
-            backups_dir.join(format!("yarvis-mismatch-{sello}.db-shm")),
-        ),
-    ] {
-        if origen.exists() {
-            match fs::rename(&origen, &destino) {
-                Ok(()) => tracing::warn!(
-                    "[DB] DB en cuarentena: {} -> {}",
-                    origen.display(),
-                    destino.display()
-                ),
-                Err(e) => tracing::error!(
-                    "[DB] no se pudo poner en cuarentena {}: {e}",
-                    origen.display()
-                ),
-            }
-        }
-    }
 }
 
 /// Borra los backups más viejos dejando solo los últimos [`MAX_BACKUPS`].

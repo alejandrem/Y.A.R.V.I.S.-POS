@@ -6,7 +6,6 @@
 // `ArchivoResultado` por el canal: el frontend muestra progreso real.
 // ============================================================
 
-use rusqlite::Connection;
 use std::collections::HashSet;
 use std::sync::mpsc::Sender;
 
@@ -35,7 +34,7 @@ pub fn procesar_archivos(
     let archivos = ordenar_archivos_cronologicamente(archivos.to_vec());
     let mut productos_vistos = cargar_estado(db_path);
 
-    let conn = match Connection::open(db_path) {
+    let conn = match crate::sqlite::abrir_db(db_path) {
         Ok(c) => c,
         Err(e) => {
     for archivo in &archivos {

@@ -32,10 +32,11 @@ pub async fn buscar_producto_similar(
     let cat_filter = categoria.clone();
     let db_path = db_path_state.0.clone();
 
-    // rusqlite es bloqueante -> spawn_blocking para no congelar el runtime Tauri
+    // rusqlite es bloqueante -> spawn_blocking para no congelar el runtime Tauri.
+    // El open sale de `src_ia::sqlite` (busy_timeout + WAL): sin eso, un cobro
+    // por sqlx en el mismo instante truena con `database is locked` (issue #2).
     let result = tokio::task::spawn_blocking(move || {
-        use rusqlite::Connection;
-        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let conn = src_ia::sqlite::abrir_db(&db_path).map_err(|e| e.to_string())?;
         let embedder = HashEmbedder;
         let q_emb = embedder
             .texto_a_embedding(&q)
@@ -162,8 +163,7 @@ pub async fn backfill_embeddings(
     let db_path = db_path_state.0.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        use rusqlite::Connection;
-        let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let mut conn = src_ia::sqlite::abrir_db(&db_path).map_err(|e| e.to_string())?;
         let embedder = HashEmbedder;
 
         let productos: Vec<(i64, String, String)> = {

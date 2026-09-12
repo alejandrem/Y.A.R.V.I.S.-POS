@@ -27,3 +27,8 @@ pub mod motor_chat;
 // Matemáticas pesadas de predicción (viven en `src-ia/predicciones/`).
 #[path = "../predicciones/mod.rs"]
 pub mod predicciones;
+
+// Apertura uniforme de SQLite (busy_timeout + WAL) para TODO open
+// rusqlite productivo. Vive en `src-ia/sqlite.rs`. Ver issue #2.
+#[path = "../sqlite.rs"]
+pub mod sqlite;

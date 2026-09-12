@@ -173,7 +173,7 @@ pub(super) fn cargar_folios_existentes(conn: &Connection) -> HashSet<String> {
 /// `procesador.rs`, con [`a_centavos`] sobre el precio del item.
 pub(super) fn cargar_estado(db_path: &str) -> HashSet<String> {
     let mut vistos = HashSet::new();
-    if let Ok(conn) = Connection::open(db_path) {
+    if let Ok(conn) = crate::sqlite::abrir_db(db_path) {
         if let Ok(mut stmt) = conn.prepare("SELECT nombre, precio_venta FROM productos") {
             if let Ok(rows) = stmt.query_map([], |row| {
                 let nombre: String = row.get(0)?;
