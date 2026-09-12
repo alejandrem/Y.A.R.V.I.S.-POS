@@ -164,3 +164,28 @@ async fn productos_sin_codigo_barras_pueden_coexistir() {
         2
     );
 }
+
+#[tokio::test]
+async fn alta_sin_nombre_rechazada() {
+    let pool = db().await;
+    for nombre in ["", "   "] {
+        let mut it = item(nombre);
+        assert!(
+            add_inventory_item_impl(&pool, &it).await.is_err(),
+            "nombre vacío debe rechazarse"
+        );
+    }
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM productos").await, 0);
+}
+
+#[tokio::test]
+async fn alta_con_precio_negativo_rechazada() {
+    let pool = db().await;
+    let mut it = item("Caro");
+    it.precio_venta = -5.0;
+    assert!(add_inventory_item_impl(&pool, &it).await.is_err());
+    it.precio_venta = 20.0;
+    it.precio_costo = -1.0;
+    assert!(add_inventory_item_impl(&pool, &it).await.is_err());
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM productos").await, 0);
+}

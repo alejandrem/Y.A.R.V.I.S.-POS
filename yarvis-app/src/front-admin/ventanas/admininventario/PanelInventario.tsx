@@ -8,6 +8,7 @@ import {
 } from "../../../services/inventario";
 import { reportarError } from "../../../services/tauri";
 import { notificarExito } from "../../../components/notificaciones";
+import ModalNuevoProducto from "./ModalNuevoProducto";
 import {
   listarImpresoras,
   imprimirListaConciliacion,
@@ -34,6 +35,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   const [impresoraSel, setImpresoraSel] = useState("");
   const [cargandoImp, setCargandoImp] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
+  const [showNuevo, setShowNuevo] = useState(false);
 
   useEffect(() => {
     if (activeTab === "inventario") {
@@ -124,20 +126,8 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
     }
   };
 
-  const handleAddRow = () => {
-    const tempId = -Date.now();
-    const newItem: InventoryItem = {
-      id: tempId,
-      nombre: "NUEVO PRODUCTO",
-      precio_costo: 0,
-      precio_venta: 0,
-      stock: 0,
-      stock_minimo: 5,
-      vendido: 0,
-    };
-    setInventory(prev => [newItem, ...prev]);
-    setEditingId(tempId);
-  };
+  // Alta por modal rectangular (Fase 0 barras). El flujo viejo de fila
+  // temporal inline se retiró: no pedía código de barras ni comentario.
 
   const updateField = (item: InventoryItem, field: keyof InventoryItem, value: string | number) => {
     const newInv = [...inventory];
@@ -229,7 +219,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
 
           {esAdmin && (
             <div className="flex bg-neutral-900 p-1 rounded-xl shadow-xl shadow-neutral-200">
-              <button onClick={handleAddRow} className="px-4 py-2 text-[9px] font-black text-white hover:bg-white/10 rounded-lg transition-all flex items-center gap-2">
+              <button onClick={() => setShowNuevo(true)} className="px-4 py-2 text-[9px] font-black text-white hover:bg-white/10 rounded-lg transition-all flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                 AGREGAR
               </button>
@@ -659,6 +649,9 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
             </div>
           </div>
         </div>
+      )}
+      {showNuevo && (
+        <ModalNuevoProducto onClose={() => setShowNuevo(false)} onSaved={loadInventory} />
       )}
     </div>
   );

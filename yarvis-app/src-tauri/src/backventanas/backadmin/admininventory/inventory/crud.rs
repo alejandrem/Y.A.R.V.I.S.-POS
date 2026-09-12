@@ -50,6 +50,14 @@ pub async fn add_inventory_item_impl(
     pool: &SqlitePool,
     item: &InventoryItem,
 ) -> Result<i64, String> {
+    // Validación de alta (Fase 0 barras): la modal del frontend ya lo pide,
+    // pero la regla vive aquí porque el comando acepta cualquier invoke.
+    if item.nombre.trim().is_empty() {
+        return Err("El nombre del producto es obligatorio.".into());
+    }
+    if item.precio_costo < 0.0 || item.precio_venta < 0.0 {
+        return Err("Los precios no pueden ser negativos.".into());
+    }
     let codigo = normalizar_codigo_barras(item.codigo_barras.as_deref());
     validar_codigo_barras(&codigo)?;
     let result = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
