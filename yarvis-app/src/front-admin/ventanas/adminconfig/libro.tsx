@@ -3,6 +3,9 @@
 // un solo lugar (empleaajustes/datos inutiles/Libro) y cada rol lo usa con
 // su prop `rol`. Aqui solo fijamos rol="admin" (portada dice
 // "MANUAL DEL ADMINISTRADOR"); el contenido es el mismo manual.
+//
+// ⚠️ NO BORRAR — "datos inutiles" es el nombre del manual del sistema,
+// no codigo basura. Ver issue #8.
 import Libro from "../../../front-empleado/ventanas/empleaajustes/datos inutiles/Libro";
 
 const LibroAdmin = () => <Libro rol="admin" />;

@@ -55,22 +55,19 @@ pub async fn buscar_producto_similar(
         let mut candidatos: Vec<(i64, String, String, f64)> = Vec::new();
 
         if kb_count > 0 {
-            // Buscar en knowledge_base y joinear con productos por nombre
-            let mut stmt = conn
-                .prepare("SELECT id, contenido, categoria, embedding FROM knowledge_base WHERE embedding IS NOT NULL")
-                .map_err(|e| e.to_string())?;
-            let rows = stmt
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, Vec<u8>>(3)?,
-                    ))
-                })
-                .map_err(|e| e.to_string())?;
+            // IDs reales de productos: validan que producto_id siga existiendo.
+            // Si el producto se borró, su fila del índice queda huérfana y se
+            // omite (el próximo backfill la limpia). Ver issue #3.
+            let mut ids_productos: std::collections::HashSet<i64> =
+                std::collections::HashSet::new();
+            if let Ok(mut s_ids) = conn.prepare("SELECT id FROM productos") {
+                if let Ok(r_ids) = s_ids.query_map([], |r| r.get::<_, i64>(0)) {
+                    ids_productos.extend(r_ids.flatten());
+                }
+            }
 
-            // Mapa nombre -> id de productos para resolver id real
+            // Mapa legacy nombre -> id: SOLO para filas viejas sin producto_id
+            // (previas a la migración 0006). Ver issue #3.
             let mut prod_map: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
             if let Ok(mut s2) = conn.prepare("SELECT id, nombre FROM productos") {
                 if let Ok(r2) = s2.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) {
@@ -80,8 +77,24 @@ pub async fn buscar_producto_similar(
                 }
             }
 
+            // Buscar en knowledge_base resolviendo por producto_id (estable
+            // ante renombres: el id no cambia aunque cambie el nombre).
+            let mut stmt = conn
+                .prepare("SELECT producto_id, contenido, categoria, embedding FROM knowledge_base WHERE embedding IS NOT NULL")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, Option<i64>>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+
             for row in rows.flatten() {
-                let (_kb_id, contenido, cat, blob) = row;
+                let (prod_id, contenido, cat, blob) = row;
                 if let Some(ref filtro) = cat_filter {
                     if !cat.eq_ignore_ascii_case(filtro) {
                         continue;
@@ -92,10 +105,7 @@ pub async fn buscar_producto_similar(
                 if score < 0.15 {
                     continue;
                 }
-                // contenido es "nombre | ..." -> extraer nombre. Si no hay match exacto en productos (ej. nombre editado),
-                // NO usar fallback _kb_id (id de knowledge_base ≠ id de productos) — mejor descartar y dejar que el fallback de productos lo resuelva.
-                let nombre = contenido.split('|').next().unwrap_or(&contenido).trim();
-                let Some(pid) = prod_map.get(&src_ia::embeddings::normalizar(nombre)).copied() else {
+                let Some(pid) = resolver_pid(prod_id, &ids_productos, &prod_map, &contenido) else {
                     continue;
                 };
                 candidatos.push((pid, contenido, cat, score));
@@ -148,6 +158,38 @@ pub async fn buscar_producto_similar(
     .map_err(|e: String| e)?;
 
     Ok(result)
+}
+
+// ============================================================
+// Resolución de id de producto para una fila del índice.
+// ============================================================
+
+/// Resuelve el id real de producto para una fila de knowledge_base.
+///
+/// - `producto_id` válido (existe en productos) manda: es estable ante
+///   renombres porque el id no cambia aunque cambie el nombre.
+/// - `producto_id` de un producto ya borrado: se omite (fila huérfana;
+///   el próximo backfill la limpia). No se adivina por nombre para no
+///   devolver un producto distinto con nombre parecido.
+/// - `producto_id` nulo (filas legacy previas a la migración 0006):
+///   fallback al mapa por nombre, como antes.
+///
+/// Función pura para poder probarla sin abrir la DB. Ver issue #3.
+fn resolver_pid(
+    producto_id: Option<i64>,
+    ids_productos: &std::collections::HashSet<i64>,
+    prod_map: &std::collections::HashMap<String, i64>,
+    contenido: &str,
+) -> Option<i64> {
+    match producto_id {
+        Some(id) => ids_productos.contains(&id).then_some(id),
+        None => {
+            let nombre = contenido.split('|').next().unwrap_or(contenido).trim();
+            prod_map
+                .get(&src_ia::embeddings::normalizar(nombre))
+                .copied()
+        }
+    }
 }
 
 // ============================================================
@@ -232,4 +274,61 @@ pub async fn backfill_embeddings(
     .map_err(|e: String| e)?;
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolver_pid;
+    use std::collections::{HashMap, HashSet};
+
+    fn ids(ids: &[i64]) -> HashSet<i64> {
+        ids.iter().copied().collect()
+    }
+
+    fn nombres(pares: &[(&str, i64)]) -> HashMap<String, i64> {
+        pares
+            .iter()
+            .map(|(n, id)| (src_ia::embeddings::normalizar(n), *id))
+            .collect()
+    }
+
+    #[test]
+    fn producto_id_valido_manda_aunque_haya_renombre() {
+        // El contenido aún dice el nombre viejo, pero el id es el bueno.
+        let r = resolver_pid(
+            Some(7),
+            &ids(&[7]),
+            &nombres(&[("Coca-Cola 600ml retornable", 9)]),
+            "Coca 600 | categoria:refrescos",
+        );
+        assert_eq!(r, Some(7));
+    }
+
+    #[test]
+    fn producto_id_de_producto_borrado_se_omite() {
+        let r = resolver_pid(
+            Some(7),
+            &ids(&[9]),
+            &nombres(&[("Coca 600", 9)]),
+            "Coca 600 | categoria:refrescos",
+        );
+        assert_eq!(r, None, "huérfana: no adivinar por nombre");
+    }
+
+    #[test]
+    fn fila_legacy_sin_producto_id_usa_nombre() {
+        let r = resolver_pid(
+            None,
+            &ids(&[7]),
+            &nombres(&[("Coca 600", 7)]),
+            "Coca 600 | categoria:refrescos",
+        );
+        assert_eq!(r, Some(7));
+    }
+
+    #[test]
+    fn fila_legacy_sin_match_se_omite() {
+        let r = resolver_pid(None, &ids(&[7]), &nombres(&[("Pepsi", 7)]), "Coca 600 | x");
+        assert_eq!(r, None);
+    }
 }
