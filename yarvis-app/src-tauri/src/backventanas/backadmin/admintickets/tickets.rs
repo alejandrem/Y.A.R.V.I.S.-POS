@@ -34,7 +34,7 @@ pub async fn get_tickets_impl(
 ) -> Result<Vec<TicketDb>, String> {
     let limit = limit.clamp(1, TICKETS_LIMITE_MAX);
     let offset = offset.max(0);
-    let rows = sqlx::query_as::<_, (i32, Option<String>, String, i64, String)>(
+    let rows = sqlx::query_as::<_, (i64, Option<String>, String, i64, String)>(
         "SELECT id, folio_ticket, strftime('%Y-%m-%d %H:%M:%S', fecha) as fecha, total, metodo_pago FROM ventas ORDER BY fecha DESC LIMIT ?1 OFFSET ?2"
     )
     .bind(limit)
@@ -77,7 +77,7 @@ pub async fn get_cortes(
     auth: tauri::State<'_, AuthState>,
 ) -> Result<Vec<CorteDb>, String> {
     auth.require_admin()?;
-    let rows = sqlx::query_as::<_, (i32, String, i64, i64)>(
+    let rows = sqlx::query_as::<_, (i64, String, i64, i64)>(
         "SELECT id, strftime('%Y-%m-%d %H:%M:%S', fecha_cierre) as fecha, total_ventas, total_efectivo FROM cortes_caja ORDER BY fecha_cierre DESC LIMIT 500"
     )
     .fetch_all(&*state)

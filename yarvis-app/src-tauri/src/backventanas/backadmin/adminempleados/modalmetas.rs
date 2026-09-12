@@ -19,7 +19,7 @@ fn decode_cents(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
 pub async fn get_employee_goals(
     auth: tauri::State<'_, AuthState>,
     state: tauri::State<'_, SqlitePool>,
-    empleado_id: i32,
+    empleado_id: i64,
 ) -> Result<Vec<EmployeeGoal>, String> {
     auth.require_admin()?;
     let rows = sqlx::query(
@@ -52,7 +52,7 @@ pub async fn get_employee_goals(
 pub async fn save_employee_goal(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
-    empleado_id: i32,
+    empleado_id: i64,
     goal_type: String,
     goal_name: Option<String>,
     ventas_threshold: Option<String>,
@@ -103,7 +103,7 @@ pub async fn save_employee_goal(
 pub async fn save_custom_goal(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
-    empleado_id: i32,
+    empleado_id: i64,
     goal_name: String,
     bonus_amount: f64,
 ) -> Result<String, String> {
@@ -125,7 +125,7 @@ pub async fn save_custom_goal(
 pub async fn delete_employee_goal(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
-    goal_id: i32,
+    goal_id: i64,
 ) -> Result<String, String> {
     auth.require_admin()?;
     sqlx::query("DELETE FROM employee_goals WHERE id = ?")
@@ -141,7 +141,7 @@ pub async fn delete_employee_goal(
 pub async fn check_employee_goals(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
-    empleado_id: i32,
+    empleado_id: i64,
 ) -> Result<Vec<EmployeeGoal>, String> {
     auth.require_admin()?;
 
@@ -165,7 +165,7 @@ pub async fn check_employee_goals(
     let mut result = Vec::new();
 
     for row in goal_rows {
-        let goal_id: i32 = row.get("id");
+        let goal_id: i64 = row.get("id");
         let g_type: String = row.get("goal_type");
         let mut is_completed: bool = row.get::<i32, _>("is_completed") != 0;
 

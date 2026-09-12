@@ -31,7 +31,7 @@ async fn venta_valida_inserta_descuenta_y_vincula_cajero() {
     let p1 = seed_producto(&pool, "Coca-Cola", 10.0, 18.0).await;
 
     let v = venta(
-        vec![CartItemRequest { id: Some(p1 as i32), nombre: "Coca-Cola".into(), precio_venta: 18.0, cantidad: 3.0 }],
+        vec![CartItemRequest { id: Some(p1), nombre: "Coca-Cola".into(), precio_venta: 18.0, cantidad: 3.0 }],
         54.0,
         54.0,
     );
@@ -68,7 +68,7 @@ async fn pago_menor_al_total_rechazado() {
     let pool = db().await;
     let p = seed_producto(&pool, "Pan", 5.0, 20.0).await;
     let v = venta(
-        vec![CartItemRequest { id: Some(p as i32), nombre: "Pan".into(), precio_venta: 20.0, cantidad: 2.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Pan".into(), precio_venta: 20.0, cantidad: 2.0 }],
         40.0,
         30.0,
     );
@@ -99,7 +99,7 @@ async fn metodo_pago_mixto_detectado() {
     let pool = db().await;
     let p = seed_producto(&pool, "Refresco", 9.0, 25.0).await;
     let mut v = venta(
-        vec![CartItemRequest { id: Some(p as i32), nombre: "Refresco".into(), precio_venta: 25.0, cantidad: 1.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Refresco".into(), precio_venta: 25.0, cantidad: 1.0 }],
         25.0,
         10.0,
     );
@@ -116,7 +116,7 @@ async fn stock_insuficiente_rechazado_sin_stock_negativo() {
     // Quedan 2 unidades; se intenta vender 5.
     let p = seed_producto(&pool, "Último refresco", 2.0, 18.0).await;
     let v = venta(
-        vec![CartItemRequest { id: Some(p as i32), nombre: "Último refresco".into(), precio_venta: 18.0, cantidad: 5.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Último refresco".into(), precio_venta: 18.0, cantidad: 5.0 }],
         90.0,
         90.0,
     );
@@ -145,8 +145,8 @@ async fn venta_multi_item_aborta_completa_si_un_item_no_alcanza() {
     // revertirse incluyendo el descuento del primero.
     let v = VentaRequest {
         items: vec![
-            CartItemRequest { id: Some(p_ok as i32), nombre: "Alcanza".into(), precio_venta: 20.0, cantidad: 3.0 },
-            CartItemRequest { id: Some(p_no as i32), nombre: "No alcanza".into(), precio_venta: 30.0, cantidad: 2.0 },
+            CartItemRequest { id: Some(p_ok), nombre: "Alcanza".into(), precio_venta: 20.0, cantidad: 3.0 },
+            CartItemRequest { id: Some(p_no), nombre: "No alcanza".into(), precio_venta: 30.0, cantidad: 2.0 },
         ],
         total: 120.0,
         subtotal: 120.0,
@@ -177,7 +177,7 @@ async fn fallo_a_mitad_de_venta_revierte_todo_transaccion() {
     // tiene FK → productos(id), así que la inserción falla A MITAD de la venta.
     let v = VentaRequest {
         items: vec![
-            CartItemRequest { id: Some(p_real as i32), nombre: "Bueno".into(), precio_venta: 18.0, cantidad: 2.0 },
+            CartItemRequest { id: Some(p_real), nombre: "Bueno".into(), precio_venta: 18.0, cantidad: 2.0 },
             CartItemRequest { id: Some(999_999), nombre: "Fantasma".into(), precio_venta: 50.0, cantidad: 1.0 },
         ],
         total: 86.0,
@@ -201,4 +201,42 @@ async fn fallo_a_mitad_de_venta_revierte_todo_transaccion() {
     let vendido: f64 = Row::get(&fila, "vendido");
     assert_eq!(stock, 10.0, "el stock del producto bueno quedó intacto");
     assert_eq!(vendido, 0.0);
+}
+
+#[tokio::test]
+async fn total_del_frontend_se_ignora_se_persiste_el_recalculado() {
+    // Issue #5: el frontend manda total/subtotal mentirosos (ruido IEEE-754
+    // o invoke manipulado). El backend cobra y persiste SU recálculo en
+    // centavos; rechazar por inconsistencia rompería el ruido legítimo
+    // (19.99*3 = 59.970000000000006), así que se tolera y se corrige.
+    let pool = db().await;
+    let p = seed_producto(&pool, "Jabón", 10.0, 12.0).await;
+    let mut v = venta(
+        vec![CartItemRequest { id: Some(p), nombre: "Jabón".into(), precio_venta: 12.0, cantidad: 2.0 }],
+        59.970000000000006,
+        24.0,
+    );
+    v.subtotal = 0.01;
+    completar_venta_impl(&pool, &v, "x".into(), 1).await.unwrap();
+    let total: i64 = sqlx::query_scalar("SELECT total FROM ventas LIMIT 1")
+        .fetch_one(&pool).await.unwrap();
+    let subtotal: i64 = sqlx::query_scalar("SELECT subtotal FROM ventas LIMIT 1")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(subtotal, 2400);
+    assert_eq!(total, 2400);
+}
+
+#[tokio::test]
+async fn descuento_mayor_al_subtotal_se_rechaza() {
+    let pool = db().await;
+    let p = seed_producto(&pool, "Pan", 10.0, 20.0).await;
+    let mut v = venta(
+        vec![CartItemRequest { id: Some(p), nombre: "Pan".into(), precio_venta: 20.0, cantidad: 1.0 }],
+        0.0,
+        0.0,
+    );
+    v.descuento = 50.0;
+    let r = completar_venta_impl(&pool, &v, "x".into(), 1).await;
+    assert!(r.is_err(), "descuento mayor al subtotal debe fallar");
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await, 0);
 }

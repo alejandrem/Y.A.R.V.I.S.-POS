@@ -18,7 +18,7 @@ pub struct TicketItem {
 
 #[derive(Serialize)]
 pub struct TicketDb {
-    pub id: i32,
+    pub id: i64,
     pub folio_ticket: Option<String>,
     pub fecha: String,
     pub total: f64,
@@ -27,7 +27,7 @@ pub struct TicketDb {
 
 #[derive(Serialize)]
 pub struct CorteDb {
-    pub id: i32,
+    pub id: i64,
     pub fecha: String,
     pub total_ventas: f64,
     pub total_efectivo: f64,
@@ -35,7 +35,7 @@ pub struct CorteDb {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InventoryItem {
-    pub id: Option<i32>,
+    pub id: Option<i64>,
     pub nombre: String,
     pub descripcion: Option<String>,
     pub precio_costo: f64,
@@ -69,8 +69,8 @@ pub struct SimilarResult {
 
 #[derive(Serialize, Deserialize)]
 pub struct EmployeeGoal {
-    pub id: i32,
-    pub employee_id: i32,
+    pub id: i64,
+    pub employee_id: i64,
     pub goal_type: String,
     pub goal_name: Option<String>,
     pub ventas_threshold: String,
@@ -87,7 +87,7 @@ pub struct EmployeeGoal {
 
 #[derive(Deserialize, Clone)]
 pub struct CartItemRequest {
-    pub id: Option<i32>,
+    pub id: Option<i64>,
     pub nombre: String,
     pub precio_venta: f64,
     pub cantidad: f64,
@@ -102,7 +102,7 @@ pub struct VentaRequest {
     pub monto_efectivo: f64,
     pub monto_tarjeta: f64,
     pub monto_transferencia: f64,
-    pub cliente_id: Option<i32>,
+    pub cliente_id: Option<i64>,
 }
 
 #[derive(Serialize)]

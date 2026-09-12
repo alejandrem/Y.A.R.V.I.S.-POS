@@ -13,7 +13,7 @@ use sqlx::Row;
 use yarvis_app_lib::backventanas::backempleado::emplea_new_venta::new_venta::completar_venta_impl;
 use yarvis_app_lib::models::{CartItemRequest, VentaRequest};
 
-fn venta_de(pid: i32, precio: f64) -> VentaRequest {
+fn venta_de(pid: i64, precio: f64) -> VentaRequest {
     VentaRequest {
         items: vec![CartItemRequest {
             id: Some(pid),
@@ -38,7 +38,7 @@ async fn quinientas_ventas_secuenciales_integridad_exacta() {
     let t0 = std::time::Instant::now();
 
     for i in 0..500 {
-        let r = completar_venta_impl(&pool, &venta_de(p as i32, 13.5), "cajero".into(), 1).await;
+        let r = completar_venta_impl(&pool, &venta_de(p, 13.5), "cajero".into(), 1).await;
         assert!(r.is_ok(), "venta #{} falló: {:?}", i, r.err());
     }
     let ms = t0.elapsed().as_millis();
@@ -70,7 +70,7 @@ async fn cincuenta_ventas_concurrentes_sin_perdidas() {
     let mut handles = Vec::new();
     for pid in &productos {
         let pool_ref = pool.clone();
-        let pid = *pid as i32;
+        let pid = *pid;
         handles.push(tokio::spawn(async move {
             completar_venta_impl(&pool_ref, &venta_de(pid, 20.0), "c".into(), 1).await.is_ok()
         }));
@@ -98,7 +98,7 @@ async fn cincuenta_ventas_concurrentes_sin_perdidas() {
 async fn veinticinco_cobros_concurrentes_mismo_producto_stock_exacto_diez() {
     let pool = db().await;
     let p = seed_producto(&pool, "Unico", 10.0, 5.0).await;
-    let pid = p as i32;
+    let pid = p;
 
     let t0 = std::time::Instant::now();
     let mut handles = Vec::new();

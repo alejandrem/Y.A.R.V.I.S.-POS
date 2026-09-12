@@ -17,9 +17,23 @@ pub async fn completar_venta_impl(
     }
 
     let pagado = venta.monto_efectivo + venta.monto_tarjeta + venta.monto_transferencia;
+    // Total SOBERANO del backend (issue #5): se recalcula en centavos desde
+    // los items + descuento. El total/subtotal del frontend son display (f64
+    // con ruido binario: 19.99*3 = 59.970000000000006) y NO se persisten ni
+    // validan el pago; solo sirven para pintar el modal de cobro.
+    let subtotal_cents: i64 = venta
+        .items
+        .iter()
+        .map(|it| a_centavos(it.precio_venta * it.cantidad))
+        .sum();
+    let descuento_cents = a_centavos(venta.descuento);
+    if descuento_cents < 0 || descuento_cents > subtotal_cents {
+        return Err("Descuento inválido".into());
+    }
+    let total_cents = subtotal_cents - descuento_cents;
     // Comparación EXACTA en centavos: con f64 hacía falta un epsilon (+0.01)
     // que a la vez era una ventana para cobros inconsistentes.
-    if a_centavos(pagado) < a_centavos(venta.total) {
+    if a_centavos(pagado) < total_cents {
         return Err("El monto pagado es menor al total".into());
     }
 
@@ -55,9 +69,9 @@ pub async fn completar_venta_impl(
     let result = sqlx::query(
         "INSERT INTO ventas (total, subtotal, descuento, metodo_pago, cajero, cajero_id, cliente_id, monto_efectivo, monto_tarjeta, monto_transferencia) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(a_centavos(venta.total))
-    .bind(a_centavos(venta.subtotal))
-    .bind(a_centavos(venta.descuento))
+    .bind(total_cents)
+    .bind(subtotal_cents)
+    .bind(descuento_cents)
     .bind(metodo_pago)
     .bind(cajero)
     .bind(cajero_id)
