@@ -99,7 +99,7 @@ mod tests {
         assert_eq!(cola.len(), MAX_MODELOS_A_PROBAR);
         assert_eq!(cola[0], "nemotron-3-ultra-free");
         assert_eq!(cola[1], "nemotron-3.5-lightning-free");
-        assert_eq!(cola[2], "hy3-free");
+        assert_eq!(cola[2], "mimo-v2.5-free");
     }
 
     #[test]

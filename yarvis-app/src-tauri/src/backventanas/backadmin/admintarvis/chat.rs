@@ -5,6 +5,8 @@
 // ciclo_tools y rutas (hermanos de este módulo).
 // ============================================================
 
+use tauri::Emitter;
+
 use crate::backventanas::auth::AuthState;
 use src_ia::motor_chat::cloud::apis_cloud::{generar_completo, nombre_proveedor};
 use src_ia::motor_chat::llm::{
@@ -155,6 +157,20 @@ pub async fn unload_chat_model(
     }))
 }
 
+/// Diagnóstico: con `YARVIS_SIN_FALLBACK=1` el chat cloud NO cae a Qwen;
+/// el error del proveedor se devuelve tal cual para verlo en el banner
+/// rojo en vez de recibir una respuesta local. Sin la variable (o en otro
+/// valor), el fallback a Qwen sigue como siempre.
+fn sin_fallback_local() -> bool {
+    let activo = std::env::var("YARVIS_SIN_FALLBACK")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if activo {
+        tracing::warn!("[YARVIS-CHAT] YARVIS_SIN_FALLBACK=1 activo: error cloud sin caer a local");
+    }
+    activo
+}
+
 /// Chat sin streaming (respuesta completa).
 #[tauri::command]
 pub async fn send_chat_message(
@@ -197,6 +213,9 @@ pub async fn send_chat_message(
             }
             Err(e) => {
                 tracing::warn!("[YARVIS-CHAT] Error proveedor ({provider}): {e}");
+                if sin_fallback_local() {
+                    return Err(e);
+                }
                 return _chat_local(messages, db_path, auth.es_empleado()).await;
             }
         }
@@ -228,6 +247,8 @@ pub async fn send_chat_stream(
     let db_path = db_path_de(&state);
 
     // ---- Modo cloud: streaming en Rust. ----
+    // Si el proveedor falla, se avisa al frontend con `chat-fallback`
+    // y se responde con el modelo local (antes era silencioso).
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
         let es_empleado = auth.es_empleado();
@@ -236,6 +257,17 @@ pub async fn send_chat_stream(
             Ok(respuesta) => return Ok(respuesta),
             Err(e) => {
                 tracing::warn!("[YARVIS-CHAT] Error proveedor ({provider}), fallback local: {e}");
+                if sin_fallback_local() {
+                    return Err(e);
+                }
+                let _ = app.emit(
+                    "chat-fallback",
+                    serde_json::json!({
+                        "error": e,
+                        "provider": provider,
+                        "model": model,
+                    }),
+                );
                 return _stream_local(&app, messages, db_path, es_empleado).await;
             }
         }

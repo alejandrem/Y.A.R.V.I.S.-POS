@@ -38,6 +38,7 @@ export function useChatStream({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fallbackNotice, setFallbackNotice] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [streamingModel, setStreamingModel] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -76,6 +77,7 @@ export function useChatStream({
       usageRealRef.current = false;
       setContextUsed(0);
       setExpandedThinking(new Set());
+      setFallbackNotice("");
     }
   }, [clearTrigger]);
 
@@ -114,6 +116,7 @@ export function useChatStream({
 
     setInput("");
     setError("");
+    setFallbackNotice("");
     setIsLoading(true);
     setIsStreaming(true);
     setStreamingText("");
@@ -217,6 +220,11 @@ export function useChatStream({
       }));
       listenersRef.current.push(await listen<{ response: string; model: string }>("chat-complete", (event) => finish(event.payload.response, event.payload.model)));
       listenersRef.current.push(await listen<{ error: string }>("chat-error", (event) => fail(event.payload.error)));
+      listenersRef.current.push(await listen<{ error: string; provider: string; model: string }>("chat-fallback", (event) => {
+        if (settled) return;
+        const detalle = event.payload.error || "el proveedor cloud falló";
+        setFallbackNotice(`${detalle} Respondiendo con Qwen local.`);
+      }));
 
       await invoke("send_chat_stream", {
         messages: updatedMessages.slice(-12).map((message) => ({ role: message.role, content: message.content })),
@@ -237,6 +245,8 @@ export function useChatStream({
     setInput,
     error,
     clearError: () => setError(""),
+    fallbackNotice,
+    clearFallbackNotice: () => setFallbackNotice(""),
     isLoading,
     isStreaming,
     streamingText,

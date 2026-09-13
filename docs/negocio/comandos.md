@@ -6,6 +6,7 @@
 ./run.sh        # Linux: verifica npm + cargo, instala deps si faltan, corre npm run tauri dev
 .\run.bat       # Windows
 ./reset.sh      # Borra yarvis.db, -shm, -wal y caches de app_data_dir (conserva codigo, modelos y .git)
+YARVIS_SIN_FALLBACK=1 ./run.sh  # diagnostico: no cae al modelo local si falla la nube
 ```
 
 ## Build de produccion
@@ -60,6 +61,7 @@ npm --prefix yarvis-app run build   # tsc + vite build (verificacion de tipos)
 ## Variables de entorno utiles
 
 - RUST_LOG=info|debug — nivel de tracing del backend (lib.rs:20). Por defecto info.
+- YARVIS_SIN_FALLBACK=1 — el chat cloud NO cae a Qwen local; el error del proveedor se muestra tal cual en el banner rojo (diagnóstico temporal, no para producción).
 - APPIMAGE_EXTRACT_AND_RUN=1 — evita necesitar fuse2 montando el AppImage por extraccion (alternativa a instalar fuse2).
 
 ## Estructura de scripts

@@ -30,7 +30,7 @@ export type ModelKey = string;
 
 export const CLOUD_PROVIDERS: { id: "google" | "opencode"; display: string; defaultModel: string }[] = [
   { id: "google", display: "Gemini", defaultModel: "gemini-3.6-flash" },
-  { id: "opencode", display: "OpenCode", defaultModel: "mimo-v2.5-free" },
+  { id: "opencode", display: "OpenCode", defaultModel: "nemotron-3-ultra-free" },
 ];
 
 export type { CloudModel } from "../../../services/yarvis";
@@ -170,6 +170,8 @@ const ChatWidget = ({ suggestions }: ChatWidgetProps) => {
           suggestions={suggestions}
           modelLoadingLabel={stream.modelLoadingLabel}
           currentSelectionLabel={currentSelection.label}
+          fallbackNotice={stream.fallbackNotice}
+          onFallbackDismiss={stream.clearFallbackNotice}
         />
         <ChatInput
           input={stream.input}

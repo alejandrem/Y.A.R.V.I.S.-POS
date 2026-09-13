@@ -100,7 +100,10 @@ pub fn generar_stream<'a>(
                 return;
             }
 
-            let espera = espera_429(match &err { ErrorCloud::Http(_, Some(r)) => Some(r.as_str()), _ => None });
+            let espera = espera_429(match &err {
+                ErrorCloud::Http { retry_after: Some(r), .. } => Some(r.as_str()),
+                _ => None,
+            });
             let siguiente = cola.get(idx + 1);
 
             if let Some(sig) = siguiente {

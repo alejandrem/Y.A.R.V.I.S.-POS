@@ -17,6 +17,8 @@ interface ChatMessagesProps {
   suggestions: string[];
   modelLoadingLabel: string | null;
   currentSelectionLabel: string;
+  fallbackNotice?: string;
+  onFallbackDismiss?: () => void;
 }
 
 function modelDotClass(model: string): string {
@@ -37,6 +39,8 @@ const ChatMessages = ({
   suggestions,
   modelLoadingLabel,
   currentSelectionLabel,
+  fallbackNotice,
+  onFallbackDismiss,
 }: ChatMessagesProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -76,6 +80,7 @@ const ChatMessages = ({
       )}
 
       <div className="mx-auto max-w-4xl space-y-5">
+        {fallbackNotice && <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs font-bold text-amber-600"><span className="h-2 w-2 flex-shrink-0 rounded-full bg-amber-500" />{fallbackNotice}<button onClick={onFallbackDismiss} className="ml-auto text-lg leading-none">×</button></div>}
         {messages.map((message, index) => (
           <div key={`${message.timestamp}-${index}`} className={`flex animate-in fade-in slide-in-from-bottom-1 duration-300 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[88%] rounded-2xl border px-5 py-4 sm:max-w-[76%] ${message.role === "user" ? "yarvis-primary border-transparent" : "yarvis-panel-soft yarvis-border"}`}>

@@ -27,7 +27,9 @@ pub const PROVIDERS: &[Provider] = &[
         key: "opencode",
         name: "OpenCode",
         base_url: "https://opencode.ai/zen/v1",
-        default_model: "mimo-v2.5-free",
+        // Verificado con la API real (2026-09-13): mimo/big-pickle se saturan;
+        // nemotron ultra respondió 200 + texto por el camino OpenAI-compatible.
+        default_model: "nemotron-3-ultra-free",
     },
 ];
 
@@ -57,9 +59,9 @@ pub const MODELOS_FREE_EXTRA: &[&str] = &["big-pickle"];
 /// Orden de fallback cuando un modelo free de OpenCode satura (429): se cambia
 /// automáticamente al siguiente de la lista hasta agotarlos.
 pub const ORDEN_FALLBACK_FREE: &[&str] = &[
-    "mimo-v2.5-free",
     "nemotron-3-ultra-free",
     "nemotron-3.5-lightning-free",
+    "mimo-v2.5-free",
     "hy3-free",
     "laguna-s-2.1-free",
     "deepseek-v4-flash-free",
@@ -92,9 +94,9 @@ mod tests {
     }
 
     #[test]
-    fn opencode_arranca_en_mimo_v2_5_free() {
+    fn opencode_arranca_en_nemotron_ultra_free() {
         let oc = PROVIDERS.iter().find(|p| p.key == "opencode").unwrap();
-        assert_eq!(oc.default_model, "mimo-v2.5-free");
+        assert_eq!(oc.default_model, "nemotron-3-ultra-free");
     }
 
     #[test]

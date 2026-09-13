@@ -6,6 +6,7 @@
 
 use futures_util::StreamExt;
 use reqwest::Client;
+use std::sync::OnceLock;
 
 use super::super::prompts::Mensaje;
 use super::super::variables::{Provider, MAX_TOKENS, MAX_TOKENS_GOOGLE};
@@ -14,6 +15,27 @@ use super::helpers::normalizar_mensajes;
 use super::sse::sse_lineas;
 use super::tipos::{Evento, Usage};
 
+/// ID de sesión estable por proceso para el free tier de Zen.
+///
+/// Zen exige un session id en `POST /chat/completions`: sin él responde
+/// 400 MissingSessionID ("free tier can only be used in OpenCode") para
+/// TODO modelo free, sin importar el resto del request (verificado
+/// 2026-09-13 con sondas directas). OpenCode manda el suyo propio
+/// (`x-opencode-session`); nosotros mandamos un UUID local en el header
+/// neutro `X-Session-Id` (el mismo que OpenCode usa con terceros, sin
+/// suplantar cliente ni usuario). Con header la puerta abre (200 o 429
+/// de cuota real).
+fn id_sesion_zen() -> &'static str {
+    static ID: OnceLock<String> = OnceLock::new();
+    ID.get_or_init(|| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        format!("yarvis-{:x}-{:x}", std::process::id(), nanos & 0xffff_ffff_ffff)
+    })
+}
 /// Genera el stream de un modelo específico (gemini u openai-compatible).
 ///
 /// Espejo de `_iter_openai_compatible` + `_iter_google`: las respuestas llegan
@@ -63,13 +85,14 @@ pub(crate) async fn stream_openai_compatible<'a>(
                 body["stream_options"] = serde_json::json!({ "include_usage": true });
             }
 
-            let resp = match client
+            let mut req = client
                 .post(&url)
-                .header("Authorization", format!("Bearer {api_key}"))
-                .json(&body)
-                .send()
-                .await
-            {
+                .header("Authorization", format!("Bearer {api_key}"));
+            // Zen free tier exige session id (ver `id_sesion_zen`).
+            if cfg.key == "opencode" {
+                req = req.header("X-Session-Id", id_sesion_zen());
+            }
+            let resp = match req.json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
                     yield Err(ErrorCloud::Red(e.to_string()));
@@ -88,7 +111,15 @@ pub(crate) async fn stream_openai_compatible<'a>(
                     .get("retry-after")
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string());
-                yield Err(ErrorCloud::Http(status.as_u16(), retry));
+                // El cuerpo trae el motivo real (p. ej. qué modelo falló
+                // aguas arriba): conservarlo, antes se perdía.
+                let body = resp.text().await.unwrap_or_default();
+                tracing::warn!("[YARVIS] {} devolvió {}: {}", cfg.name, status.as_u16(), body.chars().take(500).collect::<String>());
+                yield Err(ErrorCloud::Http {
+                    status: status.as_u16(),
+                    retry_after: retry,
+                    body: Some(body),
+                });
                 return;
             }
 
@@ -125,7 +156,12 @@ pub(crate) async fn stream_openai_compatible<'a>(
                     .cloned()
                     .unwrap_or_default();
 
-                let razonamiento = delta.get("reasoning_content").and_then(|v| v.as_str());
+                // Zen/OpenRouter manda `reasoning`; otros compatibles mandan
+                // `reasoning_content`. Soportar ambos o el pensamiento se pierde.
+                let razonamiento = delta
+                    .get("reasoning_content")
+                    .or_else(|| delta.get("reasoning"))
+                    .and_then(|v| v.as_str());
                 if let Some(r) = razonamiento {
                     if !r.is_empty() {
                         yield Ok(Evento::Texto {
@@ -205,12 +241,19 @@ pub(crate) async fn stream_google<'a>(
         };
 
         if !resp.status().is_success() {
+            let status = resp.status().as_u16();
             let retry = resp
                 .headers()
                 .get("retry-after")
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
-            yield Err(ErrorCloud::Http(resp.status().as_u16(), retry));
+            let body = resp.text().await.unwrap_or_default();
+            tracing::warn!("[YARVIS] {} devolvió {}: {}", cfg.name, status, body.chars().take(500).collect::<String>());
+            yield Err(ErrorCloud::Http {
+                status,
+                retry_after: retry,
+                body: Some(body),
+            });
             return;
         }
 

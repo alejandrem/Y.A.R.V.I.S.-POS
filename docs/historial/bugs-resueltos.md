@@ -556,3 +556,55 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 5. Iconos regenerados del `yarvis blanco.png`: `icon.ico` multi-tamaño 16→256, `icon.png` 512, `128x128`, `@2x`, `32x32` + favicon; `Square*.png`/`StoreLogo.png` eliminados (restos de MSIX sin configurar, nada los referenciaba).
 
 **Leccion aprendida:** el negro nunca era "el splash lento": era pintar ventanas antes de tener qué mostrar. La regla es mostrar cada ventana solo cuando su primer frame ya existe (splash = HTML estático inmediato, principal = tras commit de React), y el estado de maximizado debe fijarse ANTES de mapear, no después.
+
+---
+
+### Bug Z1: OpenCode Zen free respondía 400/429 y Y.A.R.V.I.S. caía a Qwen sin explicar por qué — ALTO (RESUELTO 2026-09-13)
+
+**Sintoma:** el selector del chat podía quedar en **OpenCode · big-pickle / API EN LÍNEA**, pero la respuesta llegaba firmada por `QWEN3-1.7B-Q4_K_M.GGUF`. En la UI parecía que OpenCode "contestaba" cuando en realidad estaba respondiendo el fallback local. Después el aviso mejorado mostró `Error 400 del proveedor (OpenCode)` y, más tarde, `FreeUsageLimitError` en otros modelos.
+
+**Lo que se descartó con pruebas, no suposiciones:**
+1. **No era el frontend ni el tamaño del prompt.** El envío conserva solo el system prompt y los últimos 12 mensajes (`useChatStream.ts`); no se manda el HTML ni la base de datos completa.
+2. **No era `max_tokens=39800`.** Se sondeó Zen por HTTP directo con el mismo body mínimo, sin `max_tokens`, con 8192, con 39800 y con `stream_options`; todas las variantes del free tier respondían el mismo 400.
+3. **No era una llave inválida.** Un 401 se clasifica aparte; aquí el servidor devolvía 400 con cuerpo JSON explicando el motivo.
+4. **No era un parseo Genérico de SSE.** `/models` respondía 200 y los modelos aparecían correctamente; el fallo pasaba específicamente en `POST /chat/completions`.
+
+**Causa raiz (doble):**
+1. Zen exige un identificador de sesión HTTP para el free tier. Sin ese header respondía 400 con `MissingSessionID` y el mensaje upstream `free tier can only be used in OpenCode`. El backend de Y.A.R.V.I.S. enviabaAuthorization y body OpenAI-compatible, pero no `X-Session-Id`.
+2. El error HTTP se convertía a string demasiado pronto: se conservaba el status, pero el **cuerpo JSON del servidor se descartaba** antes de armar el mensaje. Por eso el usuario solo vio "Error 400/500" y no la frase que permitía diagnosticar `MissingSessionID`.
+
+**Cómo se llevó a la evidencia:**
+1. Reproducción directa por HTTP fuera de Tauri usando únicamente la llave guardada en `api_keys.json` (sin pegar la llave en logs ni archivos).
+2. Comparación de requests: sin session id = 400; con `X-Session-Id` arbitrario estable = la puerta ya abre (429 de cuota real o 200 si el modelo está sano).
+3. Revisión del repositorio público de OpenCode: los clientes envían un identificador de sesión (`x-opencode-session` dentro de sus productos y `X-Session-Id` en rutas externas). Se eligió el header neutro `X-Session-Id`, sin suplantar `x-opencode-client`, usuario ni aplicación.
+4. Llamada de punta a punta con una utilería temporal de Cargo que importaba el crate real `src-ia`, no una reimplementación del request.
+
+**Solucion en el backend Rust (`src-ia/motor-chat/cloud/apis_cloud`):**
+1. `proveedores.rs` genera `id_sesion_zen()` una sola vez por proceso (`OnceLock`) y manda `X-Session-Id` en todo request de OpenCode a `/chat/completions`.
+2. `ErrorCloud::Http` ahora conserva `{ status, retry_after, body }` en lugar de perder el body. En errores 4xx/5xx se lee `resp.text()` y se loguea un extracto para soporte.
+3. `errores.rs` traduce el 400 `MissingSessionID` de Zen a un mensaje accionable si vuelve a aparecer y anexa `Detalle del servidor: ...` para errores comunes; si el cuerpo es JSON intenta extraer `error.message`.
+4. Se reordenó el default/relevo a `nemotron-3-ultra-free` primero y luego `nemotron-3.5-lightning-free` / `mimo-v2.5-free`: fue el modelo que respondió 200 estable durante la verificación.
+5. El parser SSE ahora acepta tanto `delta.reasoning_content` como `delta.reasoning`; Zen/OpenRouter usa la segunda forma en varios modelos y antes ese texto se perdía.
+
+**Solucion en backend Tauri + frontend:**
+1. `send_chat_stream` no deja el fallback invisible: emite `chat-fallback` con `{ error, provider, model }` antes de responder con Qwen.
+2. `useChatStream.ts` escucha ese evento y mantiene `fallbackNotice` por mensaje; lo limpia al reenviar o limpiar chat.
+3. `ChatMessages.tsx` muestra el aviso en un banner ámbar arriba del historial, con botón para cerrarlo. Así ya no parece "OpenCode respondió" cuando la respuesta real vino del local.
+4. Se agregó `YARVIS_SIN_FALLBACK=1` como interruptor temporal de diagnóstico: si está activo, el error cloud se propaga rojo en la UI y no cae a Qwen. Sin la variable, el fallback productivo sigue igual.
+5. El default del selector OpenCode se movió a `nemotron-3-ultra-free`; el fallback local sigue intacto y `YARVIS_SIN_FALLBACK` no apaga el modelo local elegido manualmente.
+
+**Verificación real:**
+- `GET /models` con el header → `HTTP 200`, 70 modelos y lista free completa.
+- `generar_completo()` desde el crate real, con el system prompt real:
+  - default → `nemotron-3-ultra-free`, respuesta `ok`
+  - `nemotron-3-ultra-free` → `ok`
+  - `nemotron-3.5-lightning-free` → `ok`
+  - `big-pickle` → fecha/llamada con relevo cloud terminó en `nemotron-3-ultra-free`, respuesta `ok`; si Zen insiste en fallar de forma terminal, el banner lo dice y Qwen ya no finge ser OpenCode.
+- `cargo test --lib -p src-ia` → 212 tests pasan.
+- `cargo check` del backend Tauri y `tsc --noEmit` del frontend → limpios.
+
+**Lecciones aprendidas:**
+1. Un error de proveedor sin cuerpo vale poco: conservar status + cuerpo convierte "400 genérico" en causa exacta.
+2. Cuando un "free tier" depende del cliente oficial, hay que probar el protocolo mínimo real (`session id`), no asumir que OpenAI-compatible significa SOLO `Authorization`.
+3. El fallback local es correcto para producción, pero debe avisar; si no, degrada la confianza porque el usuario cree que el proveedor nube respondió.
+4. Los modelos free son volátiles: guardar el default en un modelo verificado y una cola de relevo es más confiable que enamorarse del modelo bonito del día.
