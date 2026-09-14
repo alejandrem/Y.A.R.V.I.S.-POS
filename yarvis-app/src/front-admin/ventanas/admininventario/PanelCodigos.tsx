@@ -144,10 +144,10 @@ const PanelCodigos = () => {
   ];
 
   return (
-    <div className="w-full max-w-[1200px] animate-in fade-in slide-in-from-bottom-2 duration-500 mx-auto space-y-6">
-      <header className="flex justify-between items-end">
+    <div className="w-full space-y-6">
+      <header className="flex justify-between items-end flex-wrap gap-3">
         <div>
-          <h2 className="text-3xl font-black text-neutral-900 uppercase tracking-tight mb-1">Códigos de barras</h2>
+          <h3 className="text-xl font-black text-neutral-900 uppercase tracking-tight mb-1">Códigos de barras</h3>
           <p className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em]">
             Cola semáforo · {verdes.total_vinculos} vínculos · {conteos.resuelto} resueltos
           </p>

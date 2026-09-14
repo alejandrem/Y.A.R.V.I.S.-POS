@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// TEST FUNCIONAL — Pestaña CÓDIGOS en Inventario (issue #13).
+// TEST FUNCIONAL — Cuadro CÓDIGOS embebido en Inventario (issue #13).
+// El panel ya no es pestaña con botón: va como cuadro dentro del dashboard.
 // Cubre: contadores por color, tarjetas amarillas (SI/NO) y rojas
 // (asignar/alta), y resolución en lote. Backend mockeado vía invoke.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -30,7 +31,7 @@ function mockBase() {
 
 async function irACodigos() {
   render(<Inventario activeTab="inventario" />);
-  fireEvent.click(screen.getByRole("button", { name: /códigos/i }));
+  fireEvent.click(screen.getByRole("button", { name: /abrir cola/i }));
   await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("rojo_listar_pendientes", expect.anything()));
 }
 
@@ -42,12 +43,14 @@ beforeEach(() => {
 describe("códigos · cola semáforo", () => {
   it("muestra contadores y tarjetas por color", async () => {
     await irACodigos();
-    expect(screen.getByText("34")).toBeTruthy();
+    // Compacto + modal muestran los mismos conteos: hay 2 nodos.
+    expect(screen.getAllByText("34").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/amarillas por confirmar \(1\)/i)).toBeTruthy();
     expect(screen.getByText(/rojas sin match \(1\)/i)).toBeTruthy();
     expect(screen.getByText("7501026000123")).toBeTruthy();
     expect(screen.getByText("7509990000111")).toBeTruthy();
-    expect(screen.getByText("Coca-Cola 600ml")).toBeTruthy();
+    // Inventario + semáforo muestran el mismo producto: hay 2 nodos.
+    expect(screen.getAllByText("Coca-Cola 600ml").length).toBeGreaterThanOrEqual(1);
   });
 
   it("SI ES ESTE confirma el candidato", async () => {
@@ -102,7 +105,7 @@ describe("códigos · cola semáforo", () => {
   it("roja asigna a existente desde el buscador", async () => {
     await irACodigos();
     fireEvent.click(screen.getByRole("button", { name: /asignar a existente/i }));
-    fireEvent.change(screen.getByPlaceholderText(/buscar producto/i), { target: { value: "coca" } });
+    fireEvent.change(screen.getByPlaceholderText(/nombre o código/i), { target: { value: "coca" } });
     fireEvent.click(screen.getByRole("button", { name: /pegar código/i }));
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith("rojo_resolver_asignando", {

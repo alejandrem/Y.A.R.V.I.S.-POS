@@ -9,6 +9,13 @@ import {
 import { reportarError } from "../../../services/tauri";
 import { notificarExito } from "../../../components/notificaciones";
 import ModalNuevoProducto from "./ModalNuevoProducto";
+import PanelCodigos from "./PanelCodigos";
+import {
+  contarPendientes,
+  contarVerdeHoy,
+  type ConteosPendientes,
+  type ConteosVerde,
+} from "../../../services/semaforo";
 import {
   listarImpresoras,
   imprimirListaConciliacion,
@@ -36,12 +43,26 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   const [cargandoImp, setCargandoImp] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
   const [showNuevo, setShowNuevo] = useState(false);
+  const [showCodigos, setShowCodigos] = useState(false);
+  const [conteos, setConteos] = useState<ConteosPendientes>({ rojo: 0, amarillo: 0, conflicto: 0, resuelto: 0 });
+  const [verdes, setVerdes] = useState<ConteosVerde>({ verdes_hoy: 0, total_vinculos: 0 });
 
   useEffect(() => {
     if (activeTab === "inventario") {
       loadInventory();
+      loadConteosSemaforo();
     }
   }, [activeTab]);
+
+  const loadConteosSemaforo = async () => {
+    try {
+      const [c, v] = await Promise.all([contarPendientes(), contarVerdeHoy()]);
+      setConteos(c);
+      setVerdes(v);
+    } catch {
+      // Sin backend semáforo: se queda en 0, no rompe el dashboard.
+    }
+  };
 
   useEffect(() => {
     if (inventory.length > 0 && Object.keys(conciliacion).length === 0) {
@@ -350,6 +371,70 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
         </table>
         </div>
       </div>
+
+      {/* ── Semáforo compacto: 4 tiles + botón que abre el modal ── */}
+      <section className="bg-white rounded-[2.5rem] border border-neutral-200 shadow-sm p-6 sm:p-8 space-y-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="text-base sm:text-xl font-black text-neutral-900 uppercase tracking-tight">Códigos de barras</h3>
+            <p className="text-[9px] text-neutral-400 uppercase font-black tracking-widest">
+              Cola semáforo · {verdes.total_vinculos} vínculos · {conteos.resuelto} resueltos
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCodigos(true)}
+            className="px-4 py-2.5 bg-neutral-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-700 transition-all"
+          >
+            Abrir cola
+          </button>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border p-4 bg-white shadow-sm flex items-center gap-3 text-emerald-600 bg-emerald-50 border-emerald-200">
+            <div>
+              <p className="text-2xl font-black leading-none">{verdes.verdes_hoy}</p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-widest opacity-70">Verde auto hoy</p>
+            </div>
+          </div>
+          <div className="rounded-2xl border p-4 bg-white shadow-sm flex items-center gap-3 text-amber-600 bg-amber-50 border-amber-200">
+            <div>
+              <p className="text-2xl font-black leading-none">{conteos.amarillo}</p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-widest opacity-70">Amarillo por confirmar</p>
+            </div>
+          </div>
+          <div className="rounded-2xl border p-4 bg-white shadow-sm flex items-center gap-3 text-red-600 bg-red-50 border-red-200">
+            <div>
+              <p className="text-2xl font-black leading-none">{conteos.rojo}</p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-widest opacity-70">Rojo sin match</p>
+            </div>
+          </div>
+          <div className="rounded-2xl border p-4 bg-white shadow-sm flex items-center gap-3 text-purple-600 bg-purple-50 border-purple-200">
+            <div>
+              <p className="text-2xl font-black leading-none">{conteos.conflicto}</p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-widest opacity-70">Conflicto</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {showCodigos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-4xl max-h-[85vh] overflow-y-auto custom-scrollbar bg-neutral-50 rounded-[2rem] border border-neutral-200 shadow-2xl p-6 sm:p-8">
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => {
+                  setShowCodigos(false);
+                  loadConteosSemaforo();
+                }}
+                aria-label="Cerrar cola de códigos"
+                className="w-8 h-8 rounded-xl bg-neutral-900 text-white hover:bg-neutral-700 transition-colors text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <PanelCodigos />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
         <div className="bg-white rounded-2xl sm:rounded-[2.5rem] border border-neutral-200 p-4 sm:p-8 shadow-sm">
