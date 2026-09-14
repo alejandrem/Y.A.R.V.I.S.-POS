@@ -12,9 +12,11 @@ Y.A.R.V.I.S.-POS/
 ├── run.bat                            # Lanzador Windows: identico en batch
 ├── reset.sh                           # Limpieza: borra yarvis.db y caches en $HOME/.local/share/com.yarvis.pos
 │
-├── doc/                               # Documentacion (nombre futuro; hoy idea.md/)
-│   ├── opencode/                      # Stack, arquitectura, vision y comandos de dev.
-│   └── implementacion/                # Implementacion, interconexion, parseador, bugs, migracion.
+├── docs/                              # Documentacion centralizada (ver docs/INDEX.md)
+│   ├── arquitectura/                  # Stack, diseño, visión y protocolos IPC
+│   ├── modulos/                       # Parseador, impresora, escáner y lógica de caja
+│   ├── historial/                     # Olas de implementación, bugs resueltos y auditorías
+│   └── negocio/                       # Comandos de compilación y propuesta comercial
 │
 ├── src-ia/                            # CRATE RUST independiente: nucleo de IA.
 │   ├── Cargo.toml                     # package "src-ia" v0.1.0; feature "llm-local" (llama-cpp-4 0.5).

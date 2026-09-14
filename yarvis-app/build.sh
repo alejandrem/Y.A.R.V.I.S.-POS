@@ -3,7 +3,7 @@
 # build.sh — Build de producción de Y.A.R.V.I.S. POS
 #
 # Genera binario release + .deb + .rpm + .AppImage.
-# Requisitos ya resueltos en el sistema (ver idea.md Bug B1):
+# Requisitos ya resueltos en el sistema (ver docs/historial/bugs-resueltos.md Bug B1):
 #   · fuse2 instalado (pacman -S fuse2)
 #   · /usr/lib/gdk-pixbuf-2.0/2.10.0 existe (gdk-pixbuf 2.44 ya no lo crea,
 #     pero el plugin gtk de linuxdeploy lo copia por rutina)

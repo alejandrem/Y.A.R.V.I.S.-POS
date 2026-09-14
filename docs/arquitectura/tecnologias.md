@@ -70,14 +70,14 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 1. yarvis-app/build.sh compila el frontend (Vite) y el backend Rust + crate src-ia en un solo ejecutable. Exporta LD_LIBRARY_PATH para que linuxdeploy empaquete libllama.so.0 y NO_STRIP=1 para evitar el bug de strip viejo con .relr.dyn de Arch.
 2. La DB yarvis.db se genera en el primer arranque (solo si no existe), con WAL habilitado y migraciones aplicadas en dos fases (foreign_keys off durante migracion, on en operacion normal).
 3. Portabilidad: sin rutas quemadas, sin dependencias externas de runtime. El modelo GGUF se resuelve en rutas_modelos_detect.rs (incluye deteccion de ~/.lmstudio/models).
-4. Requiere fuse2 y /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders para el bundle AppImage en Arch (ver bugs-resueltos.md).
+4. Requiere fuse2 y /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders para el bundle AppImage en Arch (ver [`../historial/bugs-resueltos.md`](../historial/bugs-resueltos.md)).
 
 ## Herramientas de Desarrollo
 
 > Control de Versiones: Git.
 > Gestores de Paquetes: Cargo (Rust) + npm (JS/TS).
 > Tests: cargo test (backend Rust + src-ia) y npm test / vitest (frontend). Fixtures SQLite en memoria para pruebas deterministas.
-> Solucion de errores de compilacion de Rust: ver comandos.md.
+> Solucion de errores de compilacion de Rust: ver [`../negocio/comandos.md`](../negocio/comandos.md).
 
 ## Principios de mantenibilidad
 

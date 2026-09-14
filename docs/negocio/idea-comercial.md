@@ -1,6 +1,6 @@
 # Idea a Vender del Software
 
-> Estado 2026-08-26: venta rapida, inventario, clientes, reportes/cortes, tickets, parseador local, chat con tools y predicciones Holt-Winters ya implementados. Pendientes: busqueda semantica con modelo de embeddings propio, impresion termica y facturacion electronica, y fine-tuning final de Qwen2.5-Coder 1.5B Instruct. Ver implementacion.md.
+> Estado 2026-08-26: venta rapida, inventario, clientes, reportes/cortes, tickets, parseador local, chat con tools y predicciones Holt-Winters ya implementados. Pendientes: busqueda semantica con modelo de embeddings propio, impresion termica y facturacion electronica, y fine-tuning final de Qwen2.5-Coder 1.5B Instruct. Ver [`../historial/implementacion.md`](../historial/implementacion.md).
 
 ## Venta Ultra-Rapida
 

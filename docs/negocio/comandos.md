@@ -17,7 +17,7 @@ El build directo con `npm run tauri build` omite variables necesarias para el mo
 # Artefactos en yarvis-app/src-tauri/target/release/bundle/
 ```
 
-Requisitos del bundle AppImage en Arch Linux: `fuse2` instalado y `/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders` disponible. Ver bugs-resueltos.md Bug B1.
+Requisitos del bundle AppImage en Arch Linux: `fuse2` instalado y `/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders` disponible. Ver [`../historial/bugs-resueltos.md`](../historial/bugs-resueltos.md) Bug B1.
 
 ## Si falla la compilacion de Rust (toolchain)
 

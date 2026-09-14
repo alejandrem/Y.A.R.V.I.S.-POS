@@ -62,8 +62,8 @@ Pendiente en IA: fine-tuning final de Qwen2.5-Coder 1.5B Instruct para que gener
 - Temas: ThemeProvider light/dark.
 
 Pendiente en produccion:
-- Impresion termica ESC/POS: IMPLEMENTADA 2026-09 (ver `imple & docu/IMPRESORA.md`: Camino A spooler Windows RAW + Camino C ticket `escpos` con QR y red TCP 9100; 5 comandos; pendiente solo prueba de campo con termica real).
-- Escaner de codigos de barras: IMPLEMENTADO (ver `imple & docu/ESCANER.md`: lector HID-teclado sin drivers, normalizacion Rust+SQL, indice unico parcial 0011, comando exacto + filtro local en venta).
+- Impresion termica ESC/POS: IMPLEMENTADA 2026-09 (ver [`../modulos/impresora.md`](../modulos/impresora.md): Camino A spooler Windows RAW + Camino C ticket `escpos` con QR y red TCP 9100; 5 comandos; pendiente solo prueba de campo con termica real).
+- Escaner de codigos de barras: IMPLEMENTADO (ver [`../modulos/escaner.md`](../modulos/escaner.md): lector HID-teclado sin drivers, normalizacion Rust+SQL, indice unico parcial 0011, comando exacto + filtro local en venta).
 - Facturacion electronica (XML/PAC): sin implementar.
 - CI/CD, empaquetado .exe estable en Windows y bateria de pruebas finales (concurrencia, cortes, SSE, flujos completos).
 

@@ -219,7 +219,7 @@ La gestion descargar_modelos() de Python (auto-unload en finally, endpoints /unl
 | Historial muestra 20 de 1000 | `.slice(0, 20)` + contador con `length` | sin recorte (backend trae 500) + `get_tickets_total` para el total real |
 | Al cambiar de pestaña "no se está parseando nada" | estado + listener vivían en el componente desmontado | `BatchProgressProvider` en el dashboard (un solo listener global + bloqueo de doble importación); las pestañas se desmontan pero el provider no |
 
-> Los bugfix A1 (transaccion por archivo con rollback), A3 (filtro 3 niveles), A4 (volumenes) y Bug 8 (separador robado) fueron verificados en Python y conservados en el port a Rust. Ver bugs-resueltos.md.
+> Los bugfix A1 (transaccion por archivo con rollback), A3 (filtro 3 niveles), A4 (volumenes) y Bug 8 (separador robado) fueron verificados en Python y conservados en el port a Rust. Ver [`../historial/bugs-resueltos.md`](../historial/bugs-resueltos.md).
 
 ---
 

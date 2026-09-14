@@ -66,7 +66,7 @@ Ver el arbol completo en arquitectura.md. Resumen:
 - src-ia/ — crate Rust con el motor de IA (parseador + chat cloud/local + predicciones).
 - yarvis-app/src/ — frontend (front-admin, front-empleado, hooks).
 - yarvis-app/src-tauri/src/backventanas/ — comandos Tauri por dominio (backadmin/backempleado).
-- doc/ — documentacion (antes idea.md).
+- docs/ — Documentación centralizada y modular (ver docs/INDEX.md).
 
 ---
 

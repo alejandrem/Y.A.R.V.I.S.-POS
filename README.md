@@ -46,7 +46,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Chat cloud (OpenCode Zen/Gemini) con fallback local (Qwen 3 1.7B)**.
 
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Python eliminado** — migración completa documentada en `idea.md`.
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Python eliminado** — migración completa documentada en [`docs/`](docs/INDEX.md).
 
 ---
 
@@ -91,8 +91,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 │   │   └── hooks/             #   ThemeContext/useTheme
 │   └── src-tauri/             # Backend Rust + configuración Tauri
 │       └── src/backventanas/  #   ~99 comandos (backadmin/ y backempleado/)
-├── idea.md/                   # Documentación completa (arquitectura, stack,
-│                              #   parseador, migración, bugs)
+├── docs/                      # Documentación completa y modular (ver docs/INDEX.md)
 ├── run.sh / run.bat           # Lanzadores (dev)
 └── reset.sh                   # Borra la DB y caches
 ```
@@ -130,19 +129,24 @@ Sin HTTP local, sin puertos libres, sin procesos externos. La IA vive dentro del
 
 ## Documentación
 
-Toda la documentación vive en `idea.md/`:
+Toda la documentación vive en [`docs/`](docs/INDEX.md):
 
 | Documento | Contenido |
 |---|---|
-| `opencode/arquitectura.md` | Árbol del proyecto y diagrama de comunicación |
-| `opencode/tecnologias.md` | Stack verificado y decisiones técnicas |
-| `imple & docu/implementacion.md` | Estado por fases (completadas y pendientes) |
-| `imple & docu/que es yarvis?.md` | Documentación completa de implementación |
-| `imple & docu/PARSEADOR.md` | El módulo de parseo a detalle |
-| `imple & docu/IMPRESORA.md` | Impresión térmica ESC/POS (spooler RAW + ticket `escpos` con QR y red) |
-| `imple & docu/ESCANER.md` | Escáner de códigos de barras (HID, normalización, índice 0011) |
-| `imple & docu/migracion_rust.md` | Historia de la migración Python → Rust |
-| `imple & docu/Bugs resueltos uwu.md` | Bitácora de bugs y lecciones aprendidas |
+| [`docs/arquitectura/que-es-yarvis.md`](docs/arquitectura/que-es-yarvis.md) | Visión general del sistema y motor IA |
+| [`docs/arquitectura/arquitectura.md`](docs/arquitectura/arquitectura.md) | Árbol del proyecto y diagrama de comunicación Tauri |
+| [`docs/arquitectura/tecnologias.md`](docs/arquitectura/tecnologias.md) | Stack verificado y decisiones técnicas |
+| [`docs/arquitectura/interconexion.md`](docs/arquitectura/interconexion.md) | Protocolo de comunicación frontend-backend |
+| [`docs/modulos/parseador.md`](docs/modulos/parseador.md) | El módulo de parseo de tickets a detalle |
+| [`docs/modulos/impresora.md`](docs/modulos/impresora.md) | Impresión térmica ESC/POS (spooler RAW + ticket `escpos` con QR y red) |
+| [`docs/modulos/escaner.md`](docs/modulos/escaner.md) | Escáner de códigos de barras (HID, normalización, índice 0011) |
+| [`docs/modulos/logica-proceso.md`](docs/modulos/logica-proceso.md) | Lógica de ventas, cortes de caja X/Z y dinero en centavos |
+| [`docs/historial/implementacion.md`](docs/historial/implementacion.md) | Estado por fases (completadas y pendientes) |
+| [`docs/historial/bugs-resueltos.md`](docs/historial/bugs-resueltos.md) | Bitácora de bugs y lecciones aprendidas |
+| [`docs/historial/migracion-rust.md`](docs/historial/migracion-rust.md) | Historia de la migración Python → Rust |
+| [`docs/historial/refactor-seguridad.md`](docs/historial/refactor-seguridad.md) | Auditoría senior de refactor y endurecimiento |
+| [`docs/negocio/comandos.md`](docs/negocio/comandos.md) | Cheat-sheet de comandos de compilación y ejecución |
+| [`docs/negocio/idea-comercial.md`](docs/negocio/idea-comercial.md) | Propuesta de valor comercial y ventajas competitivas |
 
 ---
 
