@@ -21,6 +21,7 @@ use crate::backventanas::auth::AuthState;
 use crate::models::InventoryItem;
 use sqlx::SqlitePool;
 
+pub mod semaforo_amarillo;
 pub mod semaforo_rojo;
 pub mod semaforo_verde;
 

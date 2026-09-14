@@ -58,6 +58,13 @@ pub struct VeredictoVerde {
     pub motivo: String,
 }
 
+/// Contadores para la pestaña Códigos del front (issue #13).
+#[derive(Debug, Clone, Serialize)]
+pub struct ConteosVerde {
+    pub verdes_hoy: i64,
+    pub total_vinculos: i64,
+}
+
 // ---------- Helpers puros ----------
 
 fn normalizar_marca(m: Option<&str>) -> Option<String> {
@@ -341,4 +348,29 @@ pub async fn verde_importar_catalogo(
 ) -> Result<ResumenImportCatalogo, String> {
     let ses = auth.require_admin()?;
     importar_catalogo_barras_impl(&*state, &filas, Some(ses.user_id)).await
+}
+
+/// Auto-verdes de hoy + vinculos totales (contadores del front).
+/// Solo lectura: operario (admin o empleado) puede verlos.
+pub async fn contar_verde_impl(pool: &SqlitePool) -> Result<ConteosVerde, String> {
+    let verdes_hoy: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM vinculos_codigos WHERE origen = 'auto-verde' AND date(creado_en) = date('now', 'localtime')",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let total_vinculos: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vinculos_codigos")
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(ConteosVerde { verdes_hoy, total_vinculos })
+}
+
+#[tauri::command]
+pub async fn verde_contar_hoy(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<ConteosVerde, String> {
+    auth.require_operator()?;
+    contar_verde_impl(&*state).await
 }

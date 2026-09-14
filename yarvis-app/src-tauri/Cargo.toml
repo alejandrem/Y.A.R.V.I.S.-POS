@@ -115,6 +115,10 @@ name = "func_semaforo"
 path = "test/funcionamiento/semaforo.rs"
 
 [[test]]
+name = "func_semaforo_amarillo"
+path = "test/funcionamiento/semaforo_amarillo.rs"
+
+[[test]]
 name = "estres_ventas"
 path = "test/estres/estres_ventas.rs"
 

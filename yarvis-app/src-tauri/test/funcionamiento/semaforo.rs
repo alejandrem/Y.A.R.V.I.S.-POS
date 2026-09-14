@@ -18,7 +18,7 @@ use yarvis_app_lib::backventanas::codigos_barras::semaforo_rojo::{
     registrar_pendiente_impl, resolver_asignando_impl, resolver_con_alta_impl,
 };
 use yarvis_app_lib::backventanas::codigos_barras::semaforo_verde::{
-    importar_catalogo_barras_impl, intentar_verde_impl, CatalogoRow,
+    contar_verde_impl, importar_catalogo_barras_impl, intentar_verde_impl, CatalogoRow,
 };
 
 fn fila(ean: &str, nombre: &str, marca: &str, cantidad: f64, unidad: &str) -> CatalogoRow {
@@ -229,4 +229,22 @@ async fn rojo_resuelve_con_alta_y_cuenta_cola() {
     assert_eq!(c.resuelto, 1);
     let pendientes = listar_pendientes_impl(&pool, None, 10).await.unwrap();
     assert!(pendientes.is_empty(), "lo resuelto no vuelve a la cola");
+}
+
+#[tokio::test]
+async fn contar_verde_hoy_solo_cuenta_los_de_hoy() {
+    let pool = db().await;
+    let id = seed_con_presentacion(&pool, "SABRITAS ORIGINAL", "Sabritas", 42.0, "g").await;
+    intentar_verde_impl(&pool, "SABRITAS ORIGINAL 42g", Some("Sabritas"), "7501011101456", id, None)
+        .await
+        .unwrap();
+    // Un vinculo de ayer no entra en el contador de hoy.
+    sqlx::query("INSERT INTO vinculos_codigos (ean, producto_id, origen, creado_en) VALUES ('7501011101463', ?, 'auto-verde', datetime('now', '-1 day'))")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let c = contar_verde_impl(&pool).await.unwrap();
+    assert_eq!(c.verdes_hoy, 1);
+    assert_eq!(c.total_vinculos, 2);
 }

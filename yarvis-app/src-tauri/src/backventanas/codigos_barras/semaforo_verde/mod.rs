@@ -15,6 +15,6 @@ pub mod verde;
 pub use ean::validar_ean;
 pub use presentacion::{
     extraer_presentacion, misma_presentacion, normalizar_unidad, presentacion_de_catalogo,
-    quitar_presentacion,
+    quitar_presentacion, Presentacion,
 };
 pub use verde::*;
