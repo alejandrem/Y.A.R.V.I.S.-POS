@@ -12,7 +12,7 @@ import { obtenerTiendaInfo, type TiendaInfo } from "../../../services/turno";
 import PastillaTema from "./componentes/pastilla-tema";
 import DatosSesion from "./componentes/datos-sesion";
 
-const Libro = lazy(() => import("./datos inutiles/Libro"));
+const Libro = lazy(() => import("./DatosInutiles/Libro"));
 
 const ajustesNav = {
   id: "ajustes",

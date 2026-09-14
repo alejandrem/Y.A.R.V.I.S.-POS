@@ -4,7 +4,7 @@
 // el canonical vive aqui y cada rol lo usa con `rol="admin" | "empleado"`.
 // Solo cambia el subtitulo de portada; el contenido es el mismo manual.
 //
-// ⚠️ NO BORRAR — "datos inutiles" es el nombre del manual, no codigo basura.
+// ⚠️ NO BORRAR — "DatosInutiles" es el nombre del manual, no codigo basura.
 // Se importa en: front-empleado/ventanas/empleaajustes/ajustes.tsx (lazy) y
 // front-admin/ventanas/adminconfig/libro.tsx (wrapper rol="admin").
 // Ver issue #8.
