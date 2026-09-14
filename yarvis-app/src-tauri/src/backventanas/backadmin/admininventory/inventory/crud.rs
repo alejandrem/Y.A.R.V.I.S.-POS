@@ -18,7 +18,7 @@ pub async fn get_inventory(
     auth: tauri::State<'_, AuthState>,
 ) -> Result<Vec<InventoryItem>, String> {
     auth.require_operator()?;
-    let rows = sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
+    let rows = sqlx::query_as::<_, (Option<i64>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
         "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos"
     )
     .fetch_all(&*state)
@@ -49,7 +49,7 @@ pub async fn get_inventory(
 pub async fn add_inventory_item_impl(
     pool: &SqlitePool,
     item: &InventoryItem,
-) -> Result<i32, String> {
+) -> Result<i64, String> {
     let codigo = normalizar_codigo_barras(item.codigo_barras.as_deref());
     validar_codigo_barras(&codigo)?;
     let result = sqlx::query("INSERT INTO productos (nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -66,7 +66,7 @@ pub async fn add_inventory_item_impl(
         .await
         .map_err(mensaje_error_codigo)?;
 
-    Ok(result.last_insert_rowid() as i32)
+    Ok(result.last_insert_rowid())
 }
 
 #[tauri::command]
@@ -74,7 +74,7 @@ pub async fn add_inventory_item(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
     item: InventoryItem,
-) -> Result<i32, String> {
+) -> Result<i64, String> {
     auth.require_admin()?;
     add_inventory_item_impl(&*state, &item).await
 }

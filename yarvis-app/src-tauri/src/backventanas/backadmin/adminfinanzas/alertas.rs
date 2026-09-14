@@ -366,6 +366,9 @@ pub fn iniciar_job_alertas(pool: SqlitePool) {
             interval.tick().await;
             let _ = generar_alertas_automaticas_impl(&pool).await;
             let _ = crate::backventanas::backadmin::adminfinanzas::gastos::actualizar_estados_gastos_impl(&pool).await;
+            // Mantenimiento WAL (issue #1, best-effort): compacta el -wal
+            // cada hora para que no crezca sin fin en la PC de la tienda.
+            let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(&pool).await;
         }
     });
 }

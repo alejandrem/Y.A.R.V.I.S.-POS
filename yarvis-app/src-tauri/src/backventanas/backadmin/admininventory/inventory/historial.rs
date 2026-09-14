@@ -45,7 +45,7 @@ pub async fn get_productos_por_catalogo(
 ) -> Result<Vec<InventoryItem>, String> {
     auth.require_admin()?;
     let rows = if catalogo_id > 0 {
-        sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
+        sqlx::query_as::<_, (Option<i64>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
             "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos WHERE catalogo_id = ? ORDER BY creado_en DESC LIMIT 100"
         )
         .bind(catalogo_id)
@@ -53,7 +53,7 @@ pub async fn get_productos_por_catalogo(
         .await
         .map_err(|e| e.to_string())?
     } else {
-        sqlx::query_as::<_, (Option<i32>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
+        sqlx::query_as::<_, (Option<i64>, String, Option<String>, i64, i64, f64, f64, f64, Option<String>, Option<String>)>(
             "SELECT id, nombre, descripcion, precio_costo, precio_venta, stock, stock_minimo, vendido, codigo_barras, categoria FROM productos ORDER BY creado_en DESC LIMIT 100"
         )
         .fetch_all(&*state)

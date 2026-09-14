@@ -24,10 +24,10 @@ export const LicenciaIzq = () => (
         Siempre será libre.
       </p>
       <div className="mt-6 flex gap-2">
-        <span className="font-mono text-[8px] font-black tracking-widest bg-neutral-900 text-white px-2 py-1 rounded">PAG. 17 — 18</span>
+        <span className="font-mono text-[8px] font-black tracking-widest bg-neutral-900 text-white px-2 py-1 rounded">PAG. 15 — 16</span>
       </div>
     </div>
-    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center">— 17 —</p>
+    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center">— 15 —</p>
     <div className="absolute bottom-0 left-0 w-6 h-6 border-t-[2px] border-r-[2px] border-neutral-900/20 rounded-tr-xl" />
   </div>
 );
@@ -67,7 +67,7 @@ export const LicenciaDer = () => (
         </p>
       </div>
     </div>
-    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center mt-2">— 18 —</p>
+    <p className="font-mono text-[11px] font-black tracking-widest text-neutral-400 text-center mt-2">— 16 —</p>
     <div className="absolute bottom-0 right-0 w-6 h-6 border-t-[2px] border-l-[2px] border-neutral-900/20 rounded-tl-xl" />
   </div>
 );

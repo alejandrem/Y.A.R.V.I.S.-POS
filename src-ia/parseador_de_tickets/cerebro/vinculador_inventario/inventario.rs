@@ -67,7 +67,7 @@ pub fn cargar_inventario_cache(conn: &Connection) -> Vec<ProductoInventario> {
 
 pub fn cargar_inventario(db_path: &str) -> Vec<ProductoInventario> {
     let mut productos = Vec::new();
-    let Ok(conn) = Connection::open(db_path) else {
+    let Ok(conn) = crate::sqlite::abrir_db(db_path) else {
         return productos;
     };
 

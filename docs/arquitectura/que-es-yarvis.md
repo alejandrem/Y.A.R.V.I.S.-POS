@@ -25,7 +25,7 @@ Y.A.R.V.I.S. POS es un sistema de punto de venta de escritorio con inteligencia 
 Capacidades:
 
 - Registro de ventas (POS de caja del empleado) y gestion de inventario con CRUD completo.
-- Atencion a clientes con CRM basico (perfil, historial).
+- Proveedores: recepción de mercancía y pagos con factura, sugerencia desde costo, rectificativas inmutables.
 - Cortes de caja X/Z, gastos recurrentes, alertas financieras, metricas y exportacion.
 - Empleados: metas/bonos, turnos, salario, resumen de ventas, asistencia y horas extra.
 - Parseo de tickets y catalogos (TXT/CSV/Excel) con reglas + LLM local para mapeo automatico y lotes con streaming.
@@ -87,9 +87,9 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 
 ### 4.4 front-admin/ — Panel del Administrador
 
-- AdminDashboard.tsx: sidebar + enrutador (ventas, inventario, tickets, finanzas, clientes, empleados, configuracion, yarvis).
+- AdminDashboard.tsx: sidebar + enrutador (ventas, inventario, tickets, finanzas, empleados, configuracion, yarvis). El módulo CLIENTES se retiró (eran placeholders sin backend; la tabla queda legacy).
 - adminconfig/: Configuracion refactorizada en componentes (ConfigHeader, IdentityForm, SecurityForm, AppearanceForm, importmodule/) + hooks (useAdminData, useParserActions).
-- parseador/: parseador.tsx + tickets/ (BatchProgressProvider: el progreso sobrevive al cambio de pestaña; historial con total real) y cortes/. Detección estadística sin IA + inserción cronológica + idempotencia folio/AUTO/SIN-FOLIO.
+- parseador/: parseador.tsx + tickets/ (BatchProgressProvider: el progreso sobrevive al cambio de pestaña; historial con total real) y cortes/ (flujo catálogo → carpeta → historial: clasifica X/Z, verifica matemática exacta, idempotencia por hash, vínculo al catálogo). Ver PARSEADOR.md sección 12.
 - adminfinanzas/: dashboard, alertas, cortes X/Z, gastos, graficas (usa get_predicciones_financieras ya operativo), metricas.
 - admininventario/: inventory/ por tema (catalogo, crud, importar, semantica, historial) + busqueda semantica propia operativa (HashEmbedder).
 - adminempleados/: empleados + modales de edicion, metas y turnos (ya subdividido, 271 lineas).
@@ -98,9 +98,11 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 
 ### 4.5 front-empleado/ — Punto de Venta
 
-- EmployeeDashboard.tsx: nueva venta, inventario, tickets/cortes, clientes, perfil, yarvis, ajustes.
+- EmployeeDashboard.tsx: nueva venta, inventario, tickets/cortes, proveedores, perfil, yarvis, ajustes.
 - nueva_venta.tsx: carrito con busqueda (buscar_producto_similar operativo), modal de venta y vista de ticket.
 - empleaperfil/perfil.tsx: perfil y asistencia (130 lineas tras refactorizacion).
+- empleaproveedores/: recepción de mercancía y pagos (pantalla + modal alta + modal compra/pago + factura). Alta exprés (nombre forzoso), proveedor genérico MOSTRADOR 00001, sugerencia desde costo ("sin recomendación" si no hay), unidad/paquete con piezas × paquetes, rectificativas inmutables (la original jamás se edita ni se borra).
+- empleaticket (empleado): mis tickets/KPIs/gráfica día-vs-sueldo solo del operador (comandos `get_mis_*` por sesión).
 
 ### 4.6 Hooks globales
 
@@ -117,7 +119,7 @@ Inicializa DB, registra 99 comandos en el invoke_handler, plugins (opener, dialo
 
 ### 5.2 db.rs — Inicializacion de SQLite
 
-Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, clientes, ventas_diarias, cortes_caja, predicciones_futuras, catalogos_importados, gastos. WAL activado. Migraciones con foreign_keys off durante migracion y on en operacion.
+Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, ventas_diarias, cortes_caja, predicciones_futuras, catalogos_importados, gastos, proveedores + compras + compras_items (0012-0014), cortes_importados + items (0009-0010). La tabla `clientes` queda legacy sin uso (módulo retirado). WAL activado. Migraciones con foreign_keys off durante migracion y on en operacion.
 
 ### 5.3 Modulos backventanas/
 
@@ -125,12 +127,12 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, client
 |---|---|
 | backadmin/adminconfig | auth (setup + login + datos admin/empleado, cerrar_sesion), google (OAuth) |
 | backadmin/admininventory | CRUD inventario, importar_catalogo, semantica propia operativa (buscar_producto_similar, backfill_embeddings) |
-| backadmin/adminparser | parseo TXT/CSV/Excel, carpetas, vinculacion, modelos |
+| backadmin/adminparser | parseo TXT/CSV/Excel, carpetas, vinculacion, modelos + cortes_import/ (lectura, vinculacion al catálogo, importacion con idempotencia por hash, historial) |
 | backadmin/admintickets | tickets, cortes; get_predictions operativo (Holt-Winters) |
 | backadmin/adminfinanzas | gastos, cortes X/Z, alertas, metricas, graficas (incluye get_predicciones_financieras operativo), export stubs |
 | backadmin/adminempleados | empleados + modales (metas, turnos) |
 | backadmin/admintarvis | chat (send_chat_message/stream, modelos, status, ciclo_tools, cancelacion, herramientas_rol, rutas) |
-| backempleado | venta nueva (completar_venta, get_next_ticket_number), perfil y asistencia |
+| backempleado | venta nueva (completar_venta, get_next_ticket_number), perfil y asistencia, mis tickets (`get_mis_*` por sesión), proveedores (alta, proveedor genérico, sugerencia desde costo, compras todo-o-nada con egreso automático, rectificativas inmutables con reversa de stock) |
 
 ---
 
@@ -176,7 +178,7 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, client
 
 ## 8. Base de Datos
 
-SQLite, un archivo (yarvis.db), modo WAL, acceso asincrono con sqlx. Unico escritor: Rust. Dinero en INTEGER centavos (conversion en dinero.rs). Tablas: usuarios, productos, ventas, detalle_ventas, clientes, ventas_diarias, cortes_caja, predicciones_futuras, catalogos_importados, gastos_recurrentes, etc.
+SQLite, un archivo (yarvis.db), modo WAL, acceso asincrono con sqlx. Unico escritor: Rust. Dinero en INTEGER centavos (conversion en dinero.rs). Tablas: usuarios, productos, ventas, detalle_ventas, ventas_diarias, cortes_caja, predicciones_futuras, catalogos_importados, gastos_recurrentes, proveedores/compras/compras_items, cortes_importados (+items), etc. (`clientes` legacy sin uso).
 
 ---
 

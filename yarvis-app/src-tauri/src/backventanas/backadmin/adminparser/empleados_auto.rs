@@ -50,7 +50,7 @@ pub struct ResultadoEmpleadosAuto {
 /// Resuelve empleados desde los cajeros sin vincular de `ventas`:
 /// crea los que falten y pone `cajero_id` en sus tickets.
 pub fn resolver_empleados_desde_ventas(db_path: &str) -> Result<ResultadoEmpleadosAuto, String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| e.to_string())?;
+    let conn = src_ia::sqlite::abrir_db(db_path).map_err(|e| e.to_string())?;
     resolver_empleados_desde_conn(&conn)
 }
 

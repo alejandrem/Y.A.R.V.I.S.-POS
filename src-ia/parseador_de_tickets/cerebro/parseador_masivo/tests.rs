@@ -40,7 +40,8 @@ fn crear_bd(dir: &Path) -> String {
          CREATE TABLE ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             total INTEGER, subtotal INTEGER, iva INTEGER,
-            cajero TEXT, metodo_pago TEXT, estado TEXT, fecha TEXT
+            cajero TEXT, metodo_pago TEXT, estado TEXT, fecha TEXT,
+            folio_ticket TEXT
          );
          CREATE TABLE detalle_ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

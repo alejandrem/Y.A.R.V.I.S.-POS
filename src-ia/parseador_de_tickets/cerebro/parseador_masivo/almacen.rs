@@ -6,8 +6,14 @@ use crate::cerebro::analizador_tickets::Item;
 use crate::cerebro::vinculador_inventario::normalizar;
 use crate::embeddings::{cosine_similarity, HashEmbedder, Embedder};
 
-/// Asegura la columna `folio_ticket` en `ventas` (las DBs viejas creadas con
-/// `CREATE TABLE IF NOT EXISTS` no se migran solas). Idempotente vía PRAGMA.
+/// Asegura la columna `folio_ticket` en `ventas`. Idempotente vía PRAGMA.
+///
+/// Contexto (issue #6): las DBs de la app SIEMPRE traen la columna por
+/// migraciones (`0001_inicial.sql` + rebuild `0005`), así que en el flujo
+/// normal esto es un PRAGMA de microsegundos que no hace nada. El guardián
+/// existe para DBs ad-hoc fuera de migraciones (schemas manuales de tests
+/// y examples, DBs legacy pre-migraciones): sin él, esos contextos truenan
+/// al insertar folio. Cuesta 1 PRAGMA por importación, no por ticket.
 pub(super) fn garantizar_columna_folio(conn: &Connection) {
     let ok = match conn.prepare("PRAGMA table_info(ventas)") {
         Ok(mut stmt) => stmt
@@ -173,7 +179,7 @@ pub(super) fn cargar_folios_existentes(conn: &Connection) -> HashSet<String> {
 /// `procesador.rs`, con [`a_centavos`] sobre el precio del item.
 pub(super) fn cargar_estado(db_path: &str) -> HashSet<String> {
     let mut vistos = HashSet::new();
-    if let Ok(conn) = Connection::open(db_path) {
+    if let Ok(conn) = crate::sqlite::abrir_db(db_path) {
         if let Ok(mut stmt) = conn.prepare("SELECT nombre, precio_venta FROM productos") {
             if let Ok(rows) = stmt.query_map([], |row| {
                 let nombre: String = row.get(0)?;

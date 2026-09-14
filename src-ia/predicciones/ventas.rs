@@ -42,8 +42,8 @@ pub struct PuntoHistorial {
 
 /// Predice `horizonte` días de ventas a partir del histórico de la DB.
 pub fn predecir_ventas(ruta_db: &Path, horizonte: usize) -> Result<Vec<PuntoConFecha>, String> {
-    let conn =
-        Connection::open(ruta_db).map_err(|e| format!("No se pudo abrir la base de datos: {e}"))?;
+    let conn = crate::sqlite::abrir_db(ruta_db)
+        .map_err(|e| format!("No se pudo abrir la base de datos: {e}"))?;
     predecir_desde_conn(&conn, horizonte)
 }
 
@@ -53,8 +53,8 @@ pub fn historia_y_pronostico(
     ruta_db: &Path,
     horizonte: usize,
 ) -> Result<(Vec<PuntoHistorial>, Vec<PuntoConFecha>), String> {
-    let conn =
-        Connection::open(ruta_db).map_err(|e| format!("No se pudo abrir la base de datos: {e}"))?;
+    let conn = crate::sqlite::abrir_db(ruta_db)
+        .map_err(|e| format!("No se pudo abrir la base de datos: {e}"))?;
     historia_y_pronostico_desde_conn(&conn, horizonte)
 }
 

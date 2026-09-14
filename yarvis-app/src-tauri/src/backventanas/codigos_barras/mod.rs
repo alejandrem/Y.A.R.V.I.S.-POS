@@ -80,7 +80,7 @@ pub fn mensaje_error_codigo(e: impl ToString) -> String {
 }
 
 type FilaProducto = (
-    Option<i32>,
+    Option<i64>,
     String,
     Option<String>,
     i64,

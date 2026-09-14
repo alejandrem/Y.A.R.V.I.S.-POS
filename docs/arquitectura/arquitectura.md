@@ -67,9 +67,8 @@ Y.A.R.V.I.S.-POS/
     │   ├── front-admin/               # Modulos del Administrador.
     │   │   ├── AdminDashboard.tsx     # Sidebar + montaje condicional (providers persistentes arriba del switch).
     │   │   ├── PrimerInicio.tsx       # Asistente de configuracion inicial (admin + tienda + empleado).
-    │   │   ├── types.ts               # Tipos TypeScript compartidos.
-    │   │   └── ventanas/
-    │   │       ├── adminclientes/clientes.tsx
+    │   │       ├── types.ts               # Tipos TypeScript compartidos.
+    │   │       └── ventanas/
     │   │       ├── adminconfig/       #   configuracion.tsx + components/ y hooks/
     │   │       │   ├── components/    #     ConfigHeader, IdentityForm, SecurityForm, AppearanceForm,
     │   │       │   │                  #     importmodule/ (ImportModule, ImportActions, ImportHeader, etc.)
@@ -85,7 +84,7 @@ Y.A.R.V.I.S.-POS/
     │       └── ventanas/
     │           ├── emplea_new_venta/  #   nueva_venta.tsx (+ modalventa, modalticket)
     │           ├── empleaajustes/ajustes.tsx
-    │           ├── empleaclientes/clientes.tsx
+    │           ├── empleaproveedores/ #   proveedores.tsx + componentes/ (modal-alta, modal-compra, modal-factura)
     │           ├── empleainventario/inventario.tsx
     │           ├── empleaperfil/perfil.tsx
     │           ├── empleaticket/ticket.tsx

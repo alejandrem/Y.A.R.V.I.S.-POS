@@ -14,7 +14,6 @@ import { obtenerMiTurno } from "../services/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
 import { ticketsNav } from "./ventanas/empleaticket/ticket";
-import { clientesNav } from "./ventanas/empleaclientes/clientes";
 import { perfilNav } from "./ventanas/empleaperfil/perfil";
 import { yarvisNav } from "./ventanas/empleayarvis/yarvis";
 import { ajustesNav } from "./ventanas/empleaajustes/ajustes";
@@ -27,6 +26,7 @@ import NuevaVenta from "./ventanas/emplea_new_venta/nueva_venta";
 import { CartProvider } from "./ventanas/emplea_new_venta/CartProvider";
 import { ChatProvider } from "../front-admin/ventanas/adminyarvis/ChatProvider";
 import Inventario from "./ventanas/empleainventario/inventario";
+import Proveedores, { proveedoresNav } from "./ventanas/empleaproveedores/proveedores";
 import Tickets from "./ventanas/empleaticket/ticket";
 import Perfil from "./ventanas/empleaperfil/perfil";
 import Ajustes from "./ventanas/empleaajustes/ajustes";
@@ -99,7 +99,7 @@ const EmployeeDashboard = ({
     nuevaVentaNav,
     inventarioNav,
     ticketsNav,
-    clientesNav,
+    proveedoresNav,
     perfilNav,
     yarvisNav,
     ajustesNav,
@@ -122,6 +122,8 @@ const EmployeeDashboard = ({
     switch (activeTab) {
       case "inventario":
         return <Inventario activeTab={activeTab} />;
+      case "proveedores":
+        return <Proveedores activeTab={activeTab} />;
       case "tickets":
         return <Tickets activeTab={activeTab} operatorName={operatorName} />;
       case "perfil":

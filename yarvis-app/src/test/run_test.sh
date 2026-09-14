@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Tests del FRONTEND (React) — src/test/
 #   1 archivo por módulo: finanzas, empleados, ventas, inventario, tickets,
-#   yarvis, configuracion, clientes, parseador + estres-*
+#   yarvis, configuracion, parseador + estres-*
 #   La capa nativa de Tauri está mockeada; ningún test toca el backend real.
 #
 # Uso: ./run_test.sh            → toda la suite
