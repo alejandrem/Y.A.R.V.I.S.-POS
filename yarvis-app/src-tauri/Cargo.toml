@@ -111,6 +111,10 @@ name = "func_proveedores"
 path = "test/funcionamiento/proveedores.rs"
 
 [[test]]
+name = "func_semaforo"
+path = "test/funcionamiento/semaforo.rs"
+
+[[test]]
 name = "estres_ventas"
 path = "test/estres/estres_ventas.rs"
 

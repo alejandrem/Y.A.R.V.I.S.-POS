@@ -21,6 +21,9 @@ use crate::backventanas::auth::AuthState;
 use crate::models::InventoryItem;
 use sqlx::SqlitePool;
 
+pub mod semaforo_rojo;
+pub mod semaforo_verde;
+
 /// Normaliza un codigo opcional tal como viene del formulario/CSV/escaner.
 /// - `None` -> `None`
 /// - `"  "` / `""` -> `None` (nunca guardar cadena vacia)
