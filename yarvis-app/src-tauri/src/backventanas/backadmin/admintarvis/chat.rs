@@ -182,7 +182,7 @@ pub async fn send_chat_message(
     provider: Option<String>,
     api_key: Option<String>,
 ) -> Result<ChatResponse, String> {
-    auth.require_operator()?;
+    let session = auth.require_operator()?;
     let provider = provider.unwrap_or_default();
     let db_path = db_path_de(&state);
     // Modo cloud: lo responde Rust directamente (port de generar_completo).
@@ -190,7 +190,7 @@ pub async fn send_chat_message(
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
         let es_empleado = auth.es_empleado();
-        let chat = construir_historial(&messages, es_empleado);
+        let chat = construir_historial(&messages, es_empleado, &db_path);
         match generar_completo(&provider, &api_key, &model, chat.clone()).await {
             Ok((respuesta, modelo_real)) => {
                 let usado = if modelo_real.is_empty() {
@@ -204,8 +204,15 @@ pub async fn send_chat_message(
                     let m = model.clone();
                     Box::pin(async move { generar_completo(&p, &k, &m, hist).await.map(|(r, _)| r) })
                 });
-                let final_resp =
-                    resolver_ciclo_tools(respuesta, chat, db_path, es_empleado, &mut generador).await?;
+                let final_resp = resolver_ciclo_tools(
+                    respuesta,
+                    chat,
+                    db_path,
+                    es_empleado,
+                    session.user_id,
+                    &mut generador,
+                )
+                .await?;
                 return Ok(ChatResponse {
                     response: final_resp,
                     model_used: usado,
@@ -216,7 +223,7 @@ pub async fn send_chat_message(
                 if sin_fallback_local() {
                     return Err(e);
                 }
-                return _chat_local(messages, db_path, auth.es_empleado()).await;
+                return _chat_local(messages, db_path, auth.es_empleado(), session.user_id).await;
             }
         }
     }
@@ -225,7 +232,7 @@ pub async fn send_chat_message(
     tracing::info!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
-    _chat_local(messages, db_path, auth.es_empleado()).await
+    _chat_local(messages, db_path, auth.es_empleado(), session.user_id).await
 }
 
 /// Chat con streaming — modo cloud lo emite Rust (port de generar_stream),
@@ -241,19 +248,18 @@ pub async fn send_chat_stream(
     provider: Option<String>,
     api_key: Option<String>,
 ) -> Result<String, String> {
-    auth.require_operator()?;
+    let session = auth.require_operator()?;
     reset_stream_cancelado(); // nueva generación: cancelación limpia
     let provider = provider.unwrap_or_default();
     let db_path = db_path_de(&state);
-
     // ---- Modo cloud: streaming en Rust. ----
     // Si el proveedor falla, se avisa al frontend con `chat-fallback`
     // y se responde con el modelo local (antes era silencioso).
     if !provider.is_empty() {
         let api_key = api_key.unwrap_or_default();
         let es_empleado = auth.es_empleado();
-        let chat = construir_historial(&messages, es_empleado);
-        match _stream_cloud(&app, &provider, &api_key, &model, chat, &db_path, es_empleado, 0).await {
+        let chat = construir_historial(&messages, es_empleado, &db_path);
+        match _stream_cloud(&app, &provider, &api_key, &model, chat, &db_path, es_empleado, session.user_id, 0).await {
             Ok(respuesta) => return Ok(respuesta),
             Err(e) => {
                 tracing::warn!("[YARVIS-CHAT] Error proveedor ({provider}), fallback local: {e}");
@@ -268,7 +274,7 @@ pub async fn send_chat_stream(
                         "model": model,
                     }),
                 );
-                return _stream_local(&app, messages, db_path, es_empleado).await;
+                return _stream_local(&app, messages, db_path, es_empleado, session.user_id).await;
             }
         }
     }
@@ -277,5 +283,5 @@ pub async fn send_chat_stream(
     tracing::info!(
         "[YARVIS-CHAT] Modo local (model pedido: {model}, role: {role}) → usando {MODELO_CHAT}."
     );
-    _stream_local(&app, messages, db_path, auth.es_empleado()).await
+    _stream_local(&app, messages, db_path, auth.es_empleado(), session.user_id).await
 }

@@ -20,6 +20,7 @@ pub(super) async fn resolver_ciclo_tools(
     mut historial: Vec<Mensaje>,
     db_path: String,
     es_empleado: bool,
+    usuario_id: i64,
     generar: &mut Generador<'_>,
 ) -> Result<String, String> {
     for _ in 0..tools::MAX_RONDAS_TOOLS {
@@ -27,7 +28,8 @@ pub(super) async fn resolver_ciclo_tools(
             return Ok(respuesta);
         };
         tracing::info!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
-        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
+        let json_res =
+            ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado, usuario_id).await;
         historial.push(Mensaje::new("assistant", respuesta));
         historial.push(Mensaje::new("tool", json_res));
         respuesta = (&mut *generar)(historial.clone()).await?;

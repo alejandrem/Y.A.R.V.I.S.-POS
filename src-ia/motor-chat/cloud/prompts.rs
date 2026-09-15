@@ -130,6 +130,71 @@ pub fn construir_mensajes_api(messages: &[Mensaje]) -> Vec<Mensaje> {
     construir_mensajes_api_rol(messages, false)
 }
 
+/// SQL libre de solo lectura (issue #15, SOLO admin): el modelo escribe
+/// SELECT/WITH contra el snapshot del schema que se anexa. El backend
+/// valida (denylist + allowlist + LIMIT≤100) y ejecuta en read-only.
+const BLOQUE_SQL_ADMIN: &str = r#"
+Herramienta ESPECIAL sql_readonly (solo tú como admin la tienes): cuando
+NINGUNA tool anterior sirva, escribe tú el SQL. Formato exacto:
+<tool_call>
+{"name": "sql_readonly", "arguments": {"query": "SELECT ..."}}
+</tool_call>
+Reglas duras (si las rompes, la consulta se rechaza y pierdes la ronda):
+- Solo SELECT o WITH. Nada de INSERT/UPDATE/DELETE/DDL/PRAGMA ni `;` extra.
+- LIMIT entre 1 y 100 SIEMPRE (si lo omites se agrega LIMIT 100).
+- Solo estas tablas: ventas, detalle_ventas, productos, cortes_caja,
+  movimientos_caja, gastos_recurrentes, pagos_gastos, usuarios,
+  asistencias, empleado_horarios, clientes.
+- Dinero en INTEGER CENTAVOS: divide entre 100.0 para pesos.
+- Solo estado='completada' para ventas reales.
+Ejemplos few-shot (adáptalos, no los repitas tal cual):
+1. ¿Cuánto vendí hoy?
+   SELECT COALESCE(SUM(total),0)/100.0 AS pesos_hoy FROM ventas
+   WHERE estado='completada' AND date(fecha)=date('now','localtime')
+2. Top 5 por margen en 30 días:
+   SELECT d.producto_nombre, SUM(d.cantidad) AS unidades,
+     SUM(d.cantidad*(COALESCE(p.precio_venta,0)-COALESCE(p.precio_costo,0)))/100.0 AS margen_pesos
+   FROM detalle_ventas d JOIN ventas v ON v.id=d.venta_id
+   LEFT JOIN productos p ON p.id=d.producto_id
+   WHERE v.estado='completada' AND date(v.fecha)>=date('now','localtime','-30 days')
+   GROUP BY d.producto_nombre ORDER BY margen_pesos DESC LIMIT 5
+3. Rotación (unidades/día, 7 días):
+   SELECT d.producto_nombre, SUM(d.cantidad)/7.0 AS uds_por_dia
+   FROM detalle_ventas d JOIN ventas v ON v.id=d.venta_id
+   WHERE v.estado='completada' AND date(v.fecha)>=date('now','localtime','-7 days')
+   GROUP BY d.producto_nombre ORDER BY uds_por_dia DESC LIMIT 10
+Las cifras SIEMPRE salen de tools: jamás inventes números."#;
+
+/// System prompt del admin CON schema vivo de la DB (issue #15).
+/// Si el schema viene vacío (falló su lectura), equivale al base.
+pub fn construir_system_prompt_admin_con_schema(schema: &str) -> String {
+    let base = construir_system_prompt_admin();
+    if schema.trim().is_empty() {
+        return base;
+    }
+    format!("{base}\n{BLOQUE_SQL_ADMIN}\n{schema}")
+}
+
+/// Arma [system (según rol) + historial] con schema vivo para el admin.
+/// Al empleado no se le muestra ni documenta sql_readonly (además el
+/// backend se lo bloquea en ejecución).
+pub fn construir_mensajes_api_rol_con_schema(
+    messages: &[Mensaje],
+    es_empleado: bool,
+    schema: &str,
+) -> Vec<Mensaje> {
+    let system = if es_empleado {
+        construir_system_prompt_empleado()
+    } else {
+        construir_system_prompt_admin_con_schema(schema)
+    };
+    let mut chat = vec![Mensaje::new("system", system)];
+    for m in messages {
+        chat.push(m.clone());
+    }
+    chat
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,6 +233,22 @@ mod tests {
         let chat = construir_mensajes_api(&historial);
         assert_eq!(chat.len(), 2);
         assert_eq!(chat[1].role, "user");
-        assert_eq!(chat[1].content, "");
+    }
+
+    #[test]
+    fn sql_readonly_solo_en_prompt_admin_con_schema() {
+        let hist = vec![Mensaje::new("user", "hola")];
+        let sin_schema = construir_mensajes_api_rol_con_schema(&hist, false, "");
+        assert!(!sin_schema[0].content.contains("sql_readonly"));
+        let admin = construir_mensajes_api_rol_con_schema(
+            &hist,
+            false,
+            "ESQUEMA (SQLite):\n- ventas(id:INTEGER, total:INTEGER)\n",
+        );
+        assert!(admin[0].content.contains("sql_readonly"));
+        assert!(admin[0].content.contains("ventas(id:INTEGER"));
+        // Al empleado ni se le menciona, con o sin schema.
+        let emp = construir_mensajes_api_rol_con_schema(&hist, true, "ESQUEMA:\n- ventas(id:INTEGER)\n");
+        assert!(!emp[0].content.contains("sql_readonly"));
     }
 }

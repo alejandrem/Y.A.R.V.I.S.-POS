@@ -9,7 +9,7 @@ use futures_util::StreamExt;
 use src_ia::motor_chat::cloud::apis_cloud::{
     generar_completo, generar_stream, Evento,
 };
-use src_ia::motor_chat::cloud::prompts::{construir_mensajes_api_rol, Mensaje};
+use src_ia::motor_chat::cloud::prompts::{construir_mensajes_api_rol_con_schema, Mensaje};
 use src_ia::motor_chat::cloud::think::{SeparadorThink, TipoFragmento};
 use src_ia::motor_chat::llm::{chat_1_7, nombre_modelo_local, tools};
 
@@ -60,6 +60,7 @@ pub(super) async fn _stream_cloud(
     chat: Vec<Mensaje>,
     db_path: &str,
     es_empleado: bool,
+    usuario_id: i64,
     ronda: usize,
 ) -> Result<String, String> {
     let stream = generar_stream(provider, api_key, model, chat.clone());
@@ -158,8 +159,15 @@ pub(super) async fn _stream_cloud(
                 Box::pin(async move { generar_completo(&p, &k, &m, hist).await.map(|(r, _)| r) })
             }
         });
-        let final_resp =
-            resolver_ciclo_tools(full_response, chat, db_path.to_string(), es_empleado, &mut generador).await?;
+        let final_resp = resolver_ciclo_tools(
+            full_response,
+            chat,
+            db_path.to_string(),
+            es_empleado,
+            usuario_id,
+            &mut generador,
+        )
+        .await?;
         return _emitir_como_stream(app, &final_resp, &model_used);
     }
 
@@ -208,6 +216,7 @@ pub(super) async fn _chat_local(
     messages: Vec<serde_json::Value>,
     db_path: String,
     es_empleado: bool,
+    usuario_id: i64,
 ) -> Result<ChatResponse, String> {
     let mut historial = mensajes_serde_a_rust(&messages);
     let mut respuesta = tokio::task::spawn_blocking({
@@ -220,7 +229,7 @@ pub(super) async fn _chat_local(
     for _ in 0..tools::MAX_RONDAS_TOOLS {
         let Some((nombre, args)) = tools::detectar_tool_call(&respuesta) else { break };
         tracing::info!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
-        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
+        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado, usuario_id).await;
         historial.push(Mensaje::new("assistant", respuesta));
         historial.push(Mensaje::new("tool", json_res));
         respuesta = tokio::task::spawn_blocking({
@@ -247,6 +256,7 @@ pub(super) async fn _stream_local(
     messages: Vec<serde_json::Value>,
     db_path: String,
     es_empleado: bool,
+    usuario_id: i64,
 ) -> Result<String, String> {
     let mut historial = mensajes_serde_a_rust(&messages);
 
@@ -261,7 +271,7 @@ pub(super) async fn _stream_local(
     for _ in 0..tools::MAX_RONDAS_TOOLS {
         let Some((nombre, args)) = tools::detectar_tool_call(&cleaned) else { break };
         tracing::info!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
-        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado).await;
+        let json_res = ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado, usuario_id).await;
         historial.push(Mensaje::new("assistant", cleaned));
         historial.push(Mensaje::new("tool", json_res));
         cleaned = tokio::task::spawn_blocking({
@@ -320,9 +330,17 @@ pub(super) async fn _stream_local(
 }
 
 /// Prepara los mensajes API según rol (helper compartido por los comandos).
+/// Con schema vivo para el admin (issue #15); si falla su lectura, el
+/// prompt equivale al base (graceful).
 pub(super) fn construir_historial(
     messages: &[serde_json::Value],
     es_empleado: bool,
+    db_path: &str,
 ) -> Vec<Mensaje> {
-    construir_mensajes_api_rol(&mensajes_serde_a_rust(messages), es_empleado)
+    let schema = if es_empleado {
+        String::new()
+    } else {
+        src_ia::motor_chat::llm::tools::snapshot_schema(db_path).unwrap_or_default()
+    };
+    construir_mensajes_api_rol_con_schema(&mensajes_serde_a_rust(messages), es_empleado, &schema)
 }

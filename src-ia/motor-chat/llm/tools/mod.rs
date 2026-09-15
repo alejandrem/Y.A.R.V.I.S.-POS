@@ -12,10 +12,11 @@
 //!
 //! Organización interna:
 //! - [`deteccion`]  → parseo del protocolo textual `<tool_call>`.
-//! - [`helpers`]    → utilidades puras compartidas (fechas, escape, moneda).
-//! - [`ventas`]     → tools que leen ventas/detalle_ventas.
-//! - [`inventario`] → tools que leen productos.
-//! - [`tests`]      → suite con DB en memoria.
+/// - [`helpers`]    → utilidades puras compartidas (fechas, escape, moneda).
+/// - [`ventas`]     → tools que leen ventas/detalle_ventas.
+/// - [`inventario`] → tools que leen productos.
+/// - [`sql`]        → SQL libre de solo lectura + snapshot del schema (#15).
+/// - [`tests`]      → suite con DB en memoria.
 
 use rusqlite::Connection;
 use serde_json::Value;
@@ -23,6 +24,7 @@ use serde_json::Value;
 mod deteccion;
 mod helpers;
 mod inventario;
+mod sql;
 mod ventas;
 #[cfg(test)]
 mod tests;
@@ -35,7 +37,11 @@ use inventario::{
     get_product_info, get_products_by_category, get_restock_analysis, list_categories,
     query_inventory, search_products,
 };
+use sql::sql_readonly;
 use ventas::{compare_periods, forecast_sales, get_top_products, query_sales};
+
+/// Snapshot del schema para el prompt del admin (issue #15).
+pub use sql::snapshot_schema;
 
 /// Máximo de rondas tool_call→resultado que el backend permite por pregunta.
 pub const MAX_RONDAS_TOOLS: usize = 3;
@@ -67,6 +73,8 @@ pub fn ejecutar_tool(nombre: &str, args_json: &str, db_path: &str) -> Result<Str
         "search_products" => search_products(&conn, &args),
         "list_categories" => list_categories(&conn, &args),
         "get_products_by_category" => get_products_by_category(&conn, &args),
+        // SQL libre de solo lectura (issue #15; el rol se filtra en el backend)
+        "sql_readonly" => sql_readonly(&conn, &args),
         otro => Ok(serde_json::json!({ "error": format!("herramienta desconocida: {otro}") })),
     };
     resultado.map(|v| v.to_string())

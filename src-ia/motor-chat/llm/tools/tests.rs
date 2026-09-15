@@ -6,8 +6,9 @@ use super::deteccion::{detectar_tool_call, quitar_tool_calls};
 use super::inventario::{
     get_product_info, get_products_by_category, list_categories, query_inventory, search_products,
 };
-use super::ventas::{compare_periods, get_top_products, query_sales};
+use super::ventas::{compare_periods, forecast_sales, get_top_products, query_sales};
 use super::ejecutar_tool;
+use super::sql::sql_readonly;
 
 fn db_prueba() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
@@ -187,4 +188,93 @@ fn products_by_category_filtra_case_insensitive_y_ordena_por_vendido() {
     let lista2 = v2["productos"].as_array().unwrap();
     assert_eq!(lista2.len(), 2);
     assert_eq!(lista2[0]["nombre"], "Coca-Cola"); // vendido 40 > 15
+}
+
+// ── sql_readonly (issue #15): validador + ejecución ──
+
+#[test]
+fn sql_acepta_select_y_devuelve_columnas_y_filas() {
+    let conn = db_prueba();
+    let v = sql_readonly(
+        &conn,
+        &serde_json::json!({"query": "SELECT nombre, stock FROM productos WHERE stock < 5"}),
+    )
+    .unwrap();
+    assert_eq!(v["columnas"], serde_json::json!(["nombre", "stock"]));
+    let filas = v["filas"].as_array().unwrap();
+    assert_eq!(filas.len(), 1);
+    assert_eq!(filas[0]["nombre"], "Coca-Cola");
+}
+
+#[test]
+fn sql_agrega_limit_si_falta_y_rechaza_escritura() {
+    let conn = db_prueba();
+    // Sin LIMIT explícito debe funcionar igual (se agrega LIMIT 100).
+    let v = sql_readonly(&conn, &serde_json::json!({"query": "SELECT id FROM ventas"})).unwrap();
+    assert_eq!(v["filas"].as_array().unwrap().len(), 3);
+    // Escritura, DDL, PRAGMA y multi-sentencia se rechazan.
+    for mala in [
+        "DELETE FROM ventas",
+        "UPDATE productos SET stock = 0",
+        "INSERT INTO ventas (total) VALUES (1)",
+        "DROP TABLE ventas",
+        "PRAGMA table_info(ventas)",
+        "SELECT 1; DELETE FROM ventas",
+        "SELECT * FROM ventas -- truco",
+        "SELECT * FROM sqlite_master",
+        "SELECT * FROM ventas LIMIT 5000",
+        "SELECT * FROM ventas LIMIT -1",
+        "SELECT * FROM tabla_fantasma",
+    ] {
+        let r = sql_readonly(&conn, &serde_json::json!({"query": mala})).unwrap();
+        assert!(r.get("error").is_some(), "debió rechazar: {mala}");
+    }
+}
+
+#[test]
+fn forecast_sales_usa_holt_winters_con_bandas() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE ventas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATETIME, total INTEGER, estado TEXT);
+         CREATE TABLE detalle_ventas (id INTEGER PRIMARY KEY AUTOINCREMENT, venta_id INTEGER, producto_nombre TEXT, cantidad REAL, subtotal INTEGER);",
+    )
+    .unwrap();
+    // 60 días de $100 diarios (suficiente historia para Holt-Winters).
+    for i in 0..60 {
+        conn.execute(
+            "INSERT INTO ventas (fecha, total, estado) VALUES (date('now', ?1), 10000, 'completada')",
+            rusqlite::params![format!("-{} days", 59 - i)],
+        )
+        .unwrap();
+    }
+    let v = forecast_sales(&conn, &serde_json::json!({"period": "next_week"})).unwrap();
+    assert_eq!(v["motor"], "holt-winters");
+    assert_eq!(v["unidad"], "MXN");
+    assert_eq!(v["horizonte_dias"], 7);
+    let puntos = v["puntos"].as_array().unwrap();
+    assert_eq!(puntos.len(), 7);
+    assert!(puntos[0].get("minimo").is_some());
+    assert!(puntos[0].get("maximo").is_some());
+    assert!(v["total_estimado"].as_f64().unwrap() > 0.0);
+}
+
+#[test]
+fn forecast_sales_sin_historia_da_error_legible() {
+    let conn = db_prueba(); // solo 1 día con ventas: insuficiente
+    let r = forecast_sales(&conn, &serde_json::json!({"period": "tomorrow"}));
+    assert!(r.is_err());
+    assert!(r.unwrap_err().contains("sin pronóstico"));
+}
+
+#[test]
+fn sql_rechaza_tablas_fuera_de_allowlist() {
+    let conn = db_prueba();
+    // WITH válido sobre tabla permitida sí pasa.
+    let v = sql_readonly(
+        &conn,
+        &serde_json::json!({"query": "WITH t AS (SELECT total FROM ventas) SELECT SUM(total) AS s FROM t"}),
+    )
+    .unwrap();
+    assert!(v.get("error").is_none());
+    assert!(v["filas"][0]["s"].as_i64().unwrap() >= 30000);
 }

@@ -1,10 +1,12 @@
 //! ventas — Tools que leen ventas y detalle_ventas (shapes idénticos al
-//! dataset del fine-tuning).
+//! dataset del fine-tuning, extendidos con bandas Holt-Winters).
 
+use chrono::{Duration, Local};
 use rusqlite::Connection;
 use serde_json::Value;
 
 use super::helpers::{centavos_a_pesos, escape_like, rango_de, round2, str_arg, MONEDA};
+use crate::predicciones::{holt_winters::predecir, ventas::predecir_desde_conn};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Las herramientas de ventas (shapes idénticos al dataset)
@@ -136,38 +138,88 @@ pub(crate) fn get_top_products(conn: &Connection, args: &Value) -> Result<Value,
     Ok(serde_json::json!({ "productos": productos, "orden": order, "rango": rango.etiqueta }))
 }
 
+/// Pronóstico Holt-Winters real (issue #15): el modelo NUNCA inventa
+/// números, esta tool es la única vía para "cuánto venderé".
+/// Sin producto → revenue global en MXN con bandas por día.
+/// Con producto → unidades de ese producto con bandas por día.
+/// `cantidad_sugerida` se conserva (unidades, redondeo del total) por
+/// compatibilidad con el shape aprendido.
 pub(crate) fn forecast_sales(conn: &Connection, args: &Value) -> Result<Value, String> {
     let periodo = str_arg(args, "period", "next_week");
     let producto = str_arg(args, "product_id", "");
-    let dias_horizonte = if periodo == "tomorrow" { 1 } else { 7 };
+    let horizonte: usize = if periodo == "tomorrow" { 1 } else { 7 };
 
-    // Pronóstico simple: promedio de unidades vendidas en los últimos 7 días.
-    let base: f64 = if producto.is_empty() {
-        conn.query_row(
-            "SELECT COALESCE(SUM(d.cantidad), 0) / 7.0
-             FROM detalle_ventas d JOIN ventas v ON v.id = d.venta_id
-             WHERE v.estado = 'completada' AND date(v.fecha) >= date('now','localtime','-7 day')",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0.0)
-    } else {
-        conn.query_row(
-            "SELECT COALESCE(SUM(d.cantidad), 0) / 7.0
-             FROM detalle_ventas d JOIN ventas v ON v.id = d.venta_id
-             WHERE v.estado = 'completada' AND d.producto_nombre LIKE ?1
-               AND date(v.fecha) >= date('now','localtime','-7 day')",
-            rusqlite::params![format!("%{producto}%")],
-            |r| r.get(0),
-        )
-        .unwrap_or(0.0)
-    };
+    if producto.is_empty() {
+        let puntos =
+            predecir_desde_conn(conn, horizonte).map_err(|e| format!("sin pronóstico: {e}"))?;
+        let total: f64 = round2(puntos.iter().map(|p| p.prediccion).sum());
+        return Ok(serde_json::json!({
+            "producto": producto,
+            "periodo": periodo,
+            "horizonte_dias": horizonte,
+            "unidad": "MXN",
+            "motor": "holt-winters",
+            "total_estimado": total,
+            "moneda": MONEDA,
+            "puntos": puntos,
+        }));
+    }
 
-    let sugerida = (base * dias_horizonte as f64).ceil();
+    // Serie diaria de UNIDADES del producto (últimos 120 días, densa).
+    let hoy = Local::now().date_naive();
+    let desde = hoy - Duration::days(120);
+    let mut stmt = conn
+        .prepare(
+            "SELECT date(v.fecha) AS dia, COALESCE(SUM(d.cantidad), 0) AS u
+             FROM detalle_ventas d JOIN ventas v ON v.id = d.venta_id
+             WHERE v.estado = 'completada'
+               AND d.producto_nombre LIKE '%' || ?1 || '%' ESCAPE '\\'
+               AND date(v.fecha) >= ?2
+             GROUP BY dia ORDER BY dia ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let mapa: std::collections::HashMap<String, f64> = stmt
+        .query_map(
+            rusqlite::params![escape_like(&producto), desde.format("%Y-%m-%d").to_string()],
+            |r| {
+                let dia: String = r.get(0)?;
+                let u: f64 = r.get(1)?;
+                Ok((dia, u))
+            },
+        )
+        .map_err(|e| e.to_string())?
+        .filter_map(|f| f.ok())
+        .collect();
+    let mut serie = Vec::with_capacity(121);
+    let mut dia = desde;
+    while dia <= hoy {
+        serie.push(*mapa.get(&dia.format("%Y-%m-%d").to_string()).unwrap_or(&0.0));
+        dia = dia + Duration::days(1);
+    }
+    let puntos = predecir(&serie, 7, horizonte)
+        .map_err(|e| format!("sin pronóstico para '{producto}': {e:?}"))?;
+    let total: f64 = round2(puntos.iter().map(|p| p.prediccion).sum());
+    let puntos_fecha: Vec<Value> = puntos
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            let f = hoy + Duration::days(k as i64 + 1);
+            serde_json::json!({
+                "fecha": f.format("%Y-%m-%d").to_string(),
+                "prediccion": round2(p.prediccion),
+                "minimo": round2(p.minimo),
+                "maximo": round2(p.maximo),
+            })
+        })
+        .collect();
     Ok(serde_json::json!({
         "producto": producto,
-        "cantidad_sugerida": sugerida as i64,
-        "confianza": "media",
         "periodo": periodo,
+        "horizonte_dias": horizonte,
+        "unidad": "unidades",
+        "motor": "holt-winters",
+        "total_estimado": total,
+        "cantidad_sugerida": total.round() as i64,
+        "puntos": puntos_fecha,
     }))
 }
