@@ -80,6 +80,9 @@ pub(super) async fn _stream_cloud(
     // El stream puede relevar a otro modelo por 429: se adopta el primero
     // que realmente ceda tokens/uso.
     let mut modelo_confirmado = false;
+    // Si el modelo solo razona (think) sin texto final, la burbuja quedaría
+    // fantasma: se detecta aquí para responder con un reintento amable.
+    let mut think_visto = false;
 
     while let Some(item) = stream.next().await {
         if stream_cancelado() {
@@ -106,6 +109,7 @@ pub(super) async fn _stream_cloud(
                             );
                         }
                     } else {
+                        think_visto = true;
                         let _ = app.emit(
                             "chat-think",
                             serde_json::json!({
@@ -152,6 +156,18 @@ pub(super) async fn _stream_cloud(
     }
     let _ = supresor.finalizar();
 
+    // Burbuja fantasma: el modelo cerró el stream sin texto final (solo
+    // razonó o mandó usage). Antes se emitía `chat-complete` vacío y la UI
+    // mostraba solo el badge del modelo. Ahora se avisa y se puede reintentar.
+    if full_response.trim().is_empty()
+        && tools::detectar_tool_call(&full_response).is_none()
+    {
+        tracing::warn!(
+            "[YARVIS-CHAT] {model_used} cerró sin texto (think_visto={think_visto}): respuesta vacía, se emite reintento amable"
+        );
+        return _emitir_como_stream(app, RESPUESTA_VACIA_CLOUD, &model_used);
+    }
+
     // ¿El stream pidió herramientas? Ejecutarlas y re-generar en silencio;
     // la respuesta final (sin tool_calls) se emite troceada al usuario.
     if !stream_cancelado()
@@ -193,12 +209,24 @@ pub(super) async fn _stream_cloud(
     Ok(full_response)
 }
 
-/// Emite un texto final troceado (~40 chars) como si fuera streaming local.
+/// Mensaje cuando el cloud cierra sin texto final (burbuja fantasma):
+/// se emite como respuesta para que la UI muestre algo reintentable.
+const RESPUESTA_VACIA_CLOUD: &str =
+    "El modelo no devolvió texto esta vez (solo razonó en silencio). Reintenta tu pregunta o prueba con otro modelo.";
+
 fn _emitir_como_stream(
     app: &tauri::AppHandle,
     texto: &str,
     modelo: &str,
 ) -> Result<String, String> {
+    // Nunca emitir burbujas vacías: si el ciclo de tools terminó sin texto
+    // (p. ej. rondas agotadas con solo tool_calls), va el aviso amable.
+    let texto = if texto.trim().is_empty() {
+        tracing::warn!("[YARVIS-CHAT] ciclo cloud terminó sin texto final ({modelo})");
+        RESPUESTA_VACIA_CLOUD
+    } else {
+        texto
+    };
     let mut seg = String::new();
     for c in texto.chars() {
         if stream_cancelado() {

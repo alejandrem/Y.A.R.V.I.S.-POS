@@ -213,6 +213,14 @@ pub async fn send_chat_message(
                     &mut generador,
                 )
                 .await?;
+                // Sin burbujas vacías también aquí (raro, pero pasa si el
+                // modelo solo razonó): mismo aviso que en streaming.
+                let final_resp = if final_resp.trim().is_empty() {
+                    tracing::warn!("[YARVIS-CHAT] cloud sin streaming devolvió vacío ({usado})");
+                    "El modelo no devolvió texto esta vez (solo razonó en silencio). Reintenta tu pregunta o prueba con otro modelo.".to_string()
+                } else {
+                    final_resp
+                };
                 return Ok(ChatResponse {
                     response: final_resp,
                     model_used: usado,

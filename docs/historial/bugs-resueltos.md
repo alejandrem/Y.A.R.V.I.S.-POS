@@ -664,3 +664,20 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 **Verificación real:** `tsc --noEmit` limpio, vitest frontend 147/147.
 
 **Leccion aprendida:** un snapshot persistido nunca debe ser la fuente de un secreto rotativo: provider/modelo/label se congelan, la key se resuelve en vivo en el momento del envío.
+
+---
+
+### Bug Z4: burbuja fantasma (badge del modelo sin texto) cuando el cloud solo razona — ALTO (RESUELTO 2026-09-15)
+
+**Sintoma:** al preguntar *"qué tools tienes"*, el chat mostraba el badge `NEMOTRON-3-ULTRA-FREE` sin ningún mensaje. Reintentos (`bro?`) igual: badge, cero texto.
+
+**Causa raiz:** el modelo cerró el stream con bloques `think`/reasoning pero sin texto final (o con un `think` sin cerrar, que `SeparadorThink::finalizar` marca como `Think`). `_stream_cloud` acumulaba solo fragmentos `Token` en `full_response` y emitía `chat-complete` con `response: ""` igualmente; la UI lo guardaba como burbuja vacía. Agravante conocido: respuestas en inglés con *"I think..."* confunden al separador textual (el marcador de apertura es `\s+think\b`), así que el texto real se traga como razonamiento.
+
+**Solucion (nunca más burbujas vacías, 3 capas):**
+1. `rutas.rs::_stream_cloud`: si el stream cierra sin texto y sin `tool_call`, `tracing::warn!` con `think_visto` para diagnóstico y se emite `RESPUESTA_VACIA_CLOUD` (aviso reintentable) en vez de `""`.
+2. `rutas.rs::_emitir_como_stream`: mismo guard para finales del ciclo de tools (rondas agotadas con solo `tool_calls`).
+3. `chat.rs` (path sin streaming) + `generacion.rs::generar_completo` (warn si sale vacío): mismo aviso.
+
+**Verificación real:** `cargo test -p src-ia --lib motor_chat` 57/57; `cargo check` Tauri limpio.
+
+**Leccion aprendida:** un protocolo textual de marcadores (`think`/`response`) siempre tiene falsos positivos con prosa natural; la red de seguridad no es un parser más listo, es prohibir la salida vacía en la capa de emisión.

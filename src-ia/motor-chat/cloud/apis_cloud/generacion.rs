@@ -189,5 +189,9 @@ pub async fn generar_completo(
             salida.push_str(&frag);
         }
     }
-    Ok((limpiar_think(&salida), modelo_final))
+    let salida = limpiar_think(&salida);
+    if salida.trim().is_empty() {
+        tracing::warn!("[YARVIS] {provider}/{model} devolvió respuesta vacía (posible solo-think)");
+    }
+    Ok((salida, modelo_final))
 }
