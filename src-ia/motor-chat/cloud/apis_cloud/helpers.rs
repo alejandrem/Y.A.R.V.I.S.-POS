@@ -54,22 +54,36 @@ pub(crate) fn cola_modelos_a_probar(provider: &str, model: &str) -> Vec<String> 
 
 /// Junta mensajes consecutivos con el mismo rol (evita rechazos de APIs).
 ///
-/// Espejo de `_normalizar_mensajes` (sin las ramas de tool_calls, ya que el
-/// motor cloud ya no usa function calling).
+/// Zen (`/chat/completions` OpenAI-compatible) rechaza `role:"tool"` sin
+/// `tool_calls` previos con `400 Upstream request failed` (verificado
+/// 2026-09-15: el mismo historial con `tool` falla, como `user` responde
+/// bien). Como YARVIS usa tools textuales `<tool_call>` (sin function
+/// calling nativo), el resultado se reinyecta como `user` con prefijo
+/// `Resultado de ...:` para que el modelo lo entienda en la ronda 2.
+/// El modelo local (llama.cpp) sigue recibiendo `role:"tool"` sin pasar
+/// por aquí.
 pub(crate) fn normalizar_mensajes(messages: &[Mensaje]) -> Vec<Mensaje> {
     let mut normalized: Vec<Mensaje> = Vec::new();
     for m in messages {
-        let role = if m.role.is_empty() { "user" } else { &m.role };
+        let mut role = if m.role.is_empty() { "user" } else { m.role.as_str() };
+        let mut content = m.content.clone();
+        // El gateway Zen no acepta "tool" suelto: va como "user".
+        if role == "tool" {
+            role = "user";
+            if !content.starts_with("Resultado de") {
+                content = format!("Resultado de herramienta:\n{content}");
+            }
+        }
         if let Some(last) = normalized.last_mut() {
             if last.role == role {
                 last.content.push('\n');
-                last.content.push_str(&m.content);
+                last.content.push_str(&content);
                 continue;
             }
         }
         normalized.push(Mensaje {
             role: role.to_string(),
-            content: m.content.clone(),
+            content,
         });
     }
     normalized
@@ -132,5 +146,18 @@ mod tests {
         let norm = normalizar_mensajes(&msgs);
         assert_eq!(norm.len(), 3);
         assert_eq!(norm[0].content, "hola\nmundo");
+    }
+
+    #[test]
+    fn normalizar_convierte_tool_a_user_para_zen() {
+        let msgs = vec![
+            Mensaje::new("user", "cuanto vendi hoy?"),
+            Mensaje::new("assistant", "<tool_call>{\"name\":\"query_sales\"}</tool_call>"),
+            Mensaje::new("tool", "{\"ventas_totales\":300.0}"),
+        ];
+        let norm = normalizar_mensajes(&msgs);
+        assert!(norm.iter().all(|m| m.role != "tool"), "nada de role tool a Zen");
+        assert_eq!(norm[2].role, "user");
+        assert!(norm[2].content.starts_with("Resultado de"));
     }
 }

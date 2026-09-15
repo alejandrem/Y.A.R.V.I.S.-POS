@@ -48,7 +48,7 @@ No hay HTTP local. No hay puertos libres. No hay ai_service. No hay externalBin 
 1. El usuario escribe en adminyarvis o empleayarvis.
 2. ChatWidget llama send_chat_stream o send_chat_message (Tauri command).
 3. admintarvis/chat.rs delega en src-ia/motor-chat:
-   - Cloud: cloud/apis_cloud/generacion.rs abre un stream HTTP/SSE a OpenCode Zen o Gemini. Los bloques think/response se separan (think.rs). Si el proveedor devuelve 429, la cola de fallback releva al siguiente proveedor (espera 2-4 s, max 3 modelos). Las 10 tools se resuelven via ciclo_tools.rs con re-inyeccion del resultado como mensaje role tool (MAX_RONDAS_TOOLS=3).
+   - Cloud: cloud/apis_cloud/generacion.rs abre un stream HTTP/SSE a OpenCode Zen o Gemini. Los bloques think/response se separan (think.rs). Si el proveedor devuelve 429, la cola de fallback releva al siguiente proveedor (espera 2-4 s, max 3 modelos). Las 19 tools se resuelven via ciclo_tools.rs con re-inyeccion del resultado como mensaje role tool (MAX_RONDAS_TOOLS=3).
    - Local: llm/mod.rs genera con Qwen GGUF (llama.cpp) en CPU, con recortar_historial para no exceder 4096 tokens. Usa el mismo ejecutor de tools que cloud.
 4. Roles: herramientas_rol.rs filtra TOOLS_SOLO_ADMIN (query_sales, compare_periods, get_restock_analysis) para empleados. El prompt es sugerencia; el guard es control de acceso real.
 5. La respuesta llega al frontend por el mismo mecanismo (invoke no bloquea la caja).

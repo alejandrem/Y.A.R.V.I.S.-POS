@@ -45,6 +45,16 @@ const TABLAS_PERMITIDAS: &[&str] = &[
     "asistencias",
     "empleado_horarios",
     "clientes",
+    // Abasto y trazabilidad (migraciones 0012/0013/0018, solo lectura).
+    "proveedores",
+    "compras",
+    "compras_items",
+    "ordenes_compra",
+    "ordenes_items",
+    "historial_costos",
+    "lotes",
+    "sucursales",
+    "stock_sucursal",
 ];
 
 fn es_token(c: char) -> bool {

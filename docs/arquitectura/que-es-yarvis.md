@@ -29,7 +29,7 @@ Capacidades:
 - Cortes de caja X/Z, gastos recurrentes, alertas financieras, metricas y exportacion.
 - Empleados: metas/bonos, turnos, salario, resumen de ventas, asistencia y horas extra.
 - Parseo de tickets y catalogos (TXT/CSV/Excel) con reglas + LLM local para mapeo automatico y lotes con streaming.
-- Chat con IA: cloud (OpenCode Zen/Gemini) con fallback a local (Qwen2.5-Coder 1.5B Instruct fine-tuneado (unico modelo local)) y 10 tools de consulta.
+- Chat con IA: cloud (OpenCode Zen/Gemini) con fallback a local (Qwen2.5-Coder 1.5B Instruct fine-tuneado (unico modelo local)) y 19 tools de consulta.
 - Predicciones de ventas con Holt-Winters e intervalos de confianza al 95% (src-ia/predicciones).
 
 Stack verificado:

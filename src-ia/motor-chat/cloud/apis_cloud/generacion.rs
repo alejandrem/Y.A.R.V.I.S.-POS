@@ -54,7 +54,10 @@ pub fn generar_stream<'a>(
             }
         };
         if api_key.is_empty() {
-            yield Err("Falta la API key del proveedor.".to_string());
+            yield Err(
+                "Falta la API key del proveedor. Agrégala en 'Configurar modelos' y vuelve a intentarlo."
+                    .to_string(),
+            );
             return;
         }
 

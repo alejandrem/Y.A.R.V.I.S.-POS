@@ -70,7 +70,16 @@ pub(super) async fn _stream_cloud(
     // Supresor: los bloques <tool_call> NUNCA llegan a la UI.
     let mut supresor = SupresorToolCall::new();
     let mut full_response = String::new();
-    let mut model_used = String::from("unknown");
+    // Default al modelo pedido: si el stream solo trae reasoning/usage sin
+    // Texto, antes quedaba "unknown" y la UI mostraba UNKNOWN en el badge.
+    let mut model_used = if model.is_empty() {
+        String::from("cloud")
+    } else {
+        model.to_string()
+    };
+    // El stream puede relevar a otro modelo por 429: se adopta el primero
+    // que realmente ceda tokens/uso.
+    let mut modelo_confirmado = false;
 
     while let Some(item) = stream.next().await {
         if stream_cancelado() {
@@ -79,8 +88,9 @@ pub(super) async fn _stream_cloud(
         }
         match item {
             Ok(Evento::Texto { texto, modelo }) => {
-                if model_used == "unknown" {
+                if !modelo_confirmado && !modelo.is_empty() {
                     model_used = modelo.clone();
+                    modelo_confirmado = true;
                 }
                 for (tipo, frag) in sep.procesar(&texto) {
                     if tipo == TipoFragmento::Token {
@@ -107,8 +117,9 @@ pub(super) async fn _stream_cloud(
                 }
             }
             Ok(Evento::Uso { usage, modelo }) => {
-                if model_used == "unknown" {
+                if !modelo_confirmado && !modelo.is_empty() {
                     model_used = modelo;
+                    modelo_confirmado = true;
                 }
                 let _ = app.emit(
                     "chat-usage",

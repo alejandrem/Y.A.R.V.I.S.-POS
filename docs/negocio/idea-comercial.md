@@ -34,7 +34,7 @@ Busqueda experta: "que productos para el cabello no tienen sal?" -> "tienes el s
 
 Contador conversacional: "cuanto gane libre hoy quitando el costo?" -> "tu utilidad neta hoy fue de 2,543 MXN, 15% mas que el promedio de los miercoles". Predicciones de inventario: "que deberia comprar para el fin de semana?" -> "viene frente frio, tus ventas de cafe y pan suben 30% historicamente, aumenta 15-20% el pedido de pan".
 
-El chat usa 10 tools de solo lectura, SQL parametrizado y roles (admin ve finanzas/nomina, empleado solo mostrador). Estrategia: fine-tuning de Qwen + ejecutor de tools, sin RAG.
+El chat usa 19 tools de solo lectura, SQL parametrizado y roles (admin ve finanzas/nomina, empleado solo mostrador). Estrategia: fine-tuning de Qwen + ejecutor de tools, sin RAG.
 
 ## Parseador de Tickets de la Tienda
 

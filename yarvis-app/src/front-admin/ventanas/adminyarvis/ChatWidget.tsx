@@ -64,6 +64,11 @@ export function setApiKeysCache(keys: Record<string, string>): void {
   apiKeysCache = keys ?? {};
 }
 
+/** Key viva para un proveedor (el snapshot de la sesión puede traerla vacía). */
+export function getApiKeyFor(provider: string): string {
+  return (apiKeysCache[provider] || "").trim();
+}
+
 export function getActiveCloud(): ActiveCloud {
   const empty: ActiveCloud = {
     provider: "",
