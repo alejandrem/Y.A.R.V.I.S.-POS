@@ -6,7 +6,7 @@
 // ══════════════════════════════════════════════════════════════════
 import { MorphIcon } from "morphicons/react";
 import { ICONO_RELOJ } from "../../../../components/ui";
-import { MiniBarraDia, type DiaExtra } from "../../../../components/turno";
+import { MiniBarraDia, type DiaExtra } from "../../../../components/turno-extra";
 
 const fmtMin = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
 
@@ -52,7 +52,11 @@ const HorasExtras = ({ extras, expandidas, onToggle }: HorasExtrasProps) => {
                 <div className="flex-1 flex items-center gap-3 min-w-0" title={`Entrada oficial ${d.entrada_oficial} · Salida ${d.salida_oficial}`}>
                   <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-neutral-500">{d.primer_login}</span>
                   <MiniBarraDia d={d} />
-                  <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-emerald-600">{d.ultimo_login}</span>
+                  {d.en_curso ? (
+                    <span className="px-2 py-0.5 bg-emerald-500 text-white rounded-lg text-[8px] font-black uppercase tracking-widest whitespace-nowrap shrink-0 animate-pulse">En curso</span>
+                  ) : (
+                    <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-emerald-600">{d.ultimo_login}</span>
+                  )}
                 </div>
 
                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-600 rounded-lg text-[8px] font-black uppercase tracking-widest whitespace-nowrap shrink-0">
@@ -74,7 +78,7 @@ const HorasExtras = ({ extras, expandidas, onToggle }: HorasExtrasProps) => {
                 <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
                   <div className="bg-white rounded-xl border border-neutral-200 p-4 space-y-2 text-[10px] font-bold text-neutral-500 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
                     <p><span className="font-black text-neutral-400 uppercase tracking-wider">Llegó:</span> <span className="text-neutral-900 font-black">{d.primer_login}</span>{d.extra_pre_min > 0 && <> · <span className="text-emerald-600 font-black">{fmtMin(d.extra_pre_min)} antes de su entrada</span></>}</p>
-                    <p><span className="font-black text-neutral-400 uppercase tracking-wider">Se fue:</span> <span className="text-neutral-900 font-black">{d.ultimo_login}</span>{d.extra_post_min > 0 && <> · <span className="text-emerald-600 font-black">{fmtMin(d.extra_post_min)} después de su salida</span></>}</p>
+                    <p><span className="font-black text-neutral-400 uppercase tracking-wider">Se fue:</span> {d.en_curso ? <span className="text-emerald-600 font-black">En curso — se define con tu corte Z</span> : <><span className="text-neutral-900 font-black">{d.ultimo_login}</span>{d.extra_post_min > 0 && <> · <span className="text-emerald-600 font-black">{fmtMin(d.extra_post_min)} después de su salida</span></>}</>}</p>
                     <p><span className="font-black text-neutral-400 uppercase tracking-wider">Horario ese día:</span> <span className="text-neutral-900 font-black">{d.entrada_oficial} — {d.salida_oficial}</span></p>
                     <p><span className="font-black text-neutral-400 uppercase tracking-wider">Total trabajado:</span> <span className="text-neutral-900 font-black">{fmtMin(d.trabajo_min)}</span> · <span className="text-emerald-600 font-black">Extra total: {fmtMin(totalExtra)}</span></p>
                   </div>

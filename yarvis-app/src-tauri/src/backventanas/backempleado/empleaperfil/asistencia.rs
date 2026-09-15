@@ -48,6 +48,9 @@ pub struct MiTurno {
     pub horas_por_dia: f64,
     pub dias_semana: i32,
     pub ultimo_login: Option<String>,
+    /// Fecha_cierre del último corte Z propio ("YYYY-MM-DD HH:MM:SS").
+    /// La barra de extra congela ahí: el turno termina con el Z.
+    pub ultimo_corte_z: Option<String>,
 }
 
 /// Índice de chip del día actual: Lunes=0 .. Domingo=6 (igual que el frontend).
@@ -142,6 +145,20 @@ pub async fn mi_turno_impl(pool: &SqlitePool, empleado_id: i64) -> Result<MiTurn
         })
         .sum();
 
+    // Último corte Z propio: ancla de cierre del turno (para congelar
+    // la barra de extra; ver backcortes::comun::ancla_turno).
+    let ultimo_z: Option<String> = sqlx::query_as::<_, (Option<String>,)>(
+        "SELECT fecha_cierre FROM cortes_caja
+          WHERE usuario_id = ? AND tipo_corte = 'Z'
+            AND estado = 'cerrado' AND fecha_cierre IS NOT NULL
+          ORDER BY fecha_cierre DESC LIMIT 1",
+    )
+        .bind(empleado_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|r| r.0);
+
     Ok(MiTurno {
         dia_laborable: !bloques_hoy.is_empty(),
         bloques_hoy,
@@ -149,6 +166,7 @@ pub async fn mi_turno_impl(pool: &SqlitePool, empleado_id: i64) -> Result<MiTurn
         horas_por_dia: horas_dia,
         dias_semana: perfil.1,
         ultimo_login: asistencia.and_then(|a| a.1),
+        ultimo_corte_z: ultimo_z,
     })
 }
 
@@ -173,32 +191,37 @@ pub struct DiaExtra {
     pub extra_post_min: i64,
     /// Minutos totales trabajados ese día (entrada→salida reales)
     pub trabajo_min: i64,
+    /// Turno abierto: es hoy y aún no hay corte Z (la "salida" real la
+    /// define el Z; ultimo_login es solo última actividad).
+    pub en_curso: bool,
 }
 
 const UMBRAL_TEMPRANO_MIN: i64 = 15;
 
-/// Regla anti-fantasma (#23): llegar DESPUÉS del fin del turno no es
-/// trabajar extra (es presencia fuera de turno). El extra post solo
-/// existe si la entrada fue antes o durante el turno
-/// (`entrada <= bloque_fin`) y la salida lo rebasó. Simétrico en pre:
-/// solo cuenta si siguió hasta la entrada oficial (`salida >= ini`).
-/// Todo en minutos desde medianoche (nocturnos ya extendidos +24h).
+/// Regla de extra (#23, regla B): el extra post existe si la entrada fue
+/// antes o durante el turno (`entrada <= bloque_fin`) y la salida lo
+/// rebasó; y si entró DE NOCHE tras el fin, toda su presencia cuenta
+/// (`salida − entrada`: 21:41→23:00 = 79 min). Simétrico en pre: solo
+/// cuenta si siguió hasta la entrada oficial (`salida >= ini`), y
+/// DESCUENTA los 15 min de cortesía (8:44 con entrada 9:00 = 1 min
+/// extra, no 16). Todo en minutos (nocturnos ya extendidos +24h).
 pub fn calcular_extras(
     entrada_min: i64,
     salida_min: i64,
     bloque_ini: i64,
     bloque_fin: i64,
 ) -> (i64, i64) {
-    let llego_antes = (bloque_ini - entrada_min).max(0);
-    let extra_pre = if llego_antes >= UMBRAL_TEMPRANO_MIN && salida_min >= bloque_ini {
-        (std::cmp::min(salida_min, bloque_ini) - entrada_min).max(0)
+    let presencia_previa = (salida_min.min(bloque_ini) - entrada_min).max(0);
+    let extra_pre = if salida_min >= bloque_ini {
+        (presencia_previa - UMBRAL_TEMPRANO_MIN).max(0)
     } else {
         0
     };
     let extra_post = if entrada_min <= bloque_fin {
         (salida_min - bloque_fin).max(0)
     } else {
-        0
+        // Regla B: entró tras el fin → su presencia nocturna sí cuenta.
+        (salida_min - entrada_min).max(0)
     };
     (extra_pre, extra_post)
 }
@@ -285,14 +308,31 @@ pub async fn historial_horas_extra_impl(
             continue;
         };
 
-        // Extra PRE/POST con regla anti-fantasma (#23): si entró
-        // después de su salida oficial, el post es 0 (no trabajó extra,
-        // solo presencia fuera de turno).
+        // Extra PRE/POST con regla B (#23): nocturnos cuentan su presencia.
         let (extra_pre, extra_post) = calcular_extras(entrada, salida, bloque_ini, bloque_fin);
 
         if extra_pre + extra_post <= 0 {
             continue; // sin extras ese día: ni aparece
         }
+
+        // ¿Sigue en curso? Es hoy y aún no hay corte Z: la salida real la
+        // define el Z, ultimo_login es solo última actividad.
+        let hoy = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let en_curso = if fecha == hoy {
+            let n: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM cortes_caja
+                  WHERE usuario_id = ? AND tipo_corte = 'Z' AND estado = 'cerrado'
+                    AND date(fecha_cierre) = ?",
+            )
+            .bind(empleado_id)
+            .bind(&fecha)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            n == 0
+        } else {
+            false
+        };
 
         resultado.push(DiaExtra {
             fecha: fecha.clone(),
@@ -304,6 +344,7 @@ pub async fn historial_horas_extra_impl(
             extra_pre_min: extra_pre,
             extra_post_min: extra_post,
             trabajo_min: salida - entrada,
+            en_curso,
         });
     }
     Ok(resultado)
@@ -337,26 +378,48 @@ pub async fn get_horas_extra_empleado(
 mod tests {
     use super::calcular_extras;
 
-    /// Caso del bug #23: turno 09:00-17:00, login 20:33, "salida" 20:33.
-    /// Antes daba 213 min fantasma; ahora debe dar 0.
+    /// Caso del bug #23 con regla B: turno 09:00-17:00, login 20:33.
+    /// Sin salida aún no hay nada que contar; con corte Z a las 23:00
+    /// la presencia 20:33→23:00 sí cuenta (147 min).
     #[test]
-    fn login_despues_del_fin_no_genera_extra() {
-        let (pre, post) = calcular_extras(20 * 60 + 33, 20 * 60 + 33, 9 * 60, 17 * 60);
-        assert_eq!((pre, post), (0, 0));
+    fn login_nocturno_cuenta_su_presencia() {
+        assert_eq!(
+            calcular_extras(20 * 60 + 33, 20 * 60 + 33, 9 * 60, 17 * 60),
+            (0, 0)
+        );
+        assert_eq!(
+            calcular_extras(20 * 60 + 33, 23 * 60, 9 * 60, 17 * 60),
+            (0, 147)
+        );
     }
 
-    /// Aunque haga corte Z a las 23:00, si entró después del fin sigue en 0.
+    /// 21:41→23:00 con fin 17:00: 79 min nocturnos.
     #[test]
-    fn corte_z_tardio_no_resucita_fantasma() {
-        let (pre, post) = calcular_extras(20 * 60 + 33, 23 * 60, 9 * 60, 17 * 60);
-        assert_eq!((pre, post), (0, 0));
+    fn noche_2141_al_cierre_2300() {
+        let (pre, post) = calcular_extras(21 * 60 + 41, 23 * 60, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (0, 79));
     }
 
     /// Extra genuino: entró 08:40 (20 min antes), salió 18:20.
+    /// 20 − 15 de cortesía = 5 pre + 80 post.
     #[test]
     fn extra_genuino_pre_y_post() {
         let (pre, post) = calcular_extras(8 * 60 + 40, 18 * 60 + 20, 9 * 60, 17 * 60);
-        assert_eq!((pre, post), (20, 80));
+        assert_eq!((pre, post), (5, 80));
+    }
+
+    /// 08:44 con entrada 09:00: 16 − 15 = 1 min extra, no 16.
+    #[test]
+    fn solo_cuenta_lo_que_pasa_la_cortesia() {
+        let (pre, post) = calcular_extras(8 * 60 + 44, 9 * 60 + 5, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (1, 0));
+    }
+
+    /// Jornada extra 06:00 quedándose al turno: 180 − 15 = 165 pre.
+    #[test]
+    fn jornada_previa_quedandose_si_cuenta() {
+        let (pre, post) = calcular_extras(6 * 60, 10 * 60, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (165, 0));
     }
 
     /// Llegó 10 min antes (< umbral 15): no hay pre, y salió a tiempo: 0.

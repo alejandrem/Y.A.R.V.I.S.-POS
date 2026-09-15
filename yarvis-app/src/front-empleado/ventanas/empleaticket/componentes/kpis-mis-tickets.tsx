@@ -13,7 +13,7 @@ import {
 import { obtenerMisKpis } from "../../../../services/misventas";
 import { obtenerMisHorasExtra } from "../../../../services/turno";
 import { reportarError } from "../../../../services/tauri";
-import type { DiaExtra } from "../../../../components/turno";
+import type { DiaExtra } from "../../../../components/turno-extra";
 
 /** Rangos del empleado: Hoy, 7, 15, 30, Todos y personalizado (N días). */
 export const RANGOS_MIS: OpcionRango[] = [

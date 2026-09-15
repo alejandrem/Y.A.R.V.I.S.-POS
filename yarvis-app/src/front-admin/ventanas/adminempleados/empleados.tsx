@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { invokeTauri, reportarError } from "../../../services/tauri";
 import { MorphIcon } from "morphicons/react";
 import type { EmpleadoProfile } from "../../../services/empleado";
-import type { MiTurno, DiaExtra } from "../../../components/turno";
+import type { MiTurno, DiaExtra } from "../../../components/turno-extra";
 import ModalEmpleados from "./modalEmpleados";
 import ModalMetas from "./modalMetas";
 import {

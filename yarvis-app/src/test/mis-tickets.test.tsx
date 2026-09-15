@@ -12,7 +12,7 @@ import {
 } from "../front-empleado/ventanas/empleaticket/componentes/kpis-mis-tickets";
 import { rellenarDiasVentas } from "../front-empleado/ventanas/empleaticket/componentes/grafica-dia-sueldo";
 import Tickets from "../front-empleado/ventanas/empleaticket/ticket";
-import type { DiaExtra } from "../components/turno";
+import type { DiaExtra } from "../components/turno-extra";
 
 const extra = (fecha: string, pre: number, post: number): DiaExtra => ({
   fecha,
@@ -24,6 +24,7 @@ const extra = (fecha: string, pre: number, post: number): DiaExtra => ({
   extra_pre_min: pre,
   extra_post_min: post,
   trabajo_min: 480,
+  en_curso: false,
 });
 
 beforeEach(() => {

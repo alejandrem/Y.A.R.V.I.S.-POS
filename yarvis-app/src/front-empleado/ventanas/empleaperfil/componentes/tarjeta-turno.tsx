@@ -1,11 +1,14 @@
 // ══════════════════════════════════════════════════════════════════
-// TAREA: Card "Mi Turno" — barra de asistencia del día con puntos,
-// badges de extra/puntualidad y resumen horario.
+// TAREA: Card "Mi Turno" — compone las 2 pistas de turno-extra:
+// BarraTurnoNormal (ventana oficial) + BarraExtra (extra real).
 // Presentacional: recibe la barra ya calculada y el turno.
 // ══════════════════════════════════════════════════════════════════
 import { MorphIcon } from "morphicons/react";
 import { ICONO_RELOJ } from "../../../../components/ui";
-import { fmtHM, type MiTurno, type BarraTurno } from "../../../../components/turno";
+import { fmtHM } from "../../../../components/turno-extra";
+import type { MiTurno, BarraTurno } from "../../../../components/turno-extra";
+import { BarraTurnoNormal } from "../../../../components/turno-extra/BarraTurnoNormal";
+import { BarraExtra } from "../../../../components/turno-extra/BarraExtra";
 import type { EmployeeProfile } from "../utilidades/tipos";
 
 interface TarjetaTurnoProps {
@@ -57,85 +60,10 @@ const TarjetaTurno = ({ profile, turno, barra }: TarjetaTurnoProps) => {
               <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mt-1">Entrada</p>
             </div>
 
-            {/* PISTA 1: BARRA DE TURNO (ventana oficial, sin verde) */}
+            {/* PISTA 1: BARRA DE TURNO + PISTA 2: BARRA DE EXTRA */}
             <div className="flex-1">
-              <p className="text-[8px] font-black text-neutral-400 uppercase tracking-widest mb-1.5">Turno</p>
-              <div className="relative h-4 bg-neutral-100 rounded-full border border-neutral-200 overflow-visible">
-                {/* Trabajo dentro del horario (negro) */}
-                <div
-                  className="absolute inset-y-0 bg-neutral-900 rounded-full transition-all duration-700 ease-out"
-                  style={{ left: `${barra.tTrabIniPct}%`, width: `${Math.max(0, barra.tTrabFinPct - barra.tTrabIniPct)}%` }}
-                />
-                {/* ● Bolita: PRIMER LOGIN del día (llegada real) */}
-                {barra.tLoginPct !== null && (
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-neutral-900 rounded-full shadow-md z-10"
-                    style={{ left: `${barra.tLoginPct}%` }}
-                    title={`Primer login: ${turno?.primer_login ?? ""}`}
-                  />
-                )}
-              </div>
-
-              <div className="flex justify-between mt-2">
-                <span className="text-[8px] font-black text-neutral-300 uppercase">
-                  {turno?.primer_login
-                    ? barra.fueraDeTurno
-                      ? `Llegaste ${turno.primer_login} · fuera de tu turno (no cuenta como extra)`
-                      : `Llegaste ${turno.primer_login}${
-                        barra.minutosTarde > 0
-                          ? ` · ${barra.minutosTarde} min tarde`
-                          : barra.llegoPuntual
-                            ? " · ¡Felicidades, llegaste puntual!"
-                            : ` · ${barra.minutosTemprano} min temprano (extra)`
-                      }`
-                    : "Sin registro de entrada"}
-                </span>
-                <span className={`text-[8px] font-black uppercase ${barra.enExtra ? "text-emerald-500" : "text-neutral-300"}`}>
-                  {barra.enExtra ? `Progreso: ${Math.round(barra.tTrabFinPct)}% + extra` : `Progreso: ${Math.round(barra.tTrabFinPct)}%`}
-                </span>
-              </div>
-
-              {/* PISTA 2: BARRA DE EXTRA (llegada → salida oficial → ahora/corte Z) */}
-              {barra.enExtra && (
-                <div className="mt-4">
-                  <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-1.5">
-                    Extra · {turno?.primer_login ?? ""} → {fmtHM(barra.fin)} → {turno?.ultimo_login ?? "ahora"}
-                  </p>
-                  <div className="relative h-4 bg-neutral-100 rounded-full border border-emerald-200 overflow-visible">
-                    {/* Extra tempranero (verde antes de la entrada oficial) */}
-                    {barra.preExtraActivo && (
-                      <div
-                        className="absolute inset-y-0 bg-emerald-400 transition-all duration-700 ease-out"
-                        style={{ left: `${barra.xLoginPct}%`, width: `${Math.max(0, barra.xIniPct - barra.xLoginPct)}%`, borderRadius: "999px 0 0 999px" }}
-                      />
-                    )}
-                    {/* Turno trabajado (negro, referencia) */}
-                    <div
-                      className="absolute inset-y-0 bg-neutral-900 rounded-full transition-all duration-700 ease-out"
-                      style={{ left: `${barra.xIniPct}%`, width: `${Math.max(0, Math.min(barra.xAhoraPct, barra.xFinPct) - barra.xIniPct)}%` }}
-                    />
-                    {/* Extra post-turno (verde después de la salida) */}
-                    {barra.enExtraPost && (
-                      <div
-                        className="absolute inset-y-0 bg-emerald-500 transition-all duration-700 ease-out"
-                        style={{ left: `${barra.xFinPct}%`, width: `${Math.max(0, barra.xAhoraPct - barra.xFinPct)}%`, borderRadius: "0 999px 999px 0" }}
-                      />
-                    )}
-                    {/* ● Bolita en la llegada real */}
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-neutral-900 rounded-full shadow-md z-10"
-                      style={{ left: `${barra.xLoginPct}%` }}
-                      title={`Llegaste ${turno?.primer_login ?? ""}`}
-                    />
-                    {/* ● Bolita blanca en la salida oficial (frontera del extra) */}
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-[3px] border-emerald-500 rounded-full shadow-md z-10"
-                      style={{ left: `${barra.xFinPct}%` }}
-                      title="Fin de tu horario — desde aquí cuenta como extra"
-                    />
-                  </div>
-                </div>
-              )}
+              <BarraTurnoNormal barra={barra} turno={turno} />
+              <BarraExtra barra={barra} turno={turno} />
             </div>
 
             <div className="text-center shrink-0">

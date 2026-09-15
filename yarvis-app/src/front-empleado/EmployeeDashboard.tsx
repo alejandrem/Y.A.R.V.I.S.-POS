@@ -7,8 +7,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { MorphIcon } from "morphicons/react";
 import {
-  geometriaBarra, fmtHM, type MiTurno,
-} from "../components/turno";
+  geometriaBarra, fmtHM, etiquetaEntrada, type MiTurno,
+} from "../components/turno-extra";
 import { invokeTauri, reportarError } from "../services/tauri";
 import { obtenerMiTurno } from "../services/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
@@ -240,7 +240,7 @@ const EmployeeDashboard = ({
                 <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.2} spring="smooth" className={barra.enExtra ? "text-emerald-500 shrink-0" : "text-neutral-300 shrink-0"} />
                 {/* Hora de entrada real si llegó extra-temprano; si no, la oficial */}
                 <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-neutral-500">
-                  {turno?.primer_login ?? fmtHM(barra.inicio)}
+                  {etiquetaEntrada(barra, turno?.primer_login ?? null)}
                 </span>
                 <div className="relative flex-1 h-2.5 bg-neutral-100 rounded-full overflow-visible min-w-[80px]">
                   {/* Extra tempranero (verde claro) */}

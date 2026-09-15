@@ -9,7 +9,7 @@ import { obtenerMiTurno, obtenerMisHorasExtra } from "../../../services/turno";
 import {
   geometriaBarra,
   type MiTurno, type DiaExtra,
-} from "../../../components/turno";
+} from "../../../components/turno-extra";
 import type { EmployeeProfileFull } from "./utilidades/tipos";
 import TarjetaTurno from "./componentes/tarjeta-turno";
 import TarjetasSalario from "./componentes/tarjetas-salario";

@@ -1,6 +1,6 @@
 // Bloque "Asistencia de hoy" del detalle: barra con preExtra/trabajo/
 // postExtra y markers de login, entrada oficial y salida.
-import { geometriaBarra, fmtHM, type MiTurno } from "../../../../components/turno";
+import { geometriaBarra, fmtHM, type MiTurno } from "../../../../components/turno-extra";
 import { MorphIcon } from "morphicons/react";
 import { ICONO_RELOJ } from "../../../../components/ui";
 
@@ -90,7 +90,9 @@ export const DetalleAsistencia = ({ asistenciaDetalle, ahora }: DetalleAsistenci
               <div className="flex justify-between mt-2">
                 <span className="text-[8px] font-black text-neutral-300 uppercase">
                   {asistenciaDetalle?.primer_login
-                    ? `Primer login ${asistenciaDetalle.primer_login}${
+                    ? barraDetalle.fueraDeTurno
+                      ? `Primer login ${asistenciaDetalle.primer_login} · turno nocturno (cuenta como extra)`
+                      : `Primer login ${asistenciaDetalle.primer_login}${
                         barraDetalle.minutosTarde > 0
                           ? ` · ${barraDetalle.minutosTarde} min tarde`
                           : barraDetalle.llegoPuntual
