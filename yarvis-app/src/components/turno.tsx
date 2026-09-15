@@ -40,6 +40,19 @@ export interface BarraTurno {
   llegoPuntual: boolean;
   loginPct: number | null;
   minutosTarde: number;
+  /** #23: llegó después de su salida oficial. Presencia fuera de turno,
+      NO extra: ni la barra ni el historial deben contar nada. */
+  fueraDeTurno: boolean;
+  /** Barra 1 (turno normal): % sobre la ventana oficial [inicio, fin]. */
+  tLoginPct: number | null;
+  tTrabIniPct: number;
+  tTrabFinPct: number;
+  /** Barra 2 (extra): % sobre [min(login,inicio), max(fin,ahora)].
+      Solo se pinta cuando hay extra real (enExtra). */
+  xLoginPct: number;
+  xIniPct: number;
+  xFinPct: number;
+  xAhoraPct: number;
 }
 
 const UMBRAL_TEMPRANO = 15;
@@ -69,26 +82,44 @@ export function geometriaBarra(turno: MiTurno | null, ahora: Date): BarraTurno |
 
   const enTurnoActivo = loginRaw !== null && ahoraMins >= loginRaw;
 
-  // Extra post-turno (seguir después de la salida)
-  const enExtraPost = ahoraMins > fin;
+  // #23 ANTI-FANTASMA: el extra post solo existe si estaba trabajando
+  // cuando terminó su horario (entrada <= fin). Llegar después del fin
+  // es presencia fuera de turno, no extra. Y sin login no hay extra.
+  const fueraDeTurno = loginRaw !== null && loginRaw > fin;
+  const enExtraPost = !fueraDeTurno && loginRaw !== null && ahoraMins > fin;
   const extraPostMin = enExtraPost ? ahoraMins - fin : 0;
   // Extra pre-turno (llegó ≥15 min antes y ya está trabajando)
   const extraPreMin = extraTemprana && enTurnoActivo ? inicio - (loginRaw as number) : 0;
   const extraTotalMin = extraPreMin + extraPostMin;
   const enExtra = extraTotalMin > 0;
 
-  // Ventana visible: desde llegada tempranera (si aplica) hasta max(fin, ahora)
+  // Ventana visible (compacta, topbar e historial): desde llegada
+  // tempranera (si aplica) hasta max(fin, ahora)
   const ventanaIni = extraTemprana && loginRaw !== null ? loginRaw : inicio;
   const ventanaFin = Math.max(fin, ahoraMins);
   const span = Math.max(1, ventanaFin - ventanaIni);
   const pct = (m: number) => Math.min(100, Math.max(0, ((m - ventanaIni) / span) * 100));
+
+  // Trabajo real: arranca cuando llega (no pinta negro lo no trabajado),
+  // y en fueraDeTurno no pinta nada.
+  const baseTrabajo = loginRaw !== null ? Math.max(inicio, loginRaw) : inicio;
+  const topeTrabajo = fueraDeTurno ? inicio : Math.min(Math.max(ahoraMins, baseTrabajo), fin);
+
+  // Barra 1 (turno): ventana oficial [inicio, fin].
+  const spanT = Math.max(1, fin - inicio);
+  const pctT = (m: number) => Math.min(100, Math.max(0, ((m - inicio) / spanT) * 100));
+  // Barra 2 (extra): ventana extendida para ver llegada → salida oficial → ahora.
+  const xIni = Math.min(loginRaw ?? inicio, inicio);
+  const xFin = Math.max(fin, ahoraMins);
+  const spanX = Math.max(1, xFin - xIni);
+  const pctX = (m: number) => Math.min(100, Math.max(0, ((m - xIni) / spanX) * 100));
 
   return {
     inicio,
     fin,
     inicioPct: pct(inicio),
     finPct: pct(fin),
-    trabajoPct: pct(Math.min(Math.max(ahoraMins, inicio), fin)) - (extraTemprana ? pct(inicio) : 0),
+    trabajoPct: pct(topeTrabajo) - (extraTemprana ? pct(inicio) : 0),
     preExtraActivo: extraTemprana && enTurnoActivo,
     preExtraPct: extraTemprana && enTurnoActivo ? pct(inicio) - pct(loginRaw as number) : 0,
     enExtraPost,
@@ -99,6 +130,14 @@ export function geometriaBarra(turno: MiTurno | null, ahora: Date): BarraTurno |
     llegoPuntual: llegoTemprano && !extraTemprana,
     loginPct: loginRaw !== null ? pct(loginRaw) : null,
     minutosTarde: loginRaw !== null ? Math.max(0, loginRaw - inicio) : 0,
+    fueraDeTurno,
+    tLoginPct: loginRaw !== null ? pctT(loginRaw) : null,
+    tTrabIniPct: pctT(fueraDeTurno ? inicio : baseTrabajo),
+    tTrabFinPct: pctT(fueraDeTurno ? inicio : Math.min(Math.max(ahoraMins, baseTrabajo), fin)),
+    xLoginPct: pctX(loginRaw ?? inicio),
+    xIniPct: pctX(inicio),
+    xFinPct: pctX(fin),
+    xAhoraPct: pctX(ahoraMins),
   };
 }
 

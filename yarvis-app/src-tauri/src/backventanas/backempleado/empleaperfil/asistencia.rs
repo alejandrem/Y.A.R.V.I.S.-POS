@@ -177,6 +177,32 @@ pub struct DiaExtra {
 
 const UMBRAL_TEMPRANO_MIN: i64 = 15;
 
+/// Regla anti-fantasma (#23): llegar DESPUÉS del fin del turno no es
+/// trabajar extra (es presencia fuera de turno). El extra post solo
+/// existe si la entrada fue antes o durante el turno
+/// (`entrada <= bloque_fin`) y la salida lo rebasó. Simétrico en pre:
+/// solo cuenta si siguió hasta la entrada oficial (`salida >= ini`).
+/// Todo en minutos desde medianoche (nocturnos ya extendidos +24h).
+pub fn calcular_extras(
+    entrada_min: i64,
+    salida_min: i64,
+    bloque_ini: i64,
+    bloque_fin: i64,
+) -> (i64, i64) {
+    let llego_antes = (bloque_ini - entrada_min).max(0);
+    let extra_pre = if llego_antes >= UMBRAL_TEMPRANO_MIN && salida_min >= bloque_ini {
+        (std::cmp::min(salida_min, bloque_ini) - entrada_min).max(0)
+    } else {
+        0
+    };
+    let extra_post = if entrada_min <= bloque_fin {
+        (salida_min - bloque_fin).max(0)
+    } else {
+        0
+    };
+    (extra_pre, extra_post)
+}
+
 fn mins_hhmm(t: &str) -> i64 {
     let p: Vec<i64> = t.split(':').map(|x| x.parse().unwrap_or(0)).collect();
     *p.first().unwrap_or(&0) * 60 + *p.get(1).unwrap_or(&0)
@@ -259,15 +285,10 @@ pub async fn historial_horas_extra_impl(
             continue;
         };
 
-        // Extra PRE: llegó ≥15 min antes de su entrada oficial y trabajó.
-        let llego_antes = (bloque_ini - entrada).max(0);
-        let extra_pre = if llego_antes >= UMBRAL_TEMPRANO_MIN {
-            (std::cmp::min(salida, bloque_ini) - entrada).max(0)
-        } else {
-            0
-        };
-        // Extra POST: siguió después de su salida oficial.
-        let extra_post = (salida - bloque_fin).max(0);
+        // Extra PRE/POST con regla anti-fantasma (#23): si entró
+        // después de su salida oficial, el post es 0 (no trabajó extra,
+        // solo presencia fuera de turno).
+        let (extra_pre, extra_post) = calcular_extras(entrada, salida, bloque_ini, bloque_fin);
 
         if extra_pre + extra_post <= 0 {
             continue; // sin extras ese día: ni aparece
@@ -310,4 +331,52 @@ pub async fn get_horas_extra_empleado(
 ) -> Result<Vec<DiaExtra>, String> {
     auth.require_admin()?;
     historial_horas_extra_impl(&state, empleado_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calcular_extras;
+
+    /// Caso del bug #23: turno 09:00-17:00, login 20:33, "salida" 20:33.
+    /// Antes daba 213 min fantasma; ahora debe dar 0.
+    #[test]
+    fn login_despues_del_fin_no_genera_extra() {
+        let (pre, post) = calcular_extras(20 * 60 + 33, 20 * 60 + 33, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (0, 0));
+    }
+
+    /// Aunque haga corte Z a las 23:00, si entró después del fin sigue en 0.
+    #[test]
+    fn corte_z_tardio_no_resucita_fantasma() {
+        let (pre, post) = calcular_extras(20 * 60 + 33, 23 * 60, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (0, 0));
+    }
+
+    /// Extra genuino: entró 08:40 (20 min antes), salió 18:20.
+    #[test]
+    fn extra_genuino_pre_y_post() {
+        let (pre, post) = calcular_extras(8 * 60 + 40, 18 * 60 + 20, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (20, 80));
+    }
+
+    /// Llegó 10 min antes (< umbral 15): no hay pre, y salió a tiempo: 0.
+    #[test]
+    fn llegada_puntual_no_cuenta_pre() {
+        let (pre, post) = calcular_extras(8 * 60 + 50, 17 * 60, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (0, 0));
+    }
+
+    /// Pasó temprano pero se fue antes de la entrada: pre en 0.
+    #[test]
+    fn visita_temprana_sin_quedarse_no_cuenta() {
+        let (pre, post) = calcular_extras(6 * 60, 6 * 60 + 30, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (0, 0));
+    }
+
+    /// Frontera: entró justo a la salida oficial y siguió 30 min → 30 post.
+    #[test]
+    fn entrada_en_la_frontera_si_cuenta_post() {
+        let (pre, post) = calcular_extras(17 * 60, 17 * 60 + 30, 9 * 60, 17 * 60);
+        assert_eq!((pre, post), (0, 30));
+    }
 }

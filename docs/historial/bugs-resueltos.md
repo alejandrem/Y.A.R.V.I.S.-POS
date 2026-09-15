@@ -608,3 +608,22 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 2. Cuando un "free tier" depende del cliente oficial, hay que probar el protocolo mínimo real (`session id`), no asumir que OpenAI-compatible significa SOLO `Authorization`.
 3. El fallback local es correcto para producción, pero debe avisar; si no, degrada la confianza porque el usuario cree que el proveedor nube respondió.
 4. Los modelos free son volátiles: guardar el default en un modelo verificado y una cola de relevo es más confiable que enamorarse del modelo bonito del día.
+
+---
+
+### Bug H1: login después del fin del turno marcaba horas extra fantasma — ALTO (RESUELTO 2026-09-14, issue #23)
+
+**Sintoma:** empleado con salida oficial 17:00 inicia sesión a las 20:33 y a los 5 minutos el sistema le muestra +3h34 de horas extra. La cuenta era literalmente 20:33 − 17:00 = 213 min.
+
+**Causa raiz (triple):**
+1. Frontend (`src/components/turno.tsx::geometriaBarra`): `enExtraPost = ahoraMins > fin` solo miraba el reloj, ni siquiera revisaba `primer_login`. Bastaba que pasara la salida oficial para marcar extra, aunque el empleado acabara de llegar (o ni hubiera llegado).
+2. Backend (`asistencia.rs::historial_horas_extra_impl`): `extra_post = salida − bloque_fin` con `salida = max(ultimo_login, entrada)`. Entrar después del fin generaba el fantasma y además quedaba persistido como día con extra en el historial.
+3. Agravante propio: el corte Z estampa `ultimo_login` = hora del Z (fin de turno, issue #26), así que un Z a las 23:00 inflaba el fantasma a 6h. El stamp es correcto, pero dejó al descubierto el cálculo.
+
+**Solucion (regla anti-fantasma):** llegar DESPUÉS del fin no es trabajar extra (es presencia fuera de turno). Extra post solo si `entrada <= fin`; extra pre solo si siguió hasta la entrada oficial (`salida >= ini`) además del umbral de 15 min (ese umbral no se tocó: ≤15 min sigue siendo solo felicitación).
+1. Backend: nuevo `calcular_extras()` puro + 6 unit tests Rust (caso exacto 20:33/17:00 → 0, Z tardío → 0, extra genuino 20+80, fronteras).
+2. Frontend: `geometriaBarra` con la misma regla + campo `fueraDeTurno` + negro que arranca en la llegada real.
+3. UI: tarjeta "Mi Turno" ahora con 2 pistas — barra de turno (ventana oficial, sin verde) y barra de extra (llegada → salida oficial → ahora/corte Z, solo si hay extra real). Fuera de turno muestra badge ámbar en vez del "+3h34" mentiroso.
+4. Test de regresión vitest `turno-extra.test.tsx` (7 casos).
+
+**Leccion aprendida:** "reloj pasado de la salida" no es "trabajo extra": todo cálculo de extra debe anclarse a la llegada real, no a la hora actual. Y ojo con efectos cruzados: el stamp de salida del corte Z (#26) es correcto, pero cualquier consumidor de `ultimo_login` debe aplicar la misma regla o hereda el fantasma.
