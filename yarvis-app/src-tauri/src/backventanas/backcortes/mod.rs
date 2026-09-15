@@ -23,5 +23,6 @@ pub mod cierre;
 pub mod comun;
 pub mod corte_x;
 pub mod corte_z;
+pub mod impresion;
 pub mod lecturas;
 pub mod movimientos;

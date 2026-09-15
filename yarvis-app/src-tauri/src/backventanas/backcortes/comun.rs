@@ -115,7 +115,8 @@ pub async fn tickets_en_ventana(
             let folio: Option<String> = f.try_get("folio_ticket").ok().flatten();
             TicketResumen {
                 venta_id: id,
-                folio: folio.unwrap_or_else(|| format!("REM-{id}")),
+                // Folio visible del ticket: TICKET-0001 (cero-relleno).
+                folio: folio.unwrap_or_else(|| format!("TICKET-{id:04}")),
                 fecha: f.get("fecha"),
                 total: decode_monto(&f, "total"),
                 metodo_pago: f

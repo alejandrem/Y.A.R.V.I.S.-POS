@@ -64,6 +64,33 @@ pub async fn corte_z_cierre_impl(
     .map_err(|e| e.to_string())?
     .last_insert_rowid();
 
+    // #26 — El Z cierra el turno automáticamente: se estampa la salida
+    // en asistencias (último registro de actividad del día). El próximo
+    // conteo parte de este cierre (ver `comun::ancla_turno`).
+    let salida = sqlx::query(
+        "UPDATE asistencias SET ultimo_login = ?
+          WHERE empleado_id = ? AND fecha = date(?,'localtime')",
+    )
+    .bind(&cierre)
+    .bind(cajero_id)
+    .bind(&cierre)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if salida.rows_affected() == 0 {
+        sqlx::query(
+            "INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login)
+             VALUES (?, date(?,'localtime'), ?, ?)",
+        )
+        .bind(cajero_id)
+        .bind(&cierre)
+        .bind(&cierre)
+        .bind(&cierre)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
     Ok(CorteZReporte {
         corte_id,
         cajero_id,

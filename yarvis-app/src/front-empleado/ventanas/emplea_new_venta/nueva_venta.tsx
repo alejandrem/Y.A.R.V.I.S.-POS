@@ -13,6 +13,8 @@ import { reportarError } from "../../../services/tauri";
 import { buscarProductoSimilar } from "../../../services/venta";
 import ModalVenta from "./modalventa";
 import ModalTicket from "./modalticket";
+import BotonCorte from "../empleacortes/boton-corte";
+import { TECLA_CORTE, fijarBloqueoAtajo } from "../../atajos/atajos";
 import { useCart } from "./CartProvider";
 import BuscadorProductos from "./componentes/buscador-productos";
 import TablaCarrito from "./componentes/tabla-carrito";
@@ -29,9 +31,9 @@ const nuevaVentaNav = {
   ),
 };
 
-interface NuevaVentaProps { activeTab: string }
+interface NuevaVentaProps { activeTab: string; onAbrirCorte: () => void }
 
-export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
+export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<InventoryItem[]>([]);
@@ -77,6 +79,13 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
     window.addEventListener("keydown", handleF5);
     return () => window.removeEventListener("keydown", handleF5);
   }, [cart, showModalVenta, showModalTicket]);
+
+  // Mientras el cobro/ticket está abierto, el F3 global queda bloqueado
+  // para no encimar el modal de corte (ver front-empleado/atajos/).
+  useEffect(() => {
+    fijarBloqueoAtajo(TECLA_CORTE, showModalVenta || showModalTicket);
+    return () => fijarBloqueoAtajo(TECLA_CORTE, false);
+  }, [showModalVenta, showModalTicket]);
 
   const loadInventory = async () => {
     try { setInventory(await obtenerInventario()); }
@@ -167,17 +176,22 @@ export default function NuevaVenta({ activeTab }: NuevaVentaProps) {
     <>
     <div className="flex-1 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-[1200px] mx-auto w-full">
 
-      {/* ═══ BÚSQUEDA ═════════════════════════════════════════════════ */}
-      <BuscadorProductos
-        searchQuery={searchQuery} onSearchChange={setSearchQuery}
-        searchResults={searchResults} selectedIndex={selectedIndex}
-        isSearching={isSearching} showDropdown={showDropdown}
-        iaStatus={iaStatus} iaSuggestion={iaSuggestion} cart={cart}
-        onKeyDown={handleKeyDown} onSeleccionar={seleccionarProducto}
-        onFocusInput={() => searchQuery && searchResults.length > 0 && setShowDropdown(true)}
-        onLimpiar={limpiarBusqueda}
-        searchRef={searchRef} inputRef={inputRef} dropdownRef={dropdownRef}
-      />
+      {/* ═══ BÚSQUEDA + CORTE ═══════════════════════════════════════════ */}
+      <div className="flex flex-col sm:flex-row gap-4 sm:items-stretch">
+        <div className="flex-1 min-w-0">
+          <BuscadorProductos
+            searchQuery={searchQuery} onSearchChange={setSearchQuery}
+            searchResults={searchResults} selectedIndex={selectedIndex}
+            isSearching={isSearching} showDropdown={showDropdown}
+            iaStatus={iaStatus} iaSuggestion={iaSuggestion} cart={cart}
+            onKeyDown={handleKeyDown} onSeleccionar={seleccionarProducto}
+            onFocusInput={() => searchQuery && searchResults.length > 0 && setShowDropdown(true)}
+            onLimpiar={limpiarBusqueda}
+            searchRef={searchRef} inputRef={inputRef} dropdownRef={dropdownRef}
+          />
+        </div>
+        <BotonCorte onAbrir={onAbrirCorte} />
+      </div>
 
       {/* ═══ CARRITO ══════════════════════════════════════════════════ */}
       <TablaCarrito cart={cart} onUpdateCantidad={updateQuantity} onEliminar={removeFromCart} onLimpiar={limpiarCarrito}>

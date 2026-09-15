@@ -4,7 +4,7 @@
 // turno y operador) + enrutado del contenido por pestaña activa.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MorphIcon } from "morphicons/react";
 import {
   geometriaBarra, fmtHM, type MiTurno,
@@ -23,6 +23,8 @@ import {
 } from "../components/ui";
 
 import NuevaVenta from "./ventanas/emplea_new_venta/nueva_venta";
+import ModalCorte from "./ventanas/empleacortes/modal-corte";
+import { useAtajosEmpleados } from "./atajos/useAtajos";
 import { CartProvider } from "./ventanas/emplea_new_venta/CartProvider";
 import { ChatProvider } from "../front-admin/ventanas/adminyarvis/ChatProvider";
 import Inventario from "./ventanas/empleainventario/inventario";
@@ -42,8 +44,10 @@ interface EmployeeDashboardProps {
   operatorName?: string;
 }
 
-// Atajos de teclado de la topbar (F5 cobra, el resto en camino).
+// Atajos de teclado de la topbar (F3 corte funcional; F5-F8 en camino,
+// issues #16, #18, #19, #20, #21).
 const ATAJOS = [
+  { tecla: "F3", label: "Corte", icono: ICONO_CAJA, accion: "corte" },
   { tecla: "F5", label: "Cobrar", icono: ICONO_BILLETE },
   { tecla: "F6", label: "Caja", icono: ICONO_CAJA },
   { tecla: "F7", label: "Buscar", icono: ICONO_BUSCAR },
@@ -109,6 +113,11 @@ const EmployeeDashboard = ({
   const [turno, setTurno] = useState<MiTurno | null>(null);
   const [ahora, setAhora] = useState(() => new Date());
 
+  // Modal de corte a nivel shell: F3 funciona desde cualquier pestaña.
+  const [showModalCorte, setShowModalCorte] = useState(false);
+  const abrirCorte = useCallback(() => setShowModalCorte(true), []);
+  useAtajosEmpleados({ onCorte: abrirCorte, deshabilitado: showModalCorte });
+
   useEffect(() => {
     obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar la información de tu turno", e));
     const t = window.setInterval(() => setAhora(new Date()), 30000);
@@ -131,7 +140,7 @@ const EmployeeDashboard = ({
       case "ajustes":
         return <Ajustes operatorName={operatorName} />;
       case "nueva_venta":
-        return <NuevaVenta activeTab={activeTab} />;
+        return <NuevaVenta activeTab={activeTab} onAbrirCorte={abrirCorte} />;
       case "yarvis":
         return <YarvisEmpleado active={activeTab === "yarvis"} />;
       default:
@@ -199,6 +208,9 @@ const EmployeeDashboard = ({
               <button
                 key={a.tecla}
                 title={`Atajo ${a.tecla}`}
+                onClick={() => {
+                  if ("accion" in a && a.accion === "corte") abrirCorte();
+                }}
                 className="group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 bg-neutral-50 rounded-2xl border border-transparent hover:border-neutral-950 hover:bg-white hover:shadow-lg hover:shadow-neutral-200 transition-all duration-200 active:scale-95"
               >
                 <span className="px-1.5 py-0.5 bg-neutral-950 text-white text-[8px] font-black rounded-lg">{a.tecla}</span>
@@ -306,6 +318,10 @@ const EmployeeDashboard = ({
           </CartProvider>
         </section>
       </div>
+
+      {showModalCorte && (
+        <ModalCorte onClose={() => setShowModalCorte(false)} cajero={operatorName || "GENERAL"} />
+      )}
     </main>
   );
 };

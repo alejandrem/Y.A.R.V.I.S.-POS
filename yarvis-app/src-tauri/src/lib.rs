@@ -216,6 +216,7 @@ pub fn run() {
             // Cortes X/Z diferenciados (backcortes compartido admin+empleado)
             backventanas::backcortes::corte_x::corte_x_reporte,
             backventanas::backcortes::corte_z::corte_z_cierre,
+            backventanas::backcortes::impresion::imprimir_corte,
             // Finanzas - Métricas y Utilidades
             backventanas::backadmin::adminfinanzas::metricas::get_metricas_diarias,
             backventanas::backadmin::adminfinanzas::metricas::get_resumen_periodo,
