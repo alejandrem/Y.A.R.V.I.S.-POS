@@ -18,13 +18,17 @@ import { perfilNav } from "./ventanas/empleaperfil/perfil";
 import { yarvisNav } from "./ventanas/empleayarvis/yarvis";
 import { ajustesNav } from "./ventanas/empleaajustes/ajustes";
 import {
-  ICONO_BILLETE, ICONO_CAJA, ICONO_BUSCAR, ICONO_AYUDA,
+  ICONO_CAJA, ICONO_AYUDA,
   ICONO_RELOJ, ICONO_USUARIO, ICONO_CERRAR,
 } from "../components/ui";
+import { TABLA_ATAJOS, type AccionAtajoMenu } from "./atajos/tabla-atajos";
 
 import NuevaVenta from "./ventanas/emplea_new_venta/nueva_venta";
 import ModalCorte from "./ventanas/empleacortes/modal-corte";
+import ModalReimprimir from "./ventanas/empleaticket/componentes/modal-reimprimir";
+import ModalAtajos from "./atajos/modal-atajos";
 import { useAtajosEmpleados } from "./atajos/useAtajos";
+import { solicitarAccion } from "./atajos/atajos";
 import { CartProvider } from "./ventanas/emplea_new_venta/CartProvider";
 import { ChatProvider } from "../front-admin/ventanas/adminyarvis/ChatProvider";
 import Inventario from "./ventanas/empleainventario/inventario";
@@ -44,15 +48,8 @@ interface EmployeeDashboardProps {
   operatorName?: string;
 }
 
-// Atajos de teclado de la topbar (F3 corte funcional; F5-F8 en camino,
-// issues #16, #18, #19, #20, #21).
-const ATAJOS = [
-  { tecla: "F3", label: "Corte", icono: ICONO_CAJA, accion: "corte" },
-  { tecla: "F5", label: "Cobrar", icono: ICONO_BILLETE },
-  { tecla: "F6", label: "Caja", icono: ICONO_CAJA },
-  { tecla: "F7", label: "Buscar", icono: ICONO_BUSCAR },
-  { tecla: "F8", label: "Atajos", icono: ICONO_AYUDA },
-];
+// Los atajos salen de TABLA_ATAJOS (atajos/tabla-atajos.ts): topbar, menú
+// F8 y ejecución comparten la fuente. Aquí solo se filtran los de topbar.
 
 // Aviso de contraseña débil predeterminada (empleados creados solos desde
 // tickets: pass = nombre+123). Se pregunta al backend en cada login y se
@@ -113,10 +110,45 @@ const EmployeeDashboard = ({
   const [turno, setTurno] = useState<MiTurno | null>(null);
   const [ahora, setAhora] = useState(() => new Date());
 
-  // Modal de corte a nivel shell: F3 funciona desde cualquier pestaña.
+  // Modales de shell: F3 corte, F2 reimprimir y F8 menú funcionan desde
+  // cualquier pestaña. Con alguno abierto no entra otro atajo.
   const [showModalCorte, setShowModalCorte] = useState(false);
+  const [showModalReimprimir, setShowModalReimprimir] = useState(false);
+  const [showModalAtajos, setShowModalAtajos] = useState(false);
   const abrirCorte = useCallback(() => setShowModalCorte(true), []);
-  useAtajosEmpleados({ onCorte: abrirCorte, deshabilitado: showModalCorte });
+  const abrirReimprimir = useCallback(() => setShowModalReimprimir(true), []);
+  const abrirAyuda = useCallback(() => setShowModalAtajos(true), []);
+  const shellOcupado = showModalCorte || showModalReimprimir || showModalAtajos;
+  // F5/F4: cambian a la pestaña destino y dejan la acción pendiente; la
+  // pestaña la consume al montar (o al momento si ya estaba montada).
+  // Con el corte abierto no se hace nada (no encimar modales).
+  const irACobrar = useCallback(() => {
+    if (showModalCorte || showModalReimprimir) return;
+    setActiveTab("nueva_venta");
+    solicitarAccion("cobrar");
+  }, [showModalCorte, showModalReimprimir]);
+  const irAPagar = useCallback(() => {
+    if (showModalCorte || showModalReimprimir) return;
+    setActiveTab("proveedores");
+    solicitarAccion("pagar-proveedor");
+  }, [showModalCorte, showModalReimprimir]);
+  // F7: a la barra de búsqueda de nueva venta, lista para escribir.
+  const irABuscar = useCallback(() => {
+    if (showModalCorte || showModalReimprimir) return;
+    setActiveTab("nueva_venta");
+    solicitarAccion("buscar");
+  }, [showModalCorte, showModalReimprimir]);
+  useAtajosEmpleados({ onCorte: abrirCorte, onCobrar: irACobrar, onPagar: irAPagar, onReimprimir: abrirReimprimir, onAyuda: abrirAyuda, onBuscar: irABuscar, deshabilitado: shellOcupado });
+
+  // El menú F8 ejecuta y se cierra solo.
+  const ejecutarAtajoMenu = useCallback((a: AccionAtajoMenu) => {
+    setShowModalAtajos(false);
+    if (a === "corte") abrirCorte();
+    else if (a === "cobrar") irACobrar();
+    else if (a === "pagar") irAPagar();
+    else if (a === "reimprimir") abrirReimprimir();
+    else if (a === "buscar") irABuscar();
+  }, [abrirCorte, irACobrar, irAPagar, abrirReimprimir, irABuscar]);
 
   useEffect(() => {
     obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar la información de tu turno", e));
@@ -202,20 +234,25 @@ const EmployeeDashboard = ({
       <div className="flex-1 flex flex-col bg-neutral-50/50 overflow-hidden">
         {/* ── TOPBAR ──────────────────────────────────────────────── */}
         <header className="bg-white border-b border-neutral-100 px-6 py-3.5 flex items-center gap-5">
-          {/* ATAJOS GORDITOS */}
+          {/* ATAJOS GORDITOS (misma tabla que el menú F8) */}
           <div className="flex gap-2">
-            {ATAJOS.map((a) => (
+            {TABLA_ATAJOS.filter((a) => a.enTopbar).map((a) => (
               <button
                 key={a.tecla}
-                title={`Atajo ${a.tecla}`}
+                title={a.listo ? `Atajo ${a.tecla}: ${a.descripcion}` : `${a.tecla}: ${a.descripcion}`}
                 onClick={() => {
-                  if ("accion" in a && a.accion === "corte") abrirCorte();
+                  if (!a.listo) return;
+                  if (a.accion === "corte") abrirCorte();
+                  else if (a.accion === "cobrar") irACobrar();
+                  else if (a.accion === "reimprimir") abrirReimprimir();
+                  else if (a.accion === "buscar") irABuscar();
+                  else if (a.accion === "menu") abrirAyuda();
                 }}
                 className="group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 bg-neutral-50 rounded-2xl border border-transparent hover:border-neutral-950 hover:bg-white hover:shadow-lg hover:shadow-neutral-200 transition-all duration-200 active:scale-95"
               >
                 <span className="px-1.5 py-0.5 bg-neutral-950 text-white text-[8px] font-black rounded-lg">{a.tecla}</span>
                 <MorphIcon icon={a.icono} size={13} strokeWidth={2.4} spring="snappy" reducedMotion="user" className="text-neutral-400 group-hover:text-neutral-950 transition-colors" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400 group-hover:text-neutral-950 transition-colors">{a.label}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400 group-hover:text-neutral-950 transition-colors">{a.labelTopbar}</span>
               </button>
             ))}
           </div>
@@ -321,6 +358,14 @@ const EmployeeDashboard = ({
 
       {showModalCorte && (
         <ModalCorte onClose={() => setShowModalCorte(false)} cajero={operatorName || "GENERAL"} />
+      )}
+
+      {showModalReimprimir && (
+        <ModalReimprimir onClose={() => setShowModalReimprimir(false)} />
+      )}
+
+      {showModalAtajos && (
+        <ModalAtajos onClose={() => setShowModalAtajos(false)} onAccion={ejecutarAtajoMenu} />
       )}
     </main>
   );

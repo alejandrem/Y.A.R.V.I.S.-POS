@@ -14,7 +14,7 @@ import { buscarProductoSimilar } from "../../../services/venta";
 import ModalVenta from "./modalventa";
 import ModalTicket from "./modalticket";
 import BotonCorte from "../empleacortes/boton-corte";
-import { TECLA_CORTE, fijarBloqueoAtajo } from "../../atajos/atajos";
+import { TECLA_CORTE, TECLA_PAGAR, TECLA_REIMPRIMIR, TECLA_AYUDA, TECLA_BUSCAR, fijarBloqueoAtajo, suscribirAccion, consumirAccion } from "../../atajos/atajos";
 import { useCart } from "./CartProvider";
 import BuscadorProductos from "./componentes/buscador-productos";
 import TablaCarrito from "./componentes/tabla-carrito";
@@ -80,11 +80,52 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
     return () => window.removeEventListener("keydown", handleF5);
   }, [cart, showModalVenta, showModalTicket]);
 
-  // Mientras el cobro/ticket está abierto, el F3 global queda bloqueado
-  // para no encimar el modal de corte (ver front-empleado/atajos/).
+  // F5 global (viene del shell): abre el cobro solo si hay carrito y no
+  // hay otro modal. Si el carrito está vacío se ignora en silencio.
+  const intentarCobro = useCallback(() => {
+    if (cart.length === 0 || showModalVenta || showModalTicket) return;
+    setShowModalVenta(true);
+  }, [cart, showModalVenta, showModalTicket]);
+
+  // F7 global: deja el buscador listo para escribir.
+  const enfocarBuscador = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
+
   useEffect(() => {
-    fijarBloqueoAtajo(TECLA_CORTE, showModalVenta || showModalTicket);
-    return () => fijarBloqueoAtajo(TECLA_CORTE, false);
+    const desuscribir = suscribirAccion((a) => {
+      if (a === "cobrar") {
+        consumirAccion("cobrar");
+        intentarCobro();
+        return;
+      }
+      if (a === "buscar") {
+        consumirAccion("buscar");
+        enfocarBuscador();
+      }
+    });
+    // Por si la acción llegó antes de montar (cambio de pestaña).
+    if (consumirAccion("cobrar") !== null) intentarCobro();
+    else if (consumirAccion("buscar") !== null) enfocarBuscador();
+    return desuscribir;
+  }, [intentarCobro, enfocarBuscador]);
+
+  // Mientras el cobro/ticket está abierto, F3/F4/F2/F8/F7 quedan
+  // bloqueados para no encimar modales ni cambiar de tab.
+  useEffect(() => {
+    const ocupado = showModalVenta || showModalTicket;
+    fijarBloqueoAtajo(TECLA_CORTE, ocupado);
+    fijarBloqueoAtajo(TECLA_PAGAR, ocupado);
+    fijarBloqueoAtajo(TECLA_REIMPRIMIR, ocupado);
+    fijarBloqueoAtajo(TECLA_AYUDA, ocupado);
+    fijarBloqueoAtajo(TECLA_BUSCAR, ocupado);
+    return () => {
+      fijarBloqueoAtajo(TECLA_CORTE, false);
+      fijarBloqueoAtajo(TECLA_PAGAR, false);
+      fijarBloqueoAtajo(TECLA_REIMPRIMIR, false);
+      fijarBloqueoAtajo(TECLA_AYUDA, false);
+      fijarBloqueoAtajo(TECLA_BUSCAR, false);
+    };
   }, [showModalVenta, showModalTicket]);
 
   const loadInventory = async () => {

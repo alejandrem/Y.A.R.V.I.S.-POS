@@ -4,7 +4,7 @@
 // Cada modal vive en ./componentes (1 archivo = 1 tarea).
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MorphIcon } from "morphicons/react";
 import { ICONO_EDITAR } from "../../../components/ui";
 import { reportarError } from "../../../services/tauri";
@@ -15,6 +15,7 @@ import {
 import ModalAlta from "./componentes/modal-alta";
 import ModalCompra from "./componentes/modal-compra";
 import ModalFactura from "./componentes/modal-factura";
+import { TECLA_COBRAR, TECLA_REIMPRIMIR, TECLA_AYUDA, TECLA_BUSCAR, suscribirAccion, consumirAccion, fijarBloqueoAtajo } from "../../atajos/atajos";
 
 const proveedoresNav = {
   id: "proveedores",
@@ -58,6 +59,42 @@ const Proveedores = ({ activeTab }: ProveedoresProps) => {
   useEffect(() => {
     if (activeTab === "proveedores") recargar();
   }, [activeTab]);
+
+  // F4 global (viene del shell): abre el pago directo (tarjeta negra $),
+  // igual que el botón. Si hay otro modal se ignora en silencio.
+  const abrirPagoDirecto = useCallback(() => {
+    if (altaOpen || compraProv !== undefined || facturaId !== null) return;
+    setAltaOpen(false);
+    setRectificando(null);
+    setCompraProv(null);
+  }, [altaOpen, compraProv, facturaId]);
+
+  useEffect(() => {
+    const desuscribir = suscribirAccion((a) => {
+      if (a !== "pagar-proveedor") return;
+      consumirAccion("pagar-proveedor");
+      abrirPagoDirecto();
+    });
+    // Por si el F4 llegó antes de montar (cambio de pestaña).
+    if (consumirAccion("pagar-proveedor") !== null) abrirPagoDirecto();
+    return desuscribir;
+  }, [abrirPagoDirecto]);
+
+  // Mientras haya un modal de proveedor, F5 y F2/F8/F7 quedan bloqueados
+  // para no cambiar de tab ni encimar modales.
+  useEffect(() => {
+    const ocupado = altaOpen || compraProv !== undefined || facturaId !== null;
+    fijarBloqueoAtajo(TECLA_COBRAR, ocupado);
+    fijarBloqueoAtajo(TECLA_REIMPRIMIR, ocupado);
+    fijarBloqueoAtajo(TECLA_AYUDA, ocupado);
+    fijarBloqueoAtajo(TECLA_BUSCAR, ocupado);
+    return () => {
+      fijarBloqueoAtajo(TECLA_COBRAR, false);
+      fijarBloqueoAtajo(TECLA_REIMPRIMIR, false);
+      fijarBloqueoAtajo(TECLA_AYUDA, false);
+      fijarBloqueoAtajo(TECLA_BUSCAR, false);
+    };
+  }, [altaOpen, compraProv, facturaId]);
 
   if (activeTab !== "proveedores") return null;
 
