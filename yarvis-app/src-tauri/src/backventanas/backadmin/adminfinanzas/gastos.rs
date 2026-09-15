@@ -143,7 +143,6 @@ pub async fn eliminar_gasto(
     Ok(())
 }
 
-#[tauri::command]
 /// Núcleo de registro de pago, testeable sin runtime de Tauri.
 pub async fn registrar_pago_gasto_impl(
     pool: &SqlitePool,

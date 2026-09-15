@@ -44,7 +44,6 @@ pub async fn get_inventory(
     Ok(items)
 }
 
-#[tauri::command]
 /// Núcleo de alta de producto, testeable sin runtime de Tauri.
 pub async fn add_inventory_item_impl(
     pool: &SqlitePool,
@@ -87,7 +86,6 @@ pub async fn add_inventory_item(
     add_inventory_item_impl(&*state, &item).await
 }
 
-#[tauri::command]
 /// Núcleo de edición de producto, testeable sin runtime de Tauri.
 pub async fn update_inventory_item_impl(
     pool: &SqlitePool,
