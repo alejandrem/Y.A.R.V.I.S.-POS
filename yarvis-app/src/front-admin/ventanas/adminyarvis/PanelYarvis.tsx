@@ -86,7 +86,9 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   useEffect(() => {
     leerApiKeys()
       .then((keys) => { if (Object.keys(keys).length > 0) { setApiKeys(keys); setApiKeysCache(keys); } })
-      .catch((e) => reportarError("No se pudieron leer las API keys guardadas", e));
+      // La lectura es solo-admin: el empleado trabaja a ciegas (sus
+      // claves las agrega él) y no debe ver ni un toast de error.
+      .catch((e) => { if (rol !== "empleado") reportarError("No se pudieron leer las API keys guardadas", e); });
   }, []);
   const [cloudModelsLoading, setCloudModelsLoading] = useState<Record<string, boolean>>({});
   const [loadedModels, setLoadedModels] = useState<Record<string, boolean>>({ "1.7B": false });
@@ -311,13 +313,17 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
     // Regla del empleado: las claves que ya existen (puestas por el
     // administrador) NUNCA se eliminan ni se sobrescriben con vacío. El
     // empleado solo puede AGREGAR una clave para un proveedor que aún
-    // no tiene una. Las previas se leen del backend (disco 0600).
+    // no tiene una. Las previas se leen del backend (disco 0600); como
+    // la lectura es solo-admin, el empleado parte de vacío y el backend
+    // protege lo existente al guardar (fusionar_claves_por_rol).
     let previas: Record<string, string> = {};
     try {
       previas = await leerApiKeys();
     } catch (e) {
-      setConfigMessage(`Error leyendo claves: ${e}`);
-      return;
+      if (rol !== "empleado") {
+        setConfigMessage(`Error leyendo claves: ${e}`);
+        return;
+      }
     }
     const fusionadas: Record<string, string> = { ...previas };
     (Object.keys(apiKeys) as ProviderId[]).forEach((provider) => {

@@ -7,7 +7,10 @@
 // (solo el usuario dueño puede leerlo).
 //
 // AUTORIZACIÓN (enforcement en backend, nunca en React):
-// el ADMIN escribe tal cual (reemplazo total, puede borrar);
+// el ADMIN escribe tal cual (reemplazo total, puede borrar) y es el
+// ÚNICO que puede LEER las claves (require_admin en leer_api_keys:
+// si el empleado pudiera leerlas, robaría la cuota cloud del admin
+// con un simple invoke desde devtools);
 // el EMPLEADO solo puede AGREGAR claves de proveedores que aún
 // no tienen una: cualquier intento de sobrescribir o eliminar
 // una clave existente se rechaza con error. El candado del
@@ -134,7 +137,11 @@ pub fn leer_api_keys(
     app: tauri::AppHandle,
     auth: tauri::State<'_, crate::backventanas::auth::AuthState>,
 ) -> Result<std::collections::HashMap<String, String>, String> {
-    auth.require_operator()?;
+    // SOLO admin: las claves son secreto del dueño (cuota cloud). Un
+    // empleado con lectura roba la cuota con un invoke desde devtools.
+    // El empleado configura las SUYAS a ciegas: guardar_api_keys le
+    // permite agregar proveedores nuevos sin ver los existentes.
+    auth.require_admin()?;
     let ruta = ruta_config(&app)?;
     leer_mapa(&ruta)
 }

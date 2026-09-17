@@ -43,3 +43,11 @@ Estrategia igual válida: congelar IA/predicciones hasta tener v1.0 que cobre e 
 > "¿Ya cobra en una tienda real con 12k tickets, impresora térmica china y Windows sin internet?"
 
 Eso es real, aún no. Pero primero necesitamos el primer `.exe`. Sin instalador no hay tienda piloto. Prioridad actual: empaquetar, probar en Windows limpio, luego piloto real.
+
+## 6. Contraseñas provisionales `NOMBRE123`: intencional, no bug
+
+> "Empleados auto-creados con contraseña predecible + login solo-password: cualquiera que sepa el nombre del cajero entra como él."
+
+Es **provisional a propósito**. Cuando se importan empleados (o se dan de alta en lote), el sistema les asigna `NOMBRE123` como contraseña de arranque y prende el flag `password_defecto`. El flujo esperado es que el **admin entre después y les ponga contraseña real, sueldo, horario y turno** a cada uno — es parte del alta, no un olvido.
+
+Por eso no se "arregla" generando claves aleatorias: si el admin no puede saber la inicial, no puede entregársela al empleado nuevo. Lo que sí está prohibido es dejarlas así para siempre: el banner de "password por defecto" le recuerda al empleado y al admin hasta que se cambie.

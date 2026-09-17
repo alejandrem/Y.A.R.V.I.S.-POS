@@ -283,6 +283,60 @@ fn sql_rechaza_tablas_fuera_de_allowlist() {
     assert!(v["filas"][0]["s"].as_i64().unwrap() >= 30000);
 }
 
+// ── C1: la columna `password` jamás llega al modelo ──
+
+fn db_con_usuarios() -> Connection {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE usuarios (id INTEGER PRIMARY KEY, nombre TEXT, password TEXT, rol TEXT);
+         INSERT INTO usuarios (nombre, password, rol) VALUES ('admin', 'hash-falso-argon2', 'admin');",
+    )
+    .unwrap();
+    conn
+}
+
+#[test]
+fn sql_rechaza_pedir_password_por_nombre() {
+    let conn = db_con_usuarios();
+    for mala in [
+        "SELECT nombre, password FROM usuarios",
+        "select password from usuarios limit 5",
+        "SELECT nombre FROM usuarios WHERE password = 'x'",
+        "WITH u AS (SELECT * FROM usuarios) SELECT password FROM u",
+    ] {
+        let r = sql_readonly(&conn, &serde_json::json!({"query": mala})).unwrap();
+        assert!(r.get("error").is_some(), "debió rechazar: {mala}");
+    }
+}
+
+#[test]
+fn sql_select_estrella_recorta_password_de_la_salida() {
+    let conn = db_con_usuarios();
+    let v = sql_readonly(&conn, &serde_json::json!({"query": "SELECT * FROM usuarios"})).unwrap();
+    assert!(v.get("error").is_none());
+    assert_eq!(v["columnas"], serde_json::json!(["id", "nombre", "rol"]));
+    let fila = &v["filas"][0];
+    assert!(fila.get("password").is_none());
+    assert_eq!(fila["nombre"], "admin");
+}
+
+#[test]
+fn sql_snapshot_oculta_columna_password() {
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("yarvis_snapshot_test_{}.db", std::process::id()));
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE usuarios (id INTEGER PRIMARY KEY, nombre TEXT, password TEXT, rol TEXT);",
+        )
+        .unwrap();
+    }
+    let schema = super::sql::snapshot_schema(path.to_str().unwrap()).unwrap();
+    assert!(schema.contains("usuarios("));
+    assert!(!schema.to_ascii_uppercase().contains("PASSWORD"), "el schema filtró: {schema}");
+    let _ = std::fs::remove_file(&path);
+}
+
 // ── Abasto y trazabilidad (migraciones 0012/0013/0018) ──
 
 fn db_abasto() -> Connection {

@@ -172,6 +172,8 @@ Reglas duras (si las rompes, la consulta se rechaza y pierdes la ronda):
 - Solo estas tablas: ventas, detalle_ventas, productos, cortes_caja,
   movimientos_caja, gastos_recurrentes, pagos_gastos, usuarios,
   asistencias, empleado_horarios, clientes.
+- La columna `password` NO existe para ti: cualquier query que la mencione
+  se rechaza y ni siquiera aparece en tu esquema. Nunca la pidas.
 - Dinero en INTEGER CENTAVOS: divide entre 100.0 para pesos.
 - Solo estado='completada' para ventas reales.
 Ejemplos few-shot (adáptalos, no los repitas tal cual):

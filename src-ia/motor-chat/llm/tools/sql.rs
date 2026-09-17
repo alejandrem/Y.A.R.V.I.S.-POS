@@ -2,7 +2,7 @@
 //!
 //! En vez de una tool por pregunta, el modelo escribe `SELECT`/`WITH`
 //! contra un snapshot del schema que viaja en su system prompt. Defensa
-//! en 4 capas (ninguna confía en el modelo):
+//! en 5 capas (ninguna confía en el modelo):
 //!   1. Validador sintáctico: primera palabra SELECT/WITH, sin `;`
 //!      interiores, sin comentarios, denylist de escritura/DDL/PRAGMA y
 //!      veto a tablas internas `sqlite_%`.
@@ -10,6 +10,10 @@
 //!      pide más o `-1` = sin límite en SQLite).
 //!   3. Conexión `SQLITE_OPEN_READ_ONLY` (la comparte con las demás tools).
 //!   4. Timeout de 20s en el llamador + tope de filas/bytes en salida.
+//!   5. Material de credenciales: la columna `password` (hashes Argon2)
+//!      está vetada en el validador, se recorta de la salida (cubre
+//!      `SELECT *`) y ni siquiera se anuncia en el snapshot del schema.
+//!      Los hashes nunca deben viajar a un proveedor cloud.
 //!
 //! Solo-admin: se filtra en `herramientas_rol.rs` (TOOLS_SOLO_ADMIN),
 //! porque un SELECT puede leer costos y salarios. El empleado conserva
@@ -31,6 +35,13 @@ const DENY: &[&str] = &[
     "ATTACH", "DETACH", "PRAGMA", "REINDEX", "ANALYZE", "EXPLAIN", "GRANT", "REVOKE", "BEGIN",
     "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE",
 ];
+
+/// Columnas de material sensible que el modelo jamás debe ver ni pedir.
+/// `password` guarda hashes Argon2: si viajan al cloud se pueden crackear
+/// offline. Se veta en el validador, se recorta de la salida y se oculta
+/// del snapshot del schema (defensa en 3 puntos contra `SELECT *` y
+/// contra inyección de instrucciones en nombres de productos).
+const COLUMNAS_PROHIBIDAS: &[&str] = &["PASSWORD"];
 
 /// Tablas que el modelo puede tocar (el resto ni se le muestra en el schema).
 const TABLAS_PERMITIDAS: &[&str] = &[
@@ -161,6 +172,9 @@ fn validar_sql(query: &str) -> Result<String, String> {
             if DENY.contains(&buf.as_str()) {
                 return Err(format!("palabra prohibida en lectura: {buf}."));
             }
+            if COLUMNAS_PROHIBIDAS.contains(&buf.as_str()) {
+                return Err("columna restringida: los hashes de acceso no se consultan.".into());
+            }
             buf.clear();
         }
     }
@@ -260,6 +274,17 @@ pub(crate) fn sql_readonly(conn: &Connection, args: &Value) -> Result<Value, Str
     let columnas: Vec<String> = (0..ncols)
         .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
         .collect();
+    // Recorte de material sensible: aunque el validador rechaza pedir
+    // `password` por nombre, un `SELECT *` la traería igual. Se filtra
+    // aquí, en la salida, para que jamás llegue al modelo ni a la nube.
+    // Se guardan los ÍNDICES reales para no desfasar con JOINs que
+    // repiten nombres de columna.
+    let visibles: Vec<(usize, String)> = columnas
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !COLUMNAS_PROHIBIDAS.contains(&c.to_ascii_uppercase().as_str()))
+        .map(|(i, c)| (i, c.clone()))
+        .collect();
 
     let mut filas: Vec<Value> = Vec::new();
     let mut filas_total: i64 = 0;
@@ -273,8 +298,8 @@ pub(crate) fn sql_readonly(conn: &Connection, args: &Value) -> Result<Value, Str
             break;
         }
         let mut obj = serde_json::Map::with_capacity(ncols);
-        for (i, col) in columnas.iter().enumerate() {
-            obj.insert(col.clone(), valor_a_json(row.get_ref(i).map_err(|e| e.to_string())?));
+        for (real, col) in visibles.iter() {
+            obj.insert(col.clone(), valor_a_json(row.get_ref(*real).map_err(|e| e.to_string())?));
         }
         let v = Value::Object(obj);
         bytes += v.to_string().len();
@@ -286,7 +311,8 @@ pub(crate) fn sql_readonly(conn: &Connection, args: &Value) -> Result<Value, Str
     }
 
     let mut out = serde_json::Map::new();
-    out.insert("columnas".into(), serde_json::json!(columnas));
+    let columnas_out: Vec<String> = visibles.iter().map(|(_, c)| c.clone()).collect();
+    out.insert("columnas".into(), serde_json::json!(columnas_out));
     out.insert("filas".into(), Value::Array(filas));
     out.insert("filas_total".into(), serde_json::json!(filas_total));
     if recortado {
@@ -316,10 +342,14 @@ pub fn snapshot_schema(db_path: &str) -> Result<String, String> {
             .query_map([], |r| {
                 let nombre: String = r.get(1)?;
                 let tipo: String = r.get(2)?;
-                Ok(format!("{nombre}:{tipo}"))
+                Ok((nombre, tipo))
             })
             .map_err(|e| e.to_string())?
             .filter_map(|c| c.ok())
+            // El modelo ni siquiera debe saber que existe la columna de
+            // hashes: si no la conoce, no la puede pedir.
+            .filter(|(nombre, _)| !COLUMNAS_PROHIBIDAS.contains(&nombre.to_ascii_uppercase().as_str()))
+            .map(|(nombre, tipo)| format!("{nombre}:{tipo}"))
             .collect();
         if !cols.is_empty() {
             out.push_str(&format!("- {t}({})\n", cols.join(", ")));
