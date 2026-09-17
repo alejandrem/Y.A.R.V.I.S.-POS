@@ -9,6 +9,8 @@ export interface ItemVenta {
   nombre: string;
   precio_venta: number;
   cantidad: number;
+  /** Descuento en pesos de esta línea (monto, no %). */
+  descuento: number;
 }
 
 export type VentaRequest = {

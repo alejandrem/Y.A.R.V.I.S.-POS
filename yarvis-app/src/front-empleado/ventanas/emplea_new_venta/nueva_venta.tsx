@@ -50,7 +50,7 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { cart, addToCart: agregarAlCarrito, updateQuantity, removeFromCart, limpiarCarrito, cartTotal } =
+  const { cart, addToCart: agregarAlCarrito, updateQuantity, updateDescuento, removeFromCart, limpiarCarrito, cartSubtotal, cartDescuento, cartTotal } =
     useCart();
   // El foco del buscador es del módulo (el provider no conoce su DOM).
   const addToCart = (product: InventoryItem) => {
@@ -235,8 +235,8 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
       </div>
 
       {/* ═══ CARRITO ══════════════════════════════════════════════════ */}
-      <TablaCarrito cart={cart} onUpdateCantidad={updateQuantity} onEliminar={removeFromCart} onLimpiar={limpiarCarrito}>
-        <PieCobro iaSuggestion={iaSuggestion} total={cartTotal} onCobrar={handleAbrirCobro} disabled={cart.length === 0} />
+      <TablaCarrito cart={cart} onUpdateCantidad={updateQuantity} onUpdateDescuento={updateDescuento} onEliminar={removeFromCart} onLimpiar={limpiarCarrito}>
+        <PieCobro iaSuggestion={iaSuggestion} subtotal={cartSubtotal} descuento={cartDescuento} total={cartTotal} onCobrar={handleAbrirCobro} disabled={cart.length === 0} />
       </TablaCarrito>
     </div>
 

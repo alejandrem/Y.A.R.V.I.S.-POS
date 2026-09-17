@@ -16,6 +16,8 @@ interface CartItem {
   precio_venta: number;
   cantidad: number;
   stock: number;
+  /** Descuento en pesos de la línea. Opcional: carritos viejos no lo traen. */
+  descuento?: number;
 }
 
 interface ModalTicketProps {
@@ -112,6 +114,7 @@ export default function ModalTicket({
           nombre: item.nombre,
           cantidad: item.cantidad,
           precio_unitario: item.precio_venta,
+          descuento: item.descuento ?? 0,
         })),
         total: cartTotal,
         pagos,

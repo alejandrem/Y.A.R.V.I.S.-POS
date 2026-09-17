@@ -102,3 +102,46 @@ describe("ventas · UX del modal", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("ventas · descuento por línea", () => {
+  const CART_DESC = [
+    { id: 1, nombre: "Coca-Cola 600ml", precio_venta: 18, cantidad: 2, stock: 50, descuento: 6 },
+    { id: 2, nombre: "Sabritas", precio_venta: 20, cantidad: 1, stock: 30, descuento: 0 },
+  ];
+  const BRUTO = 56;
+  const NETO = 50;
+
+  it("manda descuento por línea, subtotal bruto y total neto al backend", async () => {
+    render(
+      <ModalVenta
+        onClose={vi.fn()}
+        onVentaCompletada={vi.fn()}
+        cart={CART_DESC}
+        cartTotal={NETO}
+      />,
+    );
+    ponerMonto(/Efectivo/i, String(NETO));
+    fireEvent.click(btnConfirmar());
+
+    await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+    const [cmd, args] = mockInvoke.mock.calls[0];
+    expect(cmd).toBe("completar_venta");
+    expect(args.venta.subtotal).toBe(BRUTO);
+    expect(args.venta.total).toBe(NETO);
+    expect(args.venta.items[0]).toMatchObject({ id: 1, descuento: 6 });
+    expect(args.venta.items[1]).toMatchObject({ id: 2, descuento: 0 });
+  });
+
+  it("muestra la línea de Descuento en el resumen solo si hay rebaja", () => {
+    const { rerender } = render(
+      <ModalVenta onClose={vi.fn()} onVentaCompletada={vi.fn()} cart={CART_DESC} cartTotal={NETO} />,
+    );
+    expect(screen.getByText("Descuento")).toBeInTheDocument();
+    expect(screen.getByText(/\$6\.00/)).toBeInTheDocument();
+
+    rerender(
+      <ModalVenta onClose={vi.fn()} onVentaCompletada={vi.fn()} cart={CART} cartTotal={TOTAL} />,
+    );
+    expect(screen.queryByText("Descuento")).toBeNull();
+  });
+});

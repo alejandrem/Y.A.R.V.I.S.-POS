@@ -19,6 +19,8 @@ interface CartItem {
   precio_venta: number;
   cantidad: number;
   stock: number;
+  /** Descuento en pesos de la línea. Opcional: carritos viejos no lo traen. */
+  descuento?: number;
 }
 
 interface ModalVentaProps {
@@ -41,6 +43,15 @@ export default function ModalVenta({ onClose, onVentaCompletada, cart, cartTotal
   const totalPagado = montoEfectivo + montoTarjeta + montoTransferencia;
   const cambio = totalPagado - cartTotal;
   const esValido = totalPagado >= cartTotal && cartTotal > 0;
+  // Desglose para el payload: bruto etiquetado y rebaja por línea.
+  // `cartTotal` (prop) ya es el NETO a cobrar.
+  const descPorLinea = (it: CartItem) => {
+    const bruto = it.precio_venta * it.cantidad;
+    const d = it.descuento ?? 0;
+    return Number.isFinite(d) ? Math.min(Math.max(0, d), bruto) : 0;
+  };
+  const subtotalBruto = cart.reduce((acc, it) => acc + it.precio_venta * it.cantidad, 0);
+  const descuentoTotal = cart.reduce((acc, it) => acc + descPorLinea(it), 0);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -66,9 +77,10 @@ export default function ModalVenta({ onClose, onVentaCompletada, cart, cartTotal
           nombre: item.nombre,
           precio_venta: item.precio_venta,
           cantidad: item.cantidad,
+          descuento: descPorLinea(item),
         })),
         total: cartTotal,
-        subtotal: cartTotal,
+        subtotal: subtotalBruto,
         descuento: 0,
         monto_efectivo: montoEfectivo,
         monto_tarjeta: montoTarjeta,
@@ -138,6 +150,18 @@ export default function ModalVenta({ onClose, onVentaCompletada, cart, cartTotal
 
           {/* RESUMEN */}
           <div className="bg-neutral-50 rounded-3xl p-5 space-y-2.5 border border-neutral-100">
+            {descuentoTotal > 0 && (
+              <>
+                <div className="flex justify-between text-xs font-black text-neutral-400 uppercase tracking-wider">
+                  <span>Subtotal</span>
+                  <span className="text-neutral-900">${subtotalBruto.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs font-black uppercase tracking-wider">
+                  <span className="text-amber-600">Descuento</span>
+                  <span className="text-amber-600">−${descuentoTotal.toFixed(2)}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between text-xs font-black text-neutral-400 uppercase tracking-wider">
               <span>Total a pagar</span>
               <span className="text-neutral-900">${cartTotal.toFixed(2)}</span>

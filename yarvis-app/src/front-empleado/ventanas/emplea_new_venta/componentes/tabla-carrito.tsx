@@ -14,6 +14,7 @@ import {
 interface TablaCarritoProps {
   cart: CartItem[];
   onUpdateCantidad: (id: number | undefined, delta: number) => void;
+  onUpdateDescuento: (id: number | undefined, monto: number) => void;
   onEliminar: (id: number | undefined) => void;
   onLimpiar: () => void;
   children?: React.ReactNode;
@@ -22,6 +23,7 @@ interface TablaCarritoProps {
 export default function TablaCarrito({
   cart,
   onUpdateCantidad,
+  onUpdateDescuento,
   onEliminar,
   onLimpiar,
   children,
@@ -66,7 +68,9 @@ export default function TablaCarrito({
                 <th className="pb-3 px-2">Cantidad</th>
                 <th className="pb-3 px-2">Producto</th>
                 <th className="pb-3 px-2">P. Unitario</th>
-                <th className="pb-3 px-2 text-right">Subtotal</th>
+                <th className="pb-3 px-2">Descuento</th>
+                <th className="pb-3 px-2 text-right">Total</th>
+                <th className="pb-3 px-2 text-right">Neto</th>
                 <th className="pb-3 px-2 w-12"></th>
               </tr>
             </thead>
@@ -95,8 +99,28 @@ export default function TablaCarrito({
                   </td>
                   <td className="py-3.5 px-2 font-black text-neutral-800 text-xs uppercase">{item.nombre}</td>
                   <td className="py-3.5 px-2 font-bold text-neutral-400 text-xs">${item.precio_venta.toFixed(2)}</td>
-                  <td className="py-3.5 px-2 text-right font-black text-neutral-950 text-base">
+                  <td className="py-3.5 px-2">
+                    <div className="flex items-center gap-1 bg-amber-50/60 rounded-xl px-2 py-1.5 border border-amber-100 focus-within:border-amber-400 focus-within:bg-white transition-colors w-24">
+                      <span className="text-[10px] font-black text-amber-500">$</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={item.precio_venta * item.cantidad}
+                        step="0.01"
+                        value={item.descuento ?? 0}
+                        onChange={(e) => onUpdateDescuento(item.id, parseFloat(e.target.value) || 0)}
+                        onFocus={(e) => e.target.select()}
+                        placeholder="0.00"
+                        title="Descuento en pesos para este producto"
+                        className="w-full bg-transparent text-xs font-black text-neutral-900 text-right focus:outline-none placeholder:text-neutral-300"
+                      />
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-2 text-right font-bold text-neutral-400 text-xs">
                     ${(item.precio_venta * item.cantidad).toFixed(2)}
+                  </td>
+                  <td className="py-3.5 px-2 text-right font-black text-neutral-950 text-base">
+                    ${((item.precio_venta * item.cantidad) - (item.descuento ?? 0)).toFixed(2)}
                   </td>
                   <td className="py-3.5 px-2 text-right">
                     <button

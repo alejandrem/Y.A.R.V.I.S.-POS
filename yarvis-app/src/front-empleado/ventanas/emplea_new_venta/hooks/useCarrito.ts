@@ -14,6 +14,8 @@ export interface CartItem {
   precio_venta: number;
   cantidad: number;
   stock: number;
+  /** Descuento en PESOS de esta línea (monto, no %). 0 = sin descuento. */
+  descuento: number;
 }
 
 interface UseCarritoArgs {
@@ -40,6 +42,7 @@ export function useCarrito({ inputRef }: UseCarritoArgs = {}) {
           precio_venta: product.precio_venta,
           cantidad: 1,
           stock: product.stock,
+          descuento: 0,
         },
       ];
     });
@@ -55,7 +58,9 @@ export function useCarrito({ inputRef }: UseCarritoArgs = {}) {
             const newQty = item.cantidad + delta;
             if (newQty <= 0) return null;
             if (newQty > item.stock) return item;
-            return { ...item, cantidad: newQty };
+            // Al bajar cantidad, el descuento no puede pasar del nuevo bruto.
+            const bruto = item.precio_venta * newQty;
+            return { ...item, cantidad: newQty, descuento: Math.min(item.descuento ?? 0, bruto) };
           }
           return item;
         })
@@ -68,9 +73,27 @@ export function useCarrito({ inputRef }: UseCarritoArgs = {}) {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
+  /** Descuento de la línea clampado a [0, bruto]: nunca deja neto negativo. */
+  const updateDescuento = (id: number | undefined, monto: number) => {
+    if (id === undefined) return;
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const bruto = item.precio_venta * item.cantidad;
+        const d = Number.isFinite(monto) ? Math.min(Math.max(0, monto), bruto) : 0;
+        return { ...item, descuento: Math.round(d * 100) / 100 };
+      })
+    );
+  };
+
   const limpiarCarrito = () => setCart([]);
 
-  const cartTotal = cart.reduce((acc, item) => acc + item.precio_venta * item.cantidad, 0);
+  /** Bruto sin descuentos (lo etiquetado). */
+  const cartSubtotal = cart.reduce((acc, item) => acc + item.precio_venta * item.cantidad, 0);
+  /** Lo que el cliente se ahorra en total. */
+  const cartDescuento = cart.reduce((acc, item) => acc + (item.descuento ?? 0), 0);
+  /** NETO a cobrar (bruto − descuentos). Lo que ya era `cartTotal`. */
+  const cartTotal = cartSubtotal - cartDescuento;
 
-  return { cart, addToCart, updateQuantity, removeFromCart, limpiarCarrito, cartTotal };
+  return { cart, addToCart, updateQuantity, updateDescuento, removeFromCart, limpiarCarrito, cartSubtotal, cartDescuento, cartTotal };
 }
