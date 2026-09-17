@@ -147,6 +147,9 @@ pub struct LineaVentaPayload {
     pub nombre: String,
     pub cantidad: f64,
     pub precio_unitario: f64,
+    /// Descuento en pesos de esta linea. `default` = 0 (frontends viejos).
+    #[serde(default)]
+    pub descuento: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -166,6 +169,9 @@ pub struct TicketVentaPayload {
     #[serde(default)]
     pub fecha: Option<String>,
     pub lineas: Vec<LineaVentaPayload>,
+    /// Descuento global en pesos (fuera de las lineas). `default` = 0.
+    #[serde(default)]
+    pub descuento_global: f64,
     pub total: f64,
     #[serde(default)]
     pub pagos: Vec<PagoPayload>,
@@ -252,24 +258,52 @@ pub async fn imprimir_ticket_venta(
         return Err("Falta el folio del ticket.".into());
     }
 
-    let lineas: Vec<LineaVenta> = ticket
-        .lineas
-        .into_iter()
-        .map(|l| LineaVenta {
+    let mut subtotal_bruto = 0.0;
+    let mut desc_lineas = 0.0;
+    let mut lineas: Vec<LineaVenta> = Vec::with_capacity(ticket.lineas.len());
+    for l in ticket.lineas {
+        let cantidad = if l.cantidad.is_finite() {
+            l.cantidad.max(0.0)
+        } else {
+            0.0
+        };
+        let precio = if l.precio_unitario.is_finite() {
+            l.precio_unitario.max(0.0)
+        } else {
+            0.0
+        };
+        let bruto = cantidad * precio;
+        let desc = if l.descuento.is_finite() {
+            l.descuento.max(0.0).min(bruto)
+        } else {
+            0.0
+        };
+        subtotal_bruto += bruto;
+        desc_lineas += desc;
+        lineas.push(LineaVenta {
             nombre: limpiar(&l.nombre),
-            cantidad: if l.cantidad.is_finite() { l.cantidad.max(0.0) } else { 0.0 },
-            precio_unitario: if l.precio_unitario.is_finite() {
-                l.precio_unitario.max(0.0)
-            } else {
-                0.0
-            },
-        })
-        .collect();
+            cantidad,
+            precio_unitario: precio,
+            descuento: desc,
+        });
+    }
+    let desc_global = if ticket.descuento_global.is_finite() {
+        ticket.descuento_global.max(0.0)
+    } else {
+        0.0
+    };
+    if desc_lineas + desc_global > subtotal_bruto {
+        return Err("Descuentos mayores al subtotal del ticket.".into());
+    }
     let pagos: Vec<(String, f64)> = ticket
         .pagos
         .into_iter()
         .map(|p| {
-            let monto = if p.monto.is_finite() { p.monto.max(0.0) } else { 0.0 };
+            let monto = if p.monto.is_finite() {
+                p.monto.max(0.0)
+            } else {
+                0.0
+            };
             (limpiar(&p.metodo), monto)
         })
         .filter(|(_, m)| *m > 0.0)
@@ -288,6 +322,7 @@ pub async fn imprimir_ticket_venta(
         folio: folio.clone(),
         fecha,
         lineas,
+        descuento_global: desc_global,
         total: ticket.total,
         pagos,
         cambio,

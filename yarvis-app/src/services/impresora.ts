@@ -40,6 +40,8 @@ export interface LineaVentaPrint {
   nombre: string;
   cantidad: number;
   precio_unitario: number;
+  /** Descuento en pesos de esta línea (monto, no %). Opcional = 0. */
+  descuento?: number | null;
 }
 
 export interface PagoPrint {
@@ -53,6 +55,8 @@ export interface TicketVentaPrint {
   folio: string;
   fecha?: string | null;
   lineas: LineaVentaPrint[];
+  /** Descuento global en pesos (fuera de las líneas). Opcional = 0. */
+  descuento_global?: number | null;
   total: number;
   pagos: PagoPrint[];
   qr?: string | null;

@@ -87,10 +87,15 @@ pub struct EmployeeGoal {
 
 #[derive(Deserialize, Clone)]
 pub struct CartItemRequest {
-    pub id: Option<i64>,
+    pub id: Option<i32>,
     pub nombre: String,
     pub precio_venta: f64,
     pub cantidad: f64,
+    /// Descuento en PESOS aplicado a esta linea (monto, no %).
+    /// 0 = sin descuento. `default` para que frontends viejos que no
+    /// lo mandan sigan funcionando.
+    #[serde(default)]
+    pub descuento: f64,
 }
 
 #[derive(Deserialize)]

@@ -24,16 +24,23 @@ fn dinero(monto: f64) -> String {
     format!("${:.2}", monto.max(0.0))
 }
 
-/// Una linea del ticket: cantidad x producto ... importe.
+/// Una linea del ticket: cantidad x producto ... importe NETO.
+/// `descuento` es el monto en pesos rebajado a ESTA linea (0 = sin
+/// descuento). El importe impreso ya es neto; si hay descuento se
+/// agrega renglon `Desc: -$X.XX` para que el cliente vea por que
+/// paga menos que la suma de etiquetas.
 #[derive(Debug, Clone)]
 pub struct LineaVenta {
     pub nombre: String,
     pub cantidad: f64,
     pub precio_unitario: f64,
+    pub descuento: f64,
 }
 
 /// Todo lo que necesita el ticket de venta. `qr` es opcional
 /// (folio o URL de factura); si viene vacio no se imprime QR.
+/// `descuento_global` es monto adicional fuera de las lineas
+/// (promos, redondeo); 0 = no hay.
 #[derive(Debug, Clone)]
 pub struct TicketVenta {
     pub tienda: String,
@@ -41,6 +48,7 @@ pub struct TicketVenta {
     pub folio: String,
     pub fecha: String,
     pub lineas: Vec<LineaVenta>,
+    pub descuento_global: f64,
     pub total: f64,
     pub pagos: Vec<(String, f64)>,
     pub cambio: f64,
@@ -93,23 +101,47 @@ pub fn construir_ticket_venta(t: &TicketVenta) -> Result<Vec<u8>, String> {
     p.writeln(&"-".repeat(COLS))
         .map_err(|e| format!("Ticket: {e}"))?;
 
-    // Lineas
+    // Lineas (importe NETO; el descuento de la linea se muestra
+    // en renglon propio para que el cliente vea la rebaja).
     p.justify(JustifyMode::LEFT)
         .map_err(|e| format!("Ticket: {e}"))?;
+    let mut subtotal_bruto = 0.0;
+    let mut desc_lineas = 0.0;
     for l in &t.lineas {
-        let importe = l.cantidad.max(0.0) * l.precio_unitario.max(0.0);
+        let bruto = l.cantidad.max(0.0) * l.precio_unitario.max(0.0);
+        let desc = l.descuento.max(0.0).min(bruto);
+        subtotal_bruto += bruto;
+        desc_lineas += desc;
         let cant = if l.cantidad.fract() == 0.0 {
             format!("{}x", l.cantidad as i64)
         } else {
             format!("{}x", l.cantidad)
         };
-        p.writeln(&fila(&dinero(importe), &format!("{cant} {}", l.nombre)))
-            .map_err(|e| format!("Ticket: {e}"))?;
+        p.writeln(&fila(
+            &dinero(bruto - desc),
+            &format!("{cant} {}", l.nombre),
+        ))
+        .map_err(|e| format!("Ticket: {e}"))?;
+        if desc > 0.0 {
+            p.writeln(&fila(&format!("-{}", dinero(desc)), "  Desc:"))
+                .map_err(|e| format!("Ticket: {e}"))?;
+        }
     }
     p.writeln(&"-".repeat(COLS))
         .map_err(|e| format!("Ticket: {e}"))?;
 
-    // Total + pagos + cambio
+    // Subtotal + descuento (solo si hubo) + total + pagos + cambio.
+    // El DESCUENTO impreso es lineas + global: lo que el cliente
+    // se ahorro contra etiquetas.
+    let desc_total = desc_lineas + t.descuento_global.max(0.0);
+    if desc_total > 0.0 {
+        p.writeln(&fila(&dinero(subtotal_bruto), "SUBTOTAL"))
+            .map_err(|e| format!("Ticket: {e}"))?;
+        p.writeln(&fila(&format!("-{}", dinero(desc_total)), "DESCUENTO"))
+            .map_err(|e| format!("Ticket: {e}"))?;
+        p.writeln(&"-".repeat(COLS))
+            .map_err(|e| format!("Ticket: {e}"))?;
+    }
     p.bold(true).map_err(|e| format!("Ticket: {e}"))?;
     p.size(2, 1).map_err(|e| format!("Ticket: {e}"))?;
     p.writeln(&fila(&dinero(t.total), "TOTAL"))
@@ -162,7 +194,9 @@ mod tests {
                 nombre: "Coca-Cola 600ml".into(),
                 cantidad: 2.0,
                 precio_unitario: 20.0,
+                descuento: 0.0,
             }],
+            descuento_global: 0.0,
             total: 40.0,
             pagos: vec![("Efectivo".into(), 50.0)],
             cambio: 10.0,
@@ -196,5 +230,35 @@ mod tests {
         let mut t = demo();
         t.lineas.clear();
         assert!(construir_ticket_venta(&t).is_err());
+    }
+
+    #[test]
+    fn ticket_con_descuento_muestra_subtotal_y_desc() {
+        let mut t = demo();
+        t.lineas[0].descuento = 5.0;
+        t.descuento_global = 3.0;
+        t.total = 32.0;
+        let bytes = construir_ticket_venta(&t).expect("render");
+        let txt = String::from_utf8_lossy(&bytes);
+        assert!(txt.contains("SUBTOTAL"), "falta SUBTOTAL");
+        assert!(txt.contains("DESCUENTO"), "falta DESCUENTO");
+        assert!(txt.contains("Desc:"), "falta renglon de linea");
+        assert!(txt.contains("$40.00"), "falta bruto");
+        assert!(txt.contains("-$8.00"), "falta descuento total 5+3");
+        assert!(txt.contains("$32.00"), "falta neto");
+    }
+
+    #[test]
+    fn ticket_sin_descuento_no_muestra_subtotal() {
+        let bytes = construir_ticket_venta(&demo()).expect("render");
+        let txt = String::from_utf8_lossy(&bytes);
+        assert!(
+            !txt.contains("SUBTOTAL"),
+            "sin descuento no debe salir SUBTOTAL"
+        );
+        assert!(
+            !txt.contains("DESCUENTO"),
+            "sin descuento no debe salir DESCUENTO"
+        );
     }
 }

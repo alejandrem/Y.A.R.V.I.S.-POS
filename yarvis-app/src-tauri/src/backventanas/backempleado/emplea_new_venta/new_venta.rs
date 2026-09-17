@@ -18,16 +18,28 @@ pub async fn completar_venta_impl(
 
     let pagado = venta.monto_efectivo + venta.monto_tarjeta + venta.monto_transferencia;
     // Total SOBERANO del backend (issue #5): se recalcula en centavos desde
-    // los items + descuento. El total/subtotal del frontend son display (f64
-    // con ruido binario: 19.99*3 = 59.970000000000006) y NO se persisten ni
-    // validan el pago; solo sirven para pintar el modal de cobro.
-    let subtotal_cents: i64 = venta
-        .items
-        .iter()
-        .map(|it| a_centavos(it.precio_venta * it.cantidad))
-        .sum();
-    let descuento_cents = a_centavos(venta.descuento);
-    if descuento_cents < 0 || descuento_cents > subtotal_cents {
+    // los items + descuentos por linea + descuento global. El total/subtotal
+    // del frontend son display (f64 con ruido binario: 19.99*3 =
+    // 59.970000000000006) y NO se persisten ni validan el pago; solo sirven
+    // para pintar el modal de cobro.
+    //
+    // Descuento por linea (monto en pesos, no %): 0 <= d <= bruto de SU
+    // linea. El descuento global es un monto ADICIONAL (promos, redondeo).
+    // Invariante: total = subtotal_bruto - desc_lineas - desc_global >= 0.
+    let mut subtotal_cents: i64 = 0;
+    let mut desc_lineas_cents: i64 = 0;
+    for it in &venta.items {
+        let bruto = a_centavos(it.precio_venta * it.cantidad);
+        let d = a_centavos(it.descuento);
+        if d < 0 || d > bruto {
+            return Err(format!("Descuento inválido en '{}'", it.nombre));
+        }
+        subtotal_cents += bruto;
+        desc_lineas_cents += d;
+    }
+    let descuento_global_cents = a_centavos(venta.descuento);
+    let descuento_cents = desc_lineas_cents + descuento_global_cents;
+    if descuento_global_cents < 0 || descuento_cents < 0 || descuento_cents > subtotal_cents {
         return Err("Descuento inválido".into());
     }
     let total_cents = subtotal_cents - descuento_cents;
@@ -86,15 +98,21 @@ pub async fn completar_venta_impl(
     let venta_id = result.last_insert_rowid();
 
     for item in &venta.items {
+        // El subtotal del detalle ya es NETO (bruto - descuento de la
+        // linea): asi "top por ingreso" y reportes suman lo realmente
+        // cobrado, no lo etiquetado.
+        let bruto_item = a_centavos(item.precio_venta * item.cantidad);
+        let desc_item = a_centavos(item.descuento).clamp(0, bruto_item);
         sqlx::query(
-            "INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, descuento, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(venta_id)
         .bind(item.id)
         .bind(&item.nombre)
         .bind(item.cantidad)
         .bind(a_centavos(item.precio_venta))
-        .bind(a_centavos(item.precio_venta * item.cantidad))
+        .bind(desc_item)
+        .bind(bruto_item - desc_item)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

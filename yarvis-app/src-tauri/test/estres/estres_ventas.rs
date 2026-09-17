@@ -20,6 +20,7 @@ fn venta_de(pid: i64, precio: f64) -> VentaRequest {
             nombre: "Producto estrés".into(),
             precio_venta: precio,
             cantidad: 1.0,
+            descuento: 0.0,
         }],
         total: precio,
         subtotal: precio,

@@ -31,7 +31,7 @@ async fn venta_valida_inserta_descuenta_y_vincula_cajero() {
     let p1 = seed_producto(&pool, "Coca-Cola", 10.0, 18.0).await;
 
     let v = venta(
-        vec![CartItemRequest { id: Some(p1), nombre: "Coca-Cola".into(), precio_venta: 18.0, cantidad: 3.0 }],
+        vec![CartItemRequest { id: Some(p1), nombre: "Coca-Cola".into(), precio_venta: 18.0, cantidad: 3.0, descuento: 0.0 }],
         54.0,
         54.0,
     );
@@ -68,7 +68,7 @@ async fn pago_menor_al_total_rechazado() {
     let pool = db().await;
     let p = seed_producto(&pool, "Pan", 5.0, 20.0).await;
     let v = venta(
-        vec![CartItemRequest { id: Some(p), nombre: "Pan".into(), precio_venta: 20.0, cantidad: 2.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Pan".into(), precio_venta: 20.0, cantidad: 2.0, descuento: 0.0 }],
         40.0,
         30.0,
     );
@@ -84,7 +84,7 @@ async fn pago_menor_al_total_rechazado() {
 async fn item_sin_producto_no_rompe_la_venta() {
     let pool = db().await;
     let v = venta(
-        vec![CartItemRequest { id: None, nombre: "Producto suelto".into(), precio_venta: 15.0, cantidad: 1.0 }],
+        vec![CartItemRequest { id: None, nombre: "Producto suelto".into(), precio_venta: 15.0, cantidad: 1.0, descuento: 0.0 }],
         15.0,
         20.0,
     );
@@ -99,7 +99,7 @@ async fn metodo_pago_mixto_detectado() {
     let pool = db().await;
     let p = seed_producto(&pool, "Refresco", 9.0, 25.0).await;
     let mut v = venta(
-        vec![CartItemRequest { id: Some(p), nombre: "Refresco".into(), precio_venta: 25.0, cantidad: 1.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Refresco".into(), precio_venta: 25.0, cantidad: 1.0, descuento: 0.0 }],
         25.0,
         10.0,
     );
@@ -116,7 +116,7 @@ async fn stock_insuficiente_rechazado_sin_stock_negativo() {
     // Quedan 2 unidades; se intenta vender 5.
     let p = seed_producto(&pool, "Último refresco", 2.0, 18.0).await;
     let v = venta(
-        vec![CartItemRequest { id: Some(p), nombre: "Último refresco".into(), precio_venta: 18.0, cantidad: 5.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Último refresco".into(), precio_venta: 18.0, cantidad: 5.0, descuento: 0.0 }],
         90.0,
         90.0,
     );
@@ -145,8 +145,8 @@ async fn venta_multi_item_aborta_completa_si_un_item_no_alcanza() {
     // revertirse incluyendo el descuento del primero.
     let v = VentaRequest {
         items: vec![
-            CartItemRequest { id: Some(p_ok), nombre: "Alcanza".into(), precio_venta: 20.0, cantidad: 3.0 },
-            CartItemRequest { id: Some(p_no), nombre: "No alcanza".into(), precio_venta: 30.0, cantidad: 2.0 },
+            CartItemRequest { id: Some(p_ok), nombre: "Alcanza".into(), precio_venta: 20.0, cantidad: 3.0, descuento: 0.0 },
+            CartItemRequest { id: Some(p_no), nombre: "No alcanza".into(), precio_venta: 30.0, cantidad: 2.0, descuento: 0.0 },
         ],
         total: 120.0,
         subtotal: 120.0,
@@ -177,8 +177,8 @@ async fn fallo_a_mitad_de_venta_revierte_todo_transaccion() {
     // tiene FK → productos(id), así que la inserción falla A MITAD de la venta.
     let v = VentaRequest {
         items: vec![
-            CartItemRequest { id: Some(p_real), nombre: "Bueno".into(), precio_venta: 18.0, cantidad: 2.0 },
-            CartItemRequest { id: Some(999_999), nombre: "Fantasma".into(), precio_venta: 50.0, cantidad: 1.0 },
+            CartItemRequest { id: Some(p_real), nombre: "Bueno".into(), precio_venta: 18.0, cantidad: 2.0, descuento: 0.0 },
+            CartItemRequest { id: Some(999_999), nombre: "Fantasma".into(), precio_venta: 50.0, cantidad: 1.0, descuento: 0.0 },
         ],
         total: 86.0,
         subtotal: 86.0,
@@ -212,7 +212,7 @@ async fn total_del_frontend_se_ignora_se_persiste_el_recalculado() {
     let pool = db().await;
     let p = seed_producto(&pool, "Jabón", 10.0, 12.0).await;
     let mut v = venta(
-        vec![CartItemRequest { id: Some(p), nombre: "Jabón".into(), precio_venta: 12.0, cantidad: 2.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Jabón".into(), precio_venta: 12.0, cantidad: 2.0, descuento: 0.0 }],
         59.970000000000006,
         24.0,
     );
@@ -227,11 +227,120 @@ async fn total_del_frontend_se_ignora_se_persiste_el_recalculado() {
 }
 
 #[tokio::test]
+async fn descuento_por_linea_guarda_neto_y_total_cuadra() {
+    // 2x Coca 18 = 36 con desc 6 + 1x Pan 20 sin desc, global 0.
+    // subtotal=5600, descuento=600, total=5000, detalle neto 3000/2000.
+    let pool = db().await;
+    let p1 = seed_producto(&pool, "Coca-Cola", 10.0, 18.0).await;
+    let p2 = seed_producto(&pool, "Pan", 10.0, 20.0).await;
+    let v = VentaRequest {
+        items: vec![
+            CartItemRequest {
+                id: Some(p1),
+                nombre: "Coca-Cola".into(),
+                precio_venta: 18.0,
+                cantidad: 2.0,
+                descuento: 6.0,
+            },
+            CartItemRequest {
+                id: Some(p2),
+                nombre: "Pan".into(),
+                precio_venta: 20.0,
+                cantidad: 1.0,
+                descuento: 0.0,
+            },
+        ],
+        total: 0.0,
+        subtotal: 0.0,
+        descuento: 0.0,
+        monto_efectivo: 50.0,
+        monto_tarjeta: 0.0,
+        monto_transferencia: 0.0,
+        cliente_id: None,
+    };
+    completar_venta_impl(&pool, &v, "x".into(), 1)
+        .await
+        .unwrap();
+    let (subtotal, descuento, total): (i64, i64, i64) =
+        sqlx::query_as("SELECT subtotal, descuento, total FROM ventas LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((subtotal, descuento, total), (5600, 600, 5000));
+    let filas: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT descuento, subtotal FROM detalle_ventas ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(filas, vec![(600, 3000), (0, 2000)]);
+}
+
+#[tokio::test]
+async fn descuento_linea_mas_global_se_suman() {
+    // Bruto 100, linea 10 + global 5 => total 85, descuento 15.
+    let pool = db().await;
+    let p = seed_producto(&pool, "Leche", 10.0, 100.0).await;
+    let v = VentaRequest {
+        items: vec![CartItemRequest {
+            id: Some(p),
+            nombre: "Leche".into(),
+            precio_venta: 100.0,
+            cantidad: 1.0,
+            descuento: 10.0,
+        }],
+        total: 0.0,
+        subtotal: 0.0,
+        descuento: 5.0,
+        monto_efectivo: 85.0,
+        monto_tarjeta: 0.0,
+        monto_transferencia: 0.0,
+        cliente_id: None,
+    };
+    completar_venta_impl(&pool, &v, "x".into(), 1)
+        .await
+        .unwrap();
+    let (descuento, total): (i64, i64) =
+        sqlx::query_as("SELECT descuento, total FROM ventas LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((descuento, total), (1500, 8500));
+}
+
+#[tokio::test]
+async fn descuento_linea_mayor_a_su_bruto_se_rechaza() {
+    let pool = db().await;
+    let p = seed_producto(&pool, "Pan", 10.0, 20.0).await;
+    let v = VentaRequest {
+        items: vec![CartItemRequest {
+            id: Some(p),
+            nombre: "Pan".into(),
+            precio_venta: 20.0,
+            cantidad: 1.0,
+            descuento: 25.0,
+        }],
+        total: 0.0,
+        subtotal: 0.0,
+        descuento: 0.0,
+        monto_efectivo: 0.0,
+        monto_tarjeta: 0.0,
+        monto_transferencia: 0.0,
+        cliente_id: None,
+    };
+    let r = completar_venta_impl(&pool, &v, "x".into(), 1).await;
+    assert!(
+        r.is_err(),
+        "descuento de linea mayor a su bruto debe fallar"
+    );
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await, 0);
+}
+
+#[tokio::test]
 async fn descuento_mayor_al_subtotal_se_rechaza() {
     let pool = db().await;
     let p = seed_producto(&pool, "Pan", 10.0, 20.0).await;
     let mut v = venta(
-        vec![CartItemRequest { id: Some(p), nombre: "Pan".into(), precio_venta: 20.0, cantidad: 1.0 }],
+        vec![CartItemRequest { id: Some(p), nombre: "Pan".into(), precio_venta: 20.0, cantidad: 1.0, descuento: 0.0 }],
         0.0,
         0.0,
     );
