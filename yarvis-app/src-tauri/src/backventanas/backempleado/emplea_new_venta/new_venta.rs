@@ -118,25 +118,24 @@ pub async fn completar_venta_impl(
         .map_err(|e| e.to_string())?;
 
         if let Some(producto_id) = item.id {
-            // Regla de negocio: jamás vender más stock del disponible. La
-            // cláusula `stock >= ?` hace que el UPDATE afecte 0 filas si no
-            // alcanza; `rows_affected() == 0` detecta ese caso y aborta la
-            // transacción completa (la venta se revierte entera).
+            // Regla de negocio: se permite SOBREVENTA. El inventario físico
+            // puede tener más de lo capturado (reabasto aún no registrado),
+            // así que el stock puede quedar en negativo para conciliar
+            // después en inventario. Solo falla si el producto no existe.
             let result = sqlx::query(
-                "UPDATE productos SET stock = stock - ?, vendido = vendido + ? WHERE id = ? AND stock >= ?",
+                "UPDATE productos SET stock = stock - ?, vendido = vendido + ? WHERE id = ?",
             )
             .bind(item.cantidad)
             .bind(item.cantidad)
             .bind(producto_id)
-            .bind(item.cantidad)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
             if result.rows_affected() == 0 {
                 return Err(format!(
-                    "Stock insuficiente para '{}' (disponible menor a {})",
-                    item.nombre, item.cantidad
+                    "Producto '{}' ya no existe en inventario",
+                    item.nombre
                 ));
             }
         }

@@ -87,7 +87,7 @@ pub struct EmployeeGoal {
 
 #[derive(Deserialize, Clone)]
 pub struct CartItemRequest {
-    pub id: Option<i32>,
+    pub id: Option<i64>,
     pub nombre: String,
     pub precio_venta: f64,
     pub cantidad: f64,

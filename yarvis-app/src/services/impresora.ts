@@ -87,3 +87,22 @@ export async function imprimirListaConciliacion(
     filas,
   });
 }
+
+export interface FilaStockBajoPrint {
+  nombre: string;
+  stock: number;
+  minimo: number;
+}
+
+/** La que usa el botón "Imprimir" de la Alerta de Stock Bajo. */
+export async function imprimirListaStockBajo(
+  nombreImpresora: string,
+  filas: FilaStockBajoPrint[],
+  tienda?: string,
+): Promise<string> {
+  return invoke<string>("imprimir_lista_stock_bajo", {
+    nombreImpresora,
+    tienda: tienda ?? null,
+    filas,
+  });
+}

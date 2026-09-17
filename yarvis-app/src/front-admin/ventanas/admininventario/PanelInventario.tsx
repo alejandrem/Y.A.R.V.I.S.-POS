@@ -19,6 +19,7 @@ import {
 import {
   listarImpresoras,
   imprimirListaConciliacion,
+  imprimirListaStockBajo,
   type ImpresoraInfo,
 } from "../../../services/impresora";
 
@@ -38,6 +39,8 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [conciliacion, setConciliacion] = useState<Record<number, { fisico: number; sistema: number }>>({});
   const [showPrint, setShowPrint] = useState(false);
+  // Qué lista imprime el modal: la conciliación completa o solo críticos.
+  const [printMode, setPrintMode] = useState<"conciliacion" | "stock_bajo">("conciliacion");
   const [impresoras, setImpresoras] = useState<ImpresoraInfo[]>([]);
   const [impresoraSel, setImpresoraSel] = useState("");
   const [cargandoImp, setCargandoImp] = useState(false);
@@ -69,7 +72,10 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
       const next: Record<number, { fisico: number; sistema: number }> = {};
       for (const item of inventory) {
         if (item.id != null) {
-          next[item.id] = { fisico: item.stock, sistema: item.stock };
+          // El FÍSICO es conteo de anaquel: jamás negativo (nadie tiene -1
+          // cocas). El SISTEMA se copia tal cual, aunque venga negativo por
+          // sobreventa — esa es la señal de "Por conciliar".
+          next[item.id] = { fisico: Math.max(0, item.stock), sistema: item.stock };
         }
       }
       setConciliacion(next);
@@ -157,7 +163,8 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   };
 
   // ── Impresión térmica Camino A Fase 1: spooler Windows RAW ──
-  const abrirPrint = async () => {
+  const abrirPrint = async (modo: "conciliacion" | "stock_bajo" = "conciliacion") => {
+    setPrintMode(modo);
     setShowPrint(true);
     setCargandoImp(true);
     try {
@@ -178,22 +185,36 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
       reportarError("Elige una impresora instalada", "Sin selección");
       return;
     }
-    const filas = sortedInventory
-      .filter((item) => item.id != null && conciliacion[item.id!])
-      .map((item) => ({
-        nombre: item.nombre,
-        fisico: conciliacion[item.id!].fisico,
-        sistema: conciliacion[item.id!].sistema,
-        precio_venta: item.precio_venta || 0,
-      }));
-    if (filas.length === 0) {
-      reportarError("No hay filas que imprimir", "Lista vacía");
-      return;
-    }
     setImprimiendo(true);
     try {
-      const msg = await imprimirListaConciliacion(impresoraSel, filas);
-      notificarExito(msg);
+      if (printMode === "stock_bajo") {
+        const filas = stockBajo.map((item) => ({
+          nombre: item.nombre,
+          stock: item.stock,
+          minimo: item.stock_minimo,
+        }));
+        if (filas.length === 0) {
+          reportarError("No hay filas que imprimir", "Sin críticos");
+          return;
+        }
+        const msg = await imprimirListaStockBajo(impresoraSel, filas);
+        notificarExito(msg);
+      } else {
+        const filas = sortedInventory
+          .filter((item) => item.id != null && conciliacion[item.id!])
+          .map((item) => ({
+            nombre: item.nombre,
+            fisico: conciliacion[item.id!].fisico,
+            sistema: conciliacion[item.id!].sistema,
+            precio_venta: item.precio_venta || 0,
+          }));
+        if (filas.length === 0) {
+          reportarError("No hay filas que imprimir", "Lista vacía");
+          return;
+        }
+        const msg = await imprimirListaConciliacion(impresoraSel, filas);
+        notificarExito(msg);
+      }
       setShowPrint(false);
     } catch (error) {
       reportarError("No se pudo imprimir en la térmica", error);
@@ -446,9 +467,19 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                 <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-tighter">Productos por agotarse</p>
               </div>
             </div>
-            <span className="px-3 py-1 bg-red-500 text-white text-[9px] font-black rounded-lg">
-              {stockBajo.length} CRÍTICOS
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 bg-red-500 text-white text-[9px] font-black rounded-lg">
+                {stockBajo.length} CRÍTICOS
+              </span>
+              <button
+                onClick={() => abrirPrint("stock_bajo")}
+                disabled={stockBajo.length === 0}
+                title={stockBajo.length === 0 ? "Sin críticos que imprimir" : "Imprimir lista de críticos en térmica"}
+                className="px-3 py-1 text-[9px] font-black bg-neutral-900 text-white rounded-lg hover:bg-neutral-700 transition-all uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                🖨 Imprimir
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
@@ -505,7 +536,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
             <p className="text-[9px] text-neutral-400 uppercase font-black tracking-widest">Físico vs Sistema</p>
           </div>
           <button
-            onClick={abrirPrint}
+            onClick={() => abrirPrint()}
             className="px-4 py-2 text-[8px] font-black bg-neutral-900 text-white rounded-xl hover:bg-neutral-800 transition-all uppercase tracking-widest"
           >
             Imprimir Lista
@@ -533,8 +564,13 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                     if (!c) return null;
                     const dif = c.fisico - c.sistema;
                     const perdida = dif < 0 ? Math.abs(dif) * item.precio_venta : 0;
+                    // Caso 3 (sobreventa): sistema en negativo = se vendió más
+                    // de lo registrado (reabasto sin capturar). Nunca es
+                    // "Correcto" aunque dif == 0 (ej: -1/-1).
                     const estado =
-                      dif === 0
+                      c.sistema < 0
+                        ? { label: "Por conciliar", color: "text-violet-700 bg-violet-50" }
+                        : dif === 0
                         ? { label: "Correcto", color: "text-green-600 bg-green-50" }
                         : dif > 0
                         ? { label: "Sobrante", color: "text-amber-600 bg-amber-50" }
@@ -617,12 +653,16 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                       if (!c) return null;
                       const dif = c.fisico - c.sistema;
                       const perdida = dif < 0 ? Math.abs(dif) * item.precio_venta : 0;
+                      // Caso 3 (sobreventa): sistema en negativo = se vendió
+                      // más de lo registrado. Nunca "Correcto" aunque dif == 0.
                       const estado =
-                        dif === 0
-                          ? { label: "Correcto", color: "text-green-600 bg-green-50" }
-                          : dif > 0
-                            ? { label: "Sobrante", color: "text-amber-600 bg-amber-50" }
-                            : { label: "Faltante", color: "text-red-600 bg-red-50" };
+                        c.sistema < 0
+                          ? { label: "Por conciliar", color: "text-violet-700 bg-violet-50" }
+                          : dif === 0
+                            ? { label: "Correcto", color: "text-green-600 bg-green-50" }
+                            : dif > 0
+                              ? { label: "Sobrante", color: "text-amber-600 bg-amber-50" }
+                              : { label: "Faltante", color: "text-red-600 bg-red-50" };
                       return (
                         <tr key={item.id} className="hover:bg-neutral-50 transition-colors">
                           <td className="px-8 py-4 text-[10px] font-bold text-neutral-900 truncate max-w-[180px]">{item.nombre}</td>
@@ -711,7 +751,9 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                     ))}
                   </div>
                   <p className="text-[9px] text-neutral-500 font-medium leading-relaxed">
-                    Se mandan {sortedInventory.length} productos en ESC/POS con corte automático.
+                    {printMode === "stock_bajo"
+                      ? `Se mandan ${stockBajo.length} críticos en ESC/POS con corte automático.`
+                      : `Se mandan ${sortedInventory.length} productos en ESC/POS con corte automático.`}
                     Si la térmica está apagada o sin papel verás el error aquí.
                   </p>
                 </>

@@ -89,13 +89,17 @@ export default function TablaCarrito({
                       <span className="w-8 text-center text-sm font-black text-neutral-900">{item.cantidad}</span>
                       <button
                         onClick={() => onUpdateCantidad(item.id, 1)}
-                        disabled={item.cantidad >= item.stock}
-                        className="w-8 h-8 rounded-xl bg-white hover:bg-neutral-950 hover:text-white flex items-center justify-center shadow-sm transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"
-                        title="Agregar uno"
+                        className="w-8 h-8 rounded-xl bg-white hover:bg-neutral-950 hover:text-white flex items-center justify-center shadow-sm transition-all active:scale-90"
+                        title={item.cantidad >= item.stock ? `Sobreventa: solo hay ${item.stock} en sistema` : "Agregar uno"}
                       >
                         <MorphIcon icon={ICONO_MAS} size={13} strokeWidth={3} spring="snappy" reducedMotion="user" />
                       </button>
                     </div>
+                    {item.cantidad > item.stock && (
+                      <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-amber-600">
+                        Stock sistema: {item.stock} · quedará en {item.stock - item.cantidad}
+                      </p>
+                    )}
                   </td>
                   <td className="py-3.5 px-2 font-black text-neutral-800 text-xs uppercase">{item.nombre}</td>
                   <td className="py-3.5 px-2 font-bold text-neutral-400 text-xs">${item.precio_venta.toFixed(2)}</td>

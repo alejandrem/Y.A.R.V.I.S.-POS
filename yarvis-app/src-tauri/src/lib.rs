@@ -248,6 +248,7 @@ pub fn run() {
             impresora::commands::listar_impresoras,
             impresora::commands::imprimir_bytes_raw,
             impresora::commands::imprimir_lista_conciliacion,
+            impresora::commands::imprimir_lista_stock_bajo,
             // Impresora termica — Camino C Fase 2 (ticket `escpos` + red)
             impresora::commands::imprimir_ticket_venta,
             impresora::commands::probar_red,

@@ -21,6 +21,12 @@ const ModalDetalleTicket = ({ ticket, onCerrar }: ModalDetalleTicketProps) => {
 
   useEffect(() => {
     let viva = true;
+    if (!Number.isFinite(ticket.id)) {
+      reportarError("No se pudo abrir el detalle del ticket", `Ticket sin id válido: ${JSON.stringify(ticket)}`);
+      return () => {
+        viva = false;
+      };
+    }
     obtenerMiTicketDetalle(ticket.id)
       .then((d) => {
         if (viva) setDetalle(d);

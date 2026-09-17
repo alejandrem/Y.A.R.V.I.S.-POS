@@ -59,10 +59,35 @@ En tu lista de días con extra, si el día de hoy todavía no tiene corte Z, en 
 
 ---
 
-## 10. Cómo piensa Y.A.R.V.I.S. (tu ayudante de la tienda)
+# 10. Cómo piensa Y.A.R.V.I.S. (tu ayudante de la tienda)
 
 Imagina que Y.A.R.V.I.S. es un ayudante con muy buena memoria y varios cuadernos: uno de ventas, uno de inventario, uno de proveedores y otro de caducidades. Cuando le preguntas algo, primero piensa si necesita abrir un cuaderno. Si sí, lo abre, copia el dato exacto y con eso te responde. Nunca inventa números: si el cuaderno está vacío, te lo dice.
 
 Tiene dos formas de pensar. Una es llamar por teléfono a un amigo muy listo que vive lejos: para eso la tienda necesita una llave y tener internet. La otra es pensar solito dentro de la computadora de la tienda, sin internet, aunque es más lento y más sencillo.
 
 Si el amigo de lejos no contesta, no se queda callado: piensa solito y te avisa con un letrerito amarillo de que la respuesta vino de la tienda. Y siempre te dice quién respondió, para que sepas a quién creerle.
+
+---
+
+## 11. La tablita de conciliación (¿me cuadra lo de los estantes?)
+
+Esta es la parte donde juegas a "¿me cuadra?". Para cada producto hay **dos números**, y tú los comparas como cuando cuentas tu dinero contra lo que anotaste en tu libreta.
+
+**Los dos números:**
+
+* **Físico:** lo que TÚ cuentas con tus ojos en los estantes. Vas, miras, cuentas las cocas una por una y lo escribes. Nadie más puede saberlo: ni la computadora, ni Y.A.R.V.I.S. La computadora no hace magia, no ve tus estantes.
+* **Sistema:** lo que la computadora **cree** que tienes, según todo lo que se ha vendido y registrado.
+
+La tablita hace solita la resta: **lo que contaste menos lo que cree la computadora**. A eso le llama "Dif." (de diferencia).
+
+**Los 4 letreritos que te pueden salir:**
+
+* **Correcto (verde):** los dos números son iguales. Ejemplo: contaste 20 papas y la computadora dice 20. Todo cuadra, no haces nada. 🎉
+* **Sobrante (amarillo):** contaste MÁS de lo que cree la computadora. Ejemplo: cuentas 21 y dice 20, dif +1. Casi siempre es mercancía que llegó a la tienda y nadie registró, o contaste algo doble. No es malo, solo hay que registrar lo que llegó para que cuadre.
+* **Faltante (rojo):** contaste MENOS de lo que cree la computadora. Ejemplo: cuentas 18 y dice 20, dif -2. Además te dice cuántos pesos se perdieron con eso. ¿Por qué pasó? La computadora no lo sabe: pudo venderse algo sin registrarse, echarse a perder, o que alguien se lo llevara. Ella solo te avisa en rojo; el patrón lo investiga contando y cuidando.
+* **Por conciliar (morado):** el número de la computadora está en **negativo**, como -1. Eso pasa cuando se vendió más de lo que estaba registrado. Casi seguro es que llegó mercancía (un reabasto) y nadie la capturó todavía. El numerito de la diferencia te dice **cuánto capturar**: si dice +1, registras 1 y todo queda en ceros, Correcto. Ejemplo: la computadora dice -1 coca, tú cuentas 0 en el estante, registras 1 coca que llegó, y queda 0 contra 0. Listo.
+
+**Dos ayudantes de esta sección:**
+
+* **Alerta de stock bajo (la cajita roja):** te enlista solito todo lo que se está acabando, o sea lo que ya bajó de su mínimo. Cada producto dice cuántos quedan y cuál es su mínimo. Tiene un botón de **Imprimir** para que te lleves la listita en papel al anaquel o al mercado a surtir. Así no se te olvida nada.
+* **Imprimir lista:** saca toda la tablita en la impresora de tickets, para hacer el inventario con papel y lápiz en la mano, como se ha hecho toda la vida, pero ya con los números de la computadora al lado para comparar.

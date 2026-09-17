@@ -104,7 +104,9 @@ pub async fn imprimir_lista_conciliacion(
         .map(|f| FilaConciliacion {
             nombre: f.nombre,
             fisico: f.fisico.max(0),
-            sistema: f.sistema.max(0),
+            // El sistema NO se aplana: un negativo por sobreventa es la
+            // señal que el builder marca como CONCIL.
+            sistema: f.sistema,
             precio_venta: if f.precio_venta.is_finite() {
                 f.precio_venta.max(0.0)
             } else {
@@ -124,6 +126,70 @@ pub async fn imprimir_lista_conciliacion(
     tracing::info!(impresora = %nombre_impresora, filas = filas.len(), "conciliacion impresa");
     Ok(format!(
         "Lista enviada a '{}' ({} productos, {} bytes).",
+        nombre_impresora,
+        filas.len(),
+        n
+    ))
+}
+
+/// Fila tal como la manda el frontend para la alerta de stock bajo.
+/// El stock puede venir negativo por sobreventa: se imprime tal cual.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FilaStockBajoPayload {
+    pub nombre: String,
+    pub stock: f64,
+    pub minimo: f64,
+}
+
+#[tauri::command]
+pub async fn imprimir_lista_stock_bajo(
+    nombre_impresora: String,
+    tienda: Option<String>,
+    filas: Vec<FilaStockBajoPayload>,
+) -> Result<String, String> {
+    let nombre = nombre_impresora.trim().to_string();
+    if nombre.is_empty() {
+        return Err("Elige una impresora instalada.".into());
+    }
+    if filas.is_empty() {
+        return Err("No hay filas que imprimir.".into());
+    }
+    if filas.len() > builder::MAX_FILAS {
+        return Err(format!(
+            "Demasiadas filas ({}). Limite Fase 1: {}. Filtra la lista.",
+            filas.len(),
+            builder::MAX_FILAS
+        ));
+    }
+
+    let tienda = tienda
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| "MI TIENDA".to_string());
+    let filas: Vec<builder::FilaStockBajo> = filas
+        .into_iter()
+        .map(|f| builder::FilaStockBajo {
+            nombre: f.nombre,
+            stock: if f.stock.is_finite() { f.stock } else { 0.0 },
+            minimo: if f.minimo.is_finite() {
+                f.minimo.max(0.0)
+            } else {
+                0.0
+            },
+        })
+        .collect();
+
+    let fecha = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let bytes = builder::construir_lista_stock_bajo(&tienda, &fecha, &filas);
+    let n = bytes.len();
+
+    tokio::task::spawn_blocking(move || enviar_bytes_raw(&nombre, &bytes))
+        .await
+        .map_err(|e| format!("Fallo interno de impresion: {e}"))??;
+
+    tracing::info!(impresora = %nombre_impresora, filas = filas.len(), "stock bajo impreso");
+    Ok(format!(
+        "Lista enviada a '{}' ({} criticos, {} bytes).",
         nombre_impresora,
         filas.len(),
         n

@@ -111,9 +111,10 @@ async fn metodo_pago_mixto_detectado() {
 }
 
 #[tokio::test]
-async fn stock_insuficiente_rechazado_sin_stock_negativo() {
+async fn sobreventa_permitida_deja_stock_negativo() {
     let pool = db().await;
-    // Quedan 2 unidades; se intenta vender 5.
+    // Quedan 2 unidades; se venden 5 → stock queda en -3 (sobreventa
+    // intencional: el físico puede tener más que el sistema).
     let p = seed_producto(&pool, "Último refresco", 2.0, 18.0).await;
     let v = venta(
         vec![CartItemRequest { id: Some(p), nombre: "Último refresco".into(), precio_venta: 18.0, cantidad: 5.0, descuento: 0.0 }],
@@ -122,31 +123,31 @@ async fn stock_insuficiente_rechazado_sin_stock_negativo() {
     );
 
     let r = completar_venta_impl(&pool, &v, "Peter".into(), 1).await;
-    assert!(r.is_err(), "vender más que el stock debe fallar");
+    assert!(r.is_ok(), "la sobreventa debe permitirse, error: {:?}", r.err());
 
-    // ATOMICIDAD: nada quedó escrito — ni venta, ni items, ni stock negativo.
-    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await, 0);
-    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM detalle_ventas").await, 0);
+    // Venta + items SÍ quedaron escritos y el stock quedó negativo.
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await, 1);
+    assert_eq!(escalar_i64(&pool, "SELECT COUNT(*) FROM detalle_ventas").await, 1);
     let fila = sqlx::query("SELECT stock, vendido FROM productos WHERE id = ?")
         .bind(p).fetch_one(&pool).await.unwrap();
     let stock: f64 = Row::get(&fila, "stock");
     let vendido: f64 = Row::get(&fila, "vendido");
-    assert_eq!(stock, 2.0, "el stock NO debe quedar negativo");
-    assert_eq!(vendido, 0.0);
+    assert_eq!(stock, -3.0, "el stock debe quedar en negativo para conciliar");
+    assert_eq!(vendido, 5.0);
 }
 
 #[tokio::test]
-async fn venta_multi_item_aborta_completa_si_un_item_no_alcanza() {
+async fn venta_multi_item_permite_sobreventa_en_un_item() {
     let pool = db().await;
     let p_ok = seed_producto(&pool, "Alcanza", 10.0, 20.0).await;
-    let p_no = seed_producto(&pool, "No alcanza", 1.0, 30.0).await;
+    let p_no = seed_producto(&pool, "Sobreventa", 1.0, 30.0).await;
 
-    // El primer item SÍ tiene stock; el segundo NO. La venta entera debe
-    // revertirse incluyendo el descuento del primero.
+    // El segundo item supera su stock (vende 2 teniendo 1): con sobreventa
+    // permitida la venta entera entra y ese producto queda en -1.
     let v = VentaRequest {
         items: vec![
             CartItemRequest { id: Some(p_ok), nombre: "Alcanza".into(), precio_venta: 20.0, cantidad: 3.0, descuento: 0.0 },
-            CartItemRequest { id: Some(p_no), nombre: "No alcanza".into(), precio_venta: 30.0, cantidad: 2.0, descuento: 0.0 },
+            CartItemRequest { id: Some(p_no), nombre: "Sobreventa".into(), precio_venta: 30.0, cantidad: 2.0, descuento: 0.0 },
         ],
         total: 120.0,
         subtotal: 120.0,
@@ -158,14 +159,14 @@ async fn venta_multi_item_aborta_completa_si_un_item_no_alcanza() {
     };
 
     let r = completar_venta_impl(&pool, &v, "Peter".into(), 1).await;
-    assert!(r.is_err());
+    assert!(r.is_ok(), "la sobreventa multi-item debe entrar, error: {:?}", r.err());
 
     let stock_ok: f64 = sqlx::query_scalar("SELECT stock FROM productos WHERE id = ?")
         .bind(p_ok).fetch_one(&pool).await.unwrap();
     let stock_no: f64 = sqlx::query_scalar("SELECT stock FROM productos WHERE id = ?")
         .bind(p_no).fetch_one(&pool).await.unwrap();
-    assert_eq!(stock_ok, 10.0, "el rollback debe restaurar también los items que sí alcanzaban");
-    assert_eq!(stock_no, 1.0);
+    assert_eq!(stock_ok, 7.0);
+    assert_eq!(stock_no, -1.0, "el item en sobreventa queda en negativo");
 }
 
 #[tokio::test]

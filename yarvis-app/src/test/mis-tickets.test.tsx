@@ -150,7 +150,8 @@ describe("mis tickets · vista", () => {
     const fila = await screen.findByText(/Ticket #1042/);
     fireEvent.click(fila.closest("button")!);
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("get_mi_ticket_detalle", { venta_id: 1042 });
+      // Se mandan ambas claves (snake + camel) para compat con bundles viejos.
+      expect(mockInvoke).toHaveBeenCalledWith("get_mi_ticket_detalle", { venta_id: 1042, ventaId: 1042 });
     });
     expect(await screen.findByText("Coca")).toBeInTheDocument();
   });

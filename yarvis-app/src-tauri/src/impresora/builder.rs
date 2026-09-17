@@ -94,11 +94,17 @@ pub fn construir_lista_conciliacion(
 
     let mut faltantes: i32 = 0;
     let mut sobrantes: i32 = 0;
+    let mut por_conciliar: i32 = 0;
     let mut perdida_total: f64 = 0.0;
 
     for f in filas.iter().take(MAX_FILAS) {
         let dif = f.fisico - f.sistema;
-        let estado = if dif == 0 {
+        // Sobreventa: sistema en negativo = reabasto sin capturar.
+        // Nunca OK aunque dif == 0 (ej: -1/-1).
+        let estado = if f.sistema < 0 {
+            por_conciliar += 1;
+            "CONCIL"
+        } else if dif == 0 {
             "OK"
         } else if dif > 0 {
             sobrantes += 1;
@@ -125,10 +131,11 @@ pub fn construir_lista_conciliacion(
     linea(
         &mut out,
         &format!(
-            "Items:{} Faltan:{} Sobran:{}",
+            "Items:{} Faltan:{} Sobran:{} Concil:{}",
             filas.len().min(MAX_FILAS),
             faltantes,
-            sobrantes
+            sobrantes,
+            por_conciliar
         ),
     );
     linea(&mut out, &format!("Perdida est.: ${:.2}", perdida_total));
@@ -140,6 +147,79 @@ pub fn construir_lista_conciliacion(
     out.push(0x0A);
     out.extend_from_slice(CORTE);
     out
+}
+
+/// Construye el ticket de alerta de stock bajo (productos en/cajo el mínimo).
+/// `stock` puede venir negativo por sobreventa: se imprime tal cual (es la
+/// señal para reabastecer), no se aplana a 0.
+pub fn construir_lista_stock_bajo(
+    tienda: &str,
+    fecha_str: &str,
+    filas: &[FilaStockBajo],
+) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::with_capacity(1024 + filas.len() * 48);
+    out.extend_from_slice(INIT);
+    out.extend_from_slice(ALIGN_LEFT);
+
+    out.extend_from_slice(BOLD_ON);
+    centrada(&mut out, tienda);
+    out.extend_from_slice(BOLD_OFF);
+    centrada(&mut out, "Alerta de stock bajo");
+    centrada(&mut out, fecha_str);
+    separador(&mut out);
+
+    linea(&mut out, "NOMBRE               STOCK   MIN");
+    separador(&mut out);
+
+    for f in filas.iter().take(MAX_FILAS) {
+        let mut nombre = sanitizar(&f.nombre);
+        if nombre.len() > 20 {
+            nombre.truncate(20);
+        }
+        let fila = format!(
+            "{:<20} {:>7} {:>5}",
+            nombre,
+            fmt_cant(f.stock),
+            fmt_cant(f.minimo)
+        );
+        linea(&mut out, &fila);
+    }
+
+    separador(&mut out);
+    out.extend_from_slice(BOLD_ON);
+    linea(
+        &mut out,
+        &format!("Criticos:{}", filas.len().min(MAX_FILAS)),
+    );
+    out.extend_from_slice(BOLD_OFF);
+    out.push(0x0A);
+    out.push(0x0A);
+    centrada(&mut out, "Y.A.R.V.I.S. POS");
+    out.push(0x0A);
+    out.push(0x0A);
+    out.extend_from_slice(CORTE);
+    out
+}
+
+/// Cantidad REAL del inventario: entero si es exacto, si no 2 decimales
+/// (los KG fraccionarios deben leerse igual en papel y pantalla).
+fn fmt_cant(v: f64) -> String {
+    if !v.is_finite() {
+        return "0".to_string();
+    }
+    if v.fract() == 0.0 {
+        format!("{}", v as i64)
+    } else {
+        format!("{:.2}", v)
+    }
+}
+
+/// Una fila de la alerta de stock bajo: lo que hay vs el mínimo.
+#[derive(Debug, Clone)]
+pub struct FilaStockBajo {
+    pub nombre: String,
+    pub stock: f64,
+    pub minimo: f64,
 }
 
 #[cfg(test)]
@@ -161,6 +241,39 @@ mod tests {
         assert!(texto.contains("Mi Tienda"));
         assert!(texto.contains("Coca-Cola"));
         assert!(texto.contains("FALTA"));
+    }
+
+    #[test]
+    fn sistema_negativo_marca_concil_aunque_dif_cero() {
+        // Sobreventa (-1/-1): nunca OK, marca CONCIL.
+        let filas = vec![FilaConciliacion {
+            nombre: "Coca-Cola 600ml".into(),
+            fisico: -1,
+            sistema: -1,
+            precio_venta: 20.0,
+        }];
+        let bytes = construir_lista_conciliacion("Mi Tienda", "2026-09-09", &filas);
+        let texto = String::from_utf8_lossy(&bytes);
+        assert!(texto.contains("CONCIL"));
+        assert!(texto.contains("Concil:1"));
+    }
+
+    #[test]
+    fn stock_bajo_lista_criticos_con_negativo() {
+        // El stock negativo por sobreventa se imprime tal cual (-1), no
+        // aplanado: es la señal de reabastecer.
+        let filas = vec![
+            FilaStockBajo { nombre: "Coca-Cola 600ml".into(), stock: -1.0, minimo: 5.0 },
+            FilaStockBajo { nombre: "Jumex Durazno 500ml".into(), stock: 3.0, minimo: 5.0 },
+        ];
+        let bytes = construir_lista_stock_bajo("Mi Tienda", "2026-09-09", &filas);
+        assert!(bytes.starts_with(INIT));
+        assert!(bytes.ends_with(CORTE));
+        let texto = String::from_utf8_lossy(&bytes);
+        assert!(texto.contains("stock bajo"));
+        assert!(texto.contains("Coca-Cola"));
+        assert!(texto.contains("-1"));
+        assert!(texto.contains("Criticos:2"));
     }
 
     #[test]

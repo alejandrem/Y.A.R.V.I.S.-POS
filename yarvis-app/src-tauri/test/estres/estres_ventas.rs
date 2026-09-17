@@ -1,8 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST DE ESTRÉS — Módulo VENTAS.
 // Presión: 500 cobros secuenciales con verificación de integridad exacta
-// (total == suma de subtotales, stock jamás negativo) y 50 ventas
-// concurrentes sobre productos independientes. Mide tiempo total.
+// (total == suma de subtotales) y 50 ventas concurrentes sobre productos
+// independientes. Con sobreventa permitida el stock puede quedar negativo
+// (se concilia después); lo que se garantiza es atomicidad: nada parcial,
+// nada duplicado. Mide tiempo total.
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[path = "../common/mod.rs"]
@@ -92,9 +94,11 @@ async fn cincuenta_ventas_concurrentes_sin_perdidas() {
 }
 
 /// RACE sobre UN SOLO producto con stock exacto: 25 cobros concurrentes de
-/// cantidad 1 compiten por un stock de 10. La cláusula `stock >= ?` +
-/// `rows_affected() == 0` dentro de la transacción debe garantizar que
-/// exactamente 10 tienen éxito y 15 fallan, sin oversell ni ventas parciales.
+/// cantidad 1 compiten por un stock de 10. Con SOBREVENTA permitida (regla
+/// de negocio: el físico puede traer más de lo capturado) las 25 entran y
+/// el stock queda en -15 para conciliar. Lo que este test garantiza es que
+/// la transacción sigue siendo atómica bajo race: nada se pierde, nada se
+/// duplica y ninguna venta queda parcial.
 #[tokio::test]
 async fn veinticinco_cobros_concurrentes_mismo_producto_stock_exacto_diez() {
     let pool = db().await;
@@ -124,18 +128,18 @@ async fn veinticinco_cobros_concurrentes_mismo_producto_stock_exacto_diez() {
 
     // Contabilidad exacta: nada se pierde ni se duplica.
     assert_eq!(exitos + fallos, 25);
-    assert_eq!(exitos, 10);
-    assert_eq!(fallos, 15);
+    assert_eq!(exitos, 25);
+    assert_eq!(fallos, 0);
 
-    // Stock y vendido exactos: jamás negativo, jamás oversell.
+    // Sobreventa: stock en negativo para conciliar, vendido exacto.
     let fila = sqlx::query("SELECT stock, vendido FROM productos WHERE id = ?")
         .bind(p).fetch_one(&pool).await.unwrap();
-    assert_eq!(fila.get::<f64,_>("stock"), 0.0);
-    assert_eq!(fila.get::<f64,_>("vendido"), 10.0);
+    assert_eq!(fila.get::<f64,_>("stock"), -15.0);
+    assert_eq!(fila.get::<f64,_>("vendido"), 25.0);
 
     // NINGUNA venta parcial: cada venta tiene su grupo de detalle completo.
     let ventas: i64 = escalar_i64(&pool, "SELECT COUNT(*) FROM ventas").await;
     let detalles: i64 = escalar_i64(&pool, "SELECT COUNT(DISTINCT venta_id) FROM detalle_ventas").await;
     assert_eq!(ventas, detalles, "hay ventas sin detalle (parciales)");
-    assert_eq!(ventas, 10);
+    assert_eq!(ventas, 25);
 }

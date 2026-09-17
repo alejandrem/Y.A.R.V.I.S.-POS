@@ -248,12 +248,21 @@ pub async fn mis_ventas_por_dia_impl(
 // ── Detalle de un ticket propio (modal) ──────────────────────
 
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn get_mi_ticket_detalle(
     state: tauri::State<'_, SqlitePool>,
     auth: tauri::State<'_, AuthState>,
-    venta_id: i64,
+    venta_id: Option<i64>,
+    ventaId: Option<i64>,
 ) -> Result<MiTicketDetalle, String> {
     let session = auth.require_operator()?;
+    // Tolerante a ambas convenciones: el front actual manda snake_case
+    // (`venta_id`), pero bundles viejos / llamadas directas pueden mandar
+    // camelCase (`ventaId`). Antes esto tronaba con el críptico
+    // "missing required key ventaId" sin abrir ningún ticket.
+    let venta_id = venta_id
+        .or(ventaId)
+        .ok_or("Falta el id del ticket (venta_id)")?;
     mi_ticket_detalle_impl(&state, session.user_id, &session.name, venta_id).await
 }
 

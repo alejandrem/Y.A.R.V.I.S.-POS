@@ -52,6 +52,10 @@ export const obtenerMisKpis = (dias = 1) =>
 export const obtenerMisVentasPorDia = (dias = 7) =>
   invokeTauri<VentaDia[]>("get_mis_ventas_por_dia", { dias });
 
-export const obtenerMiTicketDetalle = (ventaId: number) =>
-  // Tauri matchea args por nombre exacto: el comando espera `venta_id`.
-  invokeTauri<MiTicketDetalle>("get_mi_ticket_detalle", { venta_id: ventaId });
+export const obtenerMiTicketDetalle = (ventaId: number) => {
+  // Tauri matchea args por nombre exacto. El backend acepta ambas
+  // (`venta_id` snake y `ventaId` camel para bundles viejos), así que
+  // mandamos las dos: la que sobre, serde la ignora.
+  if (!Number.isFinite(ventaId)) return Promise.reject("Ticket sin id válido");
+  return invokeTauri<MiTicketDetalle>("get_mi_ticket_detalle", { venta_id: ventaId, ventaId });
+};
