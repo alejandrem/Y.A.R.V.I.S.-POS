@@ -1,15 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // FINANZAS — Orquestador principal del módulo financiero (AdminFinanzas).
 // Tarea única: poseer el estado global del panel (sección activa, rango de
-// fechas, datos cargados y modales), ejecutar la carga de los 30+ comandos
+// fechas, datos cargados y modales), ejecutar la carga de los comandos
 // Tauri con Promise.allSettled y enrutar el render a las secciones:
-//   seccion-resumen · seccion-gastos · seccion-cortes · seccion-alertas ·
-//   seccion-metricas (+ modales de gasto, pago y detalle de corte).
+//   seccion-resumen · seccion-gastos · seccion-metricas
+//   (+ modales de gasto y pago).
 // La presentación vive en cada archivo de sección; aquí solo hay estado,
 // carga de datos y navegación.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MorphIcon } from "morphicons/react";
 import { BotonAnimado, ICONO_REINICIAR, ICONO_CHECK, ICONO_GRAFICA } from "../../../components/ui";
 import { reportarError } from "../../../services/tauri";
@@ -17,22 +17,19 @@ import { notificarExito } from "../../../components/notificaciones";
 import {
   obtenerResumenPeriodo, obtenerPuntoEquilibrio, obtenerDatosGraficaPL,
   obtenerGastosPorCategoria, obtenerVentasVsGastos, obtenerTendenciaCortesZ,
-  obtenerPrediccionesFinancieras, obtenerGastos, obtenerCortes, obtenerAlertas,
-  obtenerMetricasDiarias, marcarAlertaLeida, exportarGastosCsv, exportarBalancePdf,
+  obtenerPrediccionesFinancieras, obtenerGastos,
+  obtenerMetricasDiarias, exportarGastosCsv, exportarBalancePdf,
 } from "../../../services/finanzas";
 import type {
   ResumenPeriodo, DatoGraficaPL, DatoGraficaGastosCategoria, DatoGraficaCortesZ,
-  PuntoEquilibrio, AlertaFinanciera, GastoRecurrente, CorteCaja, MetricasUtilidad,
+  PuntoEquilibrio, GastoRecurrente, MetricasUtilidad,
 } from "../../types";
 import { TABS, type Seccion } from "./nucleo/constantes";
 import { rangoDeDias, type RangoFechas } from "./nucleo/utilidades";
 import ModalGasto from "./componentes/modal-gasto";
-import ModalDetalleCorte from "./componentes/modal-detalle-corte";
 import ModalPagoGasto from "./componentes/modal-pago-gasto";
 import SeccionResumen from "./componentes/seccion-resumen";
 import SeccionGastos from "./componentes/seccion-gastos";
-import SeccionCortes from "./componentes/seccion-cortes";
-import SeccionAlertas from "./componentes/seccion-alertas";
 import SeccionMetricas from "./componentes/seccion-metricas";
 
 export default function AdminFinanzas({ active = true }: { active?: boolean }) {
@@ -48,15 +45,12 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
   const [ventasGastos, setVentasGastos] = useState<DatoGraficaPL[]>([]);
   const [cortesZ, setCortesZ] = useState<DatoGraficaCortesZ[]>([]);
   const [gastos, setGastos] = useState<GastoRecurrente[]>([]);
-  const [cortes, setCortes] = useState<CorteCaja[]>([]);
-  const [alertas, setAlertas] = useState<AlertaFinanciera[]>([]);
   const [metricas, setMetricas] = useState<MetricasUtilidad[]>([]);
 
   // UI state
   const [modalGasto, setModalGasto] = useState<GastoRecurrente | undefined>();
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false);
   const [modalPagoGasto, setModalPagoGasto] = useState<GastoRecurrente | undefined>();
-  const [modalDetalleCorte, setModalDetalleCorte] = useState<CorteCaja | undefined>();
   const [predicciones, setPredicciones] = useState<any[]>([]);
   const [diasPrediccion, setDiasPrediccion] = useState(30);
 
@@ -117,22 +111,6 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
     }
   }, []);
 
-  const cargarCortes = useCallback(async () => {
-    try {
-      setCortes(await obtenerCortes(rango));
-    } catch (e) {
-      reportarError("No se pudo cargar el historial de cortes de caja", e);
-    }
-  }, [rango]);
-
-  const cargarAlertas = useCallback(async () => {
-    try {
-      setAlertas(await obtenerAlertas());
-    } catch (e) {
-      reportarError("No se pudieron cargar las alertas financieras", e);
-    }
-  }, []);
-
   const cargarMetricas = useCallback(async () => {
     try {
       setMetricas(await obtenerMetricasDiarias(rango));
@@ -149,26 +127,16 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
       cargarGraficas(),
       cargarPredicciones(),
       cargarGastos(),
-      cargarCortes(),
-      cargarAlertas(),
       cargarMetricas(),
     ]);
     setCargando(false);
-  }, [cargarResumen, cargarPuntoEq, cargarGraficas, cargarPredicciones, cargarGastos, cargarCortes, cargarAlertas, cargarMetricas]);
+  }, [cargarResumen, cargarPuntoEq, cargarGraficas, cargarPredicciones, cargarGastos, cargarMetricas]);
 
   // Con keep-alive el módulo ya no se desmonta al cambiar de pestaña:
   // se recarga al volver (datos frescos) y no hace nada oculto.
   useEffect(() => { if (active) cargarTodo(); }, [cargarTodo, active]);
 
   const recargarGastos = () => { cargarGastos(); cargarResumen(); cargarPuntoEq(); cargarGraficas(); };
-  const marcarLeida = async (id: number) => {
-    try {
-      await marcarAlertaLeida(id);
-      cargarAlertas();
-    } catch (e) {
-      reportarError("No se pudo marcar la alerta como leída", e);
-    }
-  };
 
   const manejarExportCsv = async () => {
     try {
@@ -188,7 +156,6 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
     }
   };
 
-  const alertasNoLeidas = useMemo(() => alertas.filter((a) => !a.leida).length, [alertas]);
   const cerrarModalesGasto = () => { setModalNuevoGasto(false); setModalGasto(undefined); };
 
   // ── RENDER ──────────────────────────────────────────────────────────────
@@ -246,11 +213,6 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
               >
                 <MorphIcon icon={t.icono} size={14} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
                 <span>{t.label}</span>
-                {t.id === "alertas" && alertasNoLeidas > 0 && (
-                  <span className="absolute -top-1.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center px-1 shadow-lg shadow-red-500/30">
-                    {alertasNoLeidas}
-                  </span>
-                )}
               </button>
             );
           })}
@@ -295,14 +257,6 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
             />
           )}
 
-          {seccion === "cortes" && (
-            <SeccionCortes cortes={cortes} rango={rango} onRango={setRango} onVerDetalle={setModalDetalleCorte} />
-          )}
-
-          {seccion === "alertas" && (
-            <SeccionAlertas alertas={alertas} alertasNoLeidas={alertasNoLeidas} onMarcarLeida={marcarLeida} />
-          )}
-
           {seccion === "metricas" && (
             <SeccionMetricas metricas={metricas} rango={rango} onRango={setRango} />
           )}
@@ -315,13 +269,6 @@ export default function AdminFinanzas({ active = true }: { active?: boolean }) {
       )}
       {modalPagoGasto && (
         <ModalPagoGasto gasto={modalPagoGasto} onCerrar={() => setModalPagoGasto(undefined)} onGuardado={() => { setModalPagoGasto(undefined); recargarGastos(); }} />
-      )}
-      {modalDetalleCorte && (
-        <ModalDetalleCorte
-          corte={modalDetalleCorte}
-          onCerrar={() => { setModalDetalleCorte(undefined); cargarCortes(); }}
-          onActualizado={cargarCortes}
-        />
       )}
     </div>
   );

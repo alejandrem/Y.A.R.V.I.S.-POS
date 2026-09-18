@@ -45,7 +45,7 @@ describe("finanzas · utilidades puras", () => {
 
 describe("finanzas · TABS", () => {
   it("define las 5 secciones del panel", () => {
-    expect(TABS.map((t) => t.id)).toEqual(["resumen", "gastos", "cortes", "alertas", "metricas"]);
+    expect(TABS.map((t) => t.id)).toEqual(["resumen", "gastos", "metricas"]);
   });
 });
 

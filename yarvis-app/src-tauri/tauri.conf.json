@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "yarvis-app",
+  "productName": "Y.A.R.V.I.S.-POS",
   "version": "0.1.0",
   "identifier": "com.yarvis.pos",
   "build": {
@@ -25,7 +25,7 @@
       },
       {
         "label": "main",
-        "title": "yarvis-app",
+        "title": "Y.A.R.V.I.S.-POS",
         "width": 1200,
         "height": 800,
         "maximized": true,
@@ -45,6 +45,13 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "target/release/llama.dll": "llama.dll",
+      "target/release/ggml.dll": "ggml.dll",
+      "target/release/ggml-base.dll": "ggml-base.dll",
+      "target/release/ggml-cpu.dll": "ggml-cpu.dll",
+      "target/release/mtmd.dll": "mtmd.dll"
+    }
   }
 }

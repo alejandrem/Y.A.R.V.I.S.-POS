@@ -7,7 +7,7 @@
 
 import {
   ICONO_DOLAR, ICONO_TRENDING, ICONO_GRAFICA, ICONO_CALCULADORA,
-  ICONO_CAJA, ICONO_CAMPANA, inputCls,
+  inputCls,
 } from "../../../../components/ui";
 
 // ── Paletas de gráficas ─────────────────────────────────────────────────────
@@ -27,13 +27,11 @@ export const PRESETS_RANGO: { dias: number; label: string }[] = [
 
 // ── Tabs / secciones del panel ──────────────────────────────────────────────
 
-export type Seccion = "resumen" | "gastos" | "cortes" | "alertas" | "metricas";
+export type Seccion = "resumen" | "gastos" | "metricas";
 
 export const TABS: { id: Seccion; label: string; icono: typeof ICONO_DOLAR }[] = [
   { id: "resumen", label: "Resumen", icono: ICONO_GRAFICA },
   { id: "gastos", label: "Gastos", icono: ICONO_CALCULADORA },
-  { id: "cortes", label: "Cortes", icono: ICONO_CAJA },
-  { id: "alertas", label: "Alertas", icono: ICONO_CAMPANA },
   { id: "metricas", label: "Metricicas", icono: ICONO_TRENDING },
 ];
 
