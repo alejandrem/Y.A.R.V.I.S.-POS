@@ -137,8 +137,11 @@ impl Embedder for HashEmbedder {
             vec[idx] += 1.0;
 
             // trigramas para fuzzy (coca -> coc, oca, etc. tolera "coca" vs "cocacola")
-            if word.len() >= 3 {
-                let chars: Vec<char> = word.chars().collect();
+            let chars: Vec<char> = word.chars().collect();
+            // OJO: se compara en CHARS, no en bytes. "Té" mide 3 bytes pero
+            // son 2 caracteres y `0..=2-3` revienta con underflow: ese panic
+            // mataba el hilo worker y la importacion moria en 9/6100.
+            if chars.len() >= 3 {
                 for i in 0..=chars.len() - 3 {
                     let tri: String = chars[i..i + 3].iter().collect();
                     let th = fnv1a64(&tri);
@@ -161,4 +164,22 @@ impl Embedder for HashEmbedder {
 /// Atajo global: genera embedding con el Embedder propio sin instanciar.
 pub fn embed_text(texto: &str) -> Option<Vec<f32>> {
     HashEmbedder.texto_a_embedding(texto)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn palabras_multibyte_cortas_no_revientan() {
+        // "Té" = 3 bytes pero 2 chars: el guard viejo (`word.len() >= 3`)
+        // dejaba pasar y `0..=2-3` hacia panic por underflow, matando el
+        // worker de importacion masiva (corte 9/6100 en carpeta real).
+        assert!(HashEmbedder.texto_a_embedding("Té").is_some());
+        assert!(HashEmbedder.texto_a_embedding("ññ").is_some());
+        assert!(HashEmbedder.texto_a_embedding("a").is_some());
+        assert!(HashEmbedder.texto_a_embedding("").is_none());
+        assert!(HashEmbedder.texto_a_embedding("   ").is_none());
+        assert!(HashEmbedder.texto_a_embedding("Coca-Cola 600ml").is_some());
+    }
 }

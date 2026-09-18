@@ -19,9 +19,11 @@
     } catch (e) {
       stored = null;
     }
+    // Arranque fresco = clarito (igual que useTheme.ts): oscuro solo si
+    // el usuario lo eligio ("oscuro") o pidio seguir al sistema ("sistema").
     var dark =
       stored === "oscuro" ||
-      (stored !== "claro" &&
+      (stored === "sistema" &&
         window.matchMedia &&
         window.matchMedia("(prefers-color-scheme: dark)").matches);
     if (dark) {

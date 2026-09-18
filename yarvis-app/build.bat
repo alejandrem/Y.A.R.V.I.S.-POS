@@ -58,14 +58,41 @@ if not exist "node_modules\" (
 REM 4. Compatibilidad bindgen / Clang para MSVC (igual que run.bat)
 set "BINDGEN_EXTRA_CLANG_ARGS=-D__clang_major__=20"
 
-REM 5. Bundles: por defecto NSIS (un solo .exe instalador).
+REM 5. Fase 1: compilar release para generar las DLLs frescas de llama.cpp.
+REM    El bundle las toma de src-tauri\dlls\, asi que hay que refrescarlas
+REM    ANTES de empaquetar (si no, el instalador llevaria DLLs viejas).
+echo.
+echo [INFO] Fase 1/2: cargo build --release (genera las DLLs)...
+echo [INFO] Esto tarda varios minutos la primera vez (llama.cpp + Rust)...
+echo.
+call cargo build --release --manifest-path src-tauri\Cargo.toml
+if !errorlevel! neq 0 (
+    echo.
+    echo [ERROR] Fallo cargo build --release. Si es toolchain de Rust prueba:
+    echo   rustup update stable ^&^& rustup default stable
+    pause
+    exit /b 1
+)
+
+echo [INFO] Refrescando src-tauri\dlls\ con las DLLs recien compiladas...
+copy /y "src-tauri\target\release\llama.dll" "src-tauri\dlls\" >nul
+copy /y "src-tauri\target\release\ggml.dll" "src-tauri\dlls\" >nul
+copy /y "src-tauri\target\release\ggml-base.dll" "src-tauri\dlls\" >nul
+copy /y "src-tauri\target\release\ggml-cpu.dll" "src-tauri\dlls\" >nul
+copy /y "src-tauri\target\release\mtmd.dll" "src-tauri\dlls\" >nul
+if !errorlevel! neq 0 (
+    echo [ERROR] No se pudieron copiar las DLLs a src-tauri\dlls\.
+    pause
+    exit /b 1
+)
+
+REM 6. Fase 2: bundles. Por defecto NSIS (un solo .exe instalador).
 REM    Si pasas argumentos, se usan tal cual. Ej: build.bat --bundles msi
 set "BUNDLES=--bundles nsis"
 if not "%~1"=="" set "BUNDLES=%*"
 
 echo.
-echo [INFO] Compilando con: npm run tauri build -- %BUNDLES%
-echo [INFO] Esto tarda varios minutos la primera vez (llama.cpp + Rust)...
+echo [INFO] Fase 2/2: npm run tauri build -- %BUNDLES%
 echo.
 call npm run tauri build -- %BUNDLES%
 if %errorlevel% neq 0 (

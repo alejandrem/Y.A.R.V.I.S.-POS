@@ -47,11 +47,11 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "target/release/llama.dll": "llama.dll",
-      "target/release/ggml.dll": "ggml.dll",
-      "target/release/ggml-base.dll": "ggml-base.dll",
-      "target/release/ggml-cpu.dll": "ggml-cpu.dll",
-      "target/release/mtmd.dll": "mtmd.dll"
+      "dlls/llama.dll": "llama.dll",
+      "dlls/ggml.dll": "ggml.dll",
+      "dlls/ggml-base.dll": "ggml-base.dll",
+      "dlls/ggml-cpu.dll": "ggml-cpu.dll",
+      "dlls/mtmd.dll": "mtmd.dll"
     }
   }
 }

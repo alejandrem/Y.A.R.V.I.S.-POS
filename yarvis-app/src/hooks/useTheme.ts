@@ -22,7 +22,9 @@ function applyThemeToDOM(resolved: "claro" | "oscuro") {
   }
 }
 
-/** Lee el tema guardado en localStorage (fallback: "sistema"). */
+/** Lee el tema guardado en localStorage (fallback: "claro").
+ * Arranque fresco (p. ej. tras reset) = colores claritos, sin importar
+ * el tema del Windows. El usuario puede cambiarlo en Ajustes. */
 function getStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -30,7 +32,7 @@ function getStoredTheme(): Theme {
       return stored;
     }
   } catch {}
-  return "sistema";
+  return "claro";
 }
 
 export function useTheme() {
