@@ -122,6 +122,11 @@ pub async fn listar_modelos(
                 if !es_free(&id) {
                     return None;
                 }
+                // muse-spark-* usa /responses, no /chat/completions: no listar
+                // aquí porque el stream cloud fallaría con 500.
+                if id.starts_with("muse-spark") {
+                    return None;
+                }
                 let name = m
                     .get("name")
                     .and_then(|n| n.as_str())

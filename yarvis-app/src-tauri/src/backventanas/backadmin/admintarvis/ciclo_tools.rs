@@ -30,8 +30,10 @@ pub(super) async fn resolver_ciclo_tools(
         tracing::info!("[YARVIS-TOOLS] ejecutando {nombre}({args})");
         let json_res =
             ejecutar_tool_con_rol(&nombre, &args, &db_path, es_empleado, usuario_id).await;
+        // Se guarda con nombre para que la ronda 2 (cloud) lo entienda aun
+        // cuando viaje como `user` (Zen rechaza `role:"tool"` con 400).
         historial.push(Mensaje::new("assistant", respuesta));
-        historial.push(Mensaje::new("tool", json_res));
+        historial.push(Mensaje::new("tool", format!("Resultado de {nombre}:\n{json_res}")));
         respuesta = (&mut *generar)(historial.clone()).await?;
     }
     // Agotó rondas: entregar limpio (sin bloques crudos)

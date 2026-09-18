@@ -67,7 +67,7 @@ fn error_amigable(status: u16, display: &str, body: Option<&str>) -> String {
     }
 }
 
-/// Extrae un extracto legible del cuerpo de error (máx. 300 caracteres).
+/// Extrae un extracto legible del cuerpo de error (máx. 600 caracteres).
 /// Si es JSON, prefiere `error.message` / `error` / `message`.
 fn recorte_mensaje(body: Option<&str>) -> Option<String> {
     let body = body?.trim();
@@ -79,12 +79,12 @@ fn recorte_mensaje(body: Option<&str>) -> Option<String> {
             if let Some(msg) = json.pointer(pointer).and_then(|v| v.as_str()) {
                 let msg = msg.trim();
                 if !msg.is_empty() {
-                    return Some(recortar(msg, 300));
+                    return Some(recortar(msg, 600));
                 }
             }
         }
     }
-    Some(recortar(body, 300))
+    Some(recortar(body, 600))
 }
 
 fn recortar(s: &str, max: usize) -> String {

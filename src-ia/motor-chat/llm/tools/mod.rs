@@ -15,15 +15,19 @@
 /// - [`helpers`]    → utilidades puras compartidas (fechas, escape, moneda).
 /// - [`ventas`]     → tools que leen ventas/detalle_ventas.
 /// - [`inventario`] → tools que leen productos.
+/// - [`compras`]    → tools de abasto (proveedores, recepciones, órdenes).
+/// - [`operativa`]  → trazabilidad (costos, lotes) y multisucursal.
 /// - [`sql`]        → SQL libre de solo lectura + snapshot del schema (#15).
 /// - [`tests`]      → suite con DB en memoria.
 
 use rusqlite::Connection;
 use serde_json::Value;
 
+mod compras;
 mod deteccion;
 mod helpers;
 mod inventario;
+mod operativa;
 mod sql;
 mod ventas;
 #[cfg(test)]
@@ -33,10 +37,12 @@ mod tests;
 // estas rutas exactas: src_ia::motor_chat::llm::tools::*).
 pub use deteccion::{detectar_tool_call, respuesta_final_segura, quitar_tool_calls};
 
+use compras::{get_purchase_detail, query_purchase_orders, query_purchases, query_suppliers};
 use inventario::{
     get_product_info, get_products_by_category, get_restock_analysis, list_categories,
     query_inventory, search_products,
 };
+use operativa::{list_branches, query_branch_stock, query_cost_history, query_expiring};
 use sql::sql_readonly;
 use ventas::{compare_periods, forecast_sales, get_top_products, query_sales};
 
@@ -73,6 +79,16 @@ pub fn ejecutar_tool(nombre: &str, args_json: &str, db_path: &str) -> Result<Str
         "search_products" => search_products(&conn, &args),
         "list_categories" => list_categories(&conn, &args),
         "get_products_by_category" => get_products_by_category(&conn, &args),
+        // Abasto: proveedores, recepciones y pedidos (solo lectura)
+        "query_suppliers" => query_suppliers(&conn, &args),
+        "query_purchases" => query_purchases(&conn, &args),
+        "get_purchase_detail" => get_purchase_detail(&conn, &args),
+        "query_purchase_orders" => query_purchase_orders(&conn, &args),
+        // Trazabilidad y multisucursal (solo lectura)
+        "query_cost_history" => query_cost_history(&conn, &args),
+        "query_expiring" => query_expiring(&conn, &args),
+        "list_branches" => list_branches(&conn, &args),
+        "query_branch_stock" => query_branch_stock(&conn, &args),
         // SQL libre de solo lectura (issue #15; el rol se filtra en el backend)
         "sql_readonly" => sql_readonly(&conn, &args),
         otro => Ok(serde_json::json!({ "error": format!("herramienta desconocida: {otro}") })),

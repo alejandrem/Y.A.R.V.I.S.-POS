@@ -54,7 +54,7 @@ Y.A.R.V.I.S.-POS/
 │   │   │   └── variables.rs           #   API keys (archivo plano 0600 via backend).
 │   │   └── llm/
 │   │       ├── mod.rs                 # Chat LOCAL Qwen2.5-Coder 1.5B Instruct via llama-cpp-4 (feature llm-local) + recortar_historial.
-│   │       └── tools/                 # Ejecutor de 10 tools (ventas.rs, inventario.rs, deteccion, helpers).
+│   │       └── tools/                 # Ejecutor de 19 tools (ventas.rs, inventario.rs, compras.rs, operativa.rs, deteccion, helpers).
 │   └── tests/                         # estres.rs, fuzzing, masivo, verificar_modelos, etc.
 │
 └── yarvis-app/                        # Aplicacion de Escritorio (Frontend React + Backend Rust).

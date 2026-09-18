@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ICONO_CHECK, ICONO_ENVIAR, ICONO_PAUSA } from "../../../../icons";
 import { reportarError } from "../../../../services/tauri";
 import { stopChatStream } from "../../../../services/yarvis";
+import { getApiKeyFor } from "../ChatWidget";
 import { useIconSequence } from "./useIconSequence";
 import type { ChatModelSelection, ChatSession, Message } from "../ChatWidget";
 
@@ -47,7 +48,17 @@ export function useChatStream({
   const [contextUsed, setContextUsed] = useState(0);
   const [contextMax, setContextMax] = useState(fallbackSelection.contextWindow || 4096);
 
-  const currentSelection = activeSession?.modelSelection || fallbackSelection;
+  // La sesión guarda un snapshot de provider/modelo/label, pero la API key
+  // se resuelve SIEMPRE del caché vivo (disco 0600 vía backend): el snapshot
+  // puede traerla vacía si la sesión se creó antes de configurar la clave,
+  // y eso llegaba al backend como "" → "Falta la API key del proveedor".
+  const sessionSelection = activeSession?.modelSelection;
+  const currentSelection: ChatModelSelection = (() => {
+    const base = sessionSelection || fallbackSelection;
+    if (!base.provider) return base;
+    const liveKey = getApiKeyFor(base.provider);
+    return liveKey && liveKey !== base.apiKey ? { ...base, apiKey: liveKey } : base;
+  })();
 
   const streamingTextRef = useRef("");
   const streamingModelRef = useRef("");

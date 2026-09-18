@@ -627,3 +627,57 @@ APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri build
 4. Test de regresión vitest `turno-extra.test.tsx` (7 casos).
 
 **Leccion aprendida:** "reloj pasado de la salida" no es "trabajo extra": todo cálculo de extra debe anclarse a la llegada real, no a la hora actual. Y ojo con efectos cruzados: el stamp de salida del corte Z (#26) es correcto, pero cualquier consumidor de `ultimo_login` debe aplicar la misma regla o hereda el fantasma.
+
+---
+
+### Bug Z2: la ronda 2 de tools cloud moría con `400 Upstream request failed` — ALTO (RESUELTO 2026-09-15)
+
+**Sintoma:** con `YARVIS_SIN_FALLBACK=1` el chat cloud fallaba siempre que el modelo pedía una tool: `Error 400 del proveedor (OpenCode). Detalle del servidor: Error from provider (Console): Upstream request failed: [400] Provider returned error`. Sin la variable, el fallo se enmascaraba cayendo a Qwen (y la UI mostraba `UNKNOWN` en el badge del modelo cuando el stream solo traía reasoning).
+
+**Causa raiz (cuádruple, verificada con sondas directas contra `https://opencode.ai/zen/v1/chat/completions`):**
+1. `role:"tool"` suelto: `ciclo_tools.rs` reinyectaba el resultado como mensaje `role:"tool"` y `normalizar_mensajes` lo mandaba literal a Zen. El gateway OpenAI-compatible lo rechaza sin `tool_calls` previos. Repro: mismo historial con `tool` → 400; como `user` → 200 con respuesta correcta.
+2. `MAX_TOKENS = 39800` (variables.rs): techo de salida absurdo para los free; se bajó a 4096.
+3. Session id estable por proceso (`OnceLock`): el sticky-routing de Zen puede clavar un id en una réplica rota y fallar el 100% hasta reiniciar (ver sst/opencode#46011). Ahora es fresco por request y se mandan ambos headers (`x-opencode-session` oficial + `X-Session-Id` alias + `x-opencode-client`), como el CLI oficial.
+4. Cola de fallback con modelos muertos (`hy3-free`, `laguna-s-2.1-free` ya no existen en `GET /models`) y `muse-spark-*-contributor-free` listado aunque usa `/responses` (daba 500): se excluye del catálogo chat con error accionable.
+
+**Solucion:**
+1. `helpers.rs::normalizar_mensajes` convierte `tool` → `user` con prefijo `Resultado de <tool>:` (el modelo local sigue recibiendo `role:"tool"` por llama.cpp, sin pasar por ahí); `ciclo_tools.rs` guarda el nombre en el contenido; `prompts.rs` documenta el formato.
+2. `variables.rs`: `MAX_TOKENS 4096`, `ORDEN_FALLBACK_FREE` con los 6 free vivos verificados el 2026-09-15.
+3. `proveedores.rs`: `nueva_sesion_zen()` por request + headers duales + guard temprano para modelos `/responses`.
+4. `rutas.rs`: `model_used` defaultea al modelo pedido (adiós badge `UNKNOWN`) y solo lo reemplaza el primer modelo real del stream; `errores.rs` recorta a 600 chars para no perder el detalle upstream.
+5. De paso: 8 tools nuevas de abasto/trazabilidad (`compras.rs`, `operativa.rs`, migración `0018_abasto_trazabilidad.sql` con trigger de historial de costos) + allowlist de `sql_readonly` extendida. Total: 19 tools.
+
+**Verificación real:** ciclo completo contra Zen en vivo (ronda 1 → `<tool_call>query_sales today/revenue</tool_call>`, ronda 2 → `$300 MXN en ventas`); `cargo test -p src-ia --lib motor_chat` 57/57; `cargo check` Tauri limpio.
+
+**Leccion aprendida:** "OpenAI-compatible" no significa "acepta cualquier rol": `tool` sin `tool_calls` es 400 garantizado aguas arriba. Y un session id estable es una trampa de sticky-routing: barato de generar, carísimo cuando se clava.
+
+---
+
+### Bug Z3: "Falta la API key" con la clave ya guardada — ALTO (RESUELTO 2026-09-15)
+
+**Sintoma:** con la API key configurada y guardada en `Configurar modelos`, al enviar un mensaje el chat respondía `Falta la API key del proveedor.`
+
+**Causa raiz:** `useChatStream.ts` resolvía `currentSelection = activeSession?.modelSelection || fallbackSelection`. Cada chat persiste un snapshot `{provider, apiKey, model}` en localStorage, y `ChatProvider` solo lo re-sincroniza cuando cambia `provider:modelo:label` (la key no forma parte de esa clave a propósito). Si la sesión nació antes de que `leerApiKeys()` resolviera (o antes de guardar la clave), el snapshot quedaba con `apiKey: ""` para siempre y cada envío mandaba la key vacía al backend.
+
+**Solucion:** la sesión conserva provider/modelo/label, pero la key se resuelve SIEMPRE del caché vivo (`apiKeysCache`, alimentado del `api_keys.json` 0600) vía nuevo `getApiKeyFor(provider)` en `ChatWidget.tsx`. Los chats existentes se curan solos sin recrearlos. Además el error de backend ahora dice dónde ponerla (`...Agrégala en 'Configurar modelos'...`).
+
+**Verificación real:** `tsc --noEmit` limpio, vitest frontend 147/147.
+
+**Leccion aprendida:** un snapshot persistido nunca debe ser la fuente de un secreto rotativo: provider/modelo/label se congelan, la key se resuelve en vivo en el momento del envío.
+
+---
+
+### Bug Z4: burbuja fantasma (badge del modelo sin texto) cuando el cloud solo razona — ALTO (RESUELTO 2026-09-15)
+
+**Sintoma:** al preguntar *"qué tools tienes"*, el chat mostraba el badge `NEMOTRON-3-ULTRA-FREE` sin ningún mensaje. Reintentos (`bro?`) igual: badge, cero texto.
+
+**Causa raiz:** el modelo cerró el stream con bloques `think`/reasoning pero sin texto final (o con un `think` sin cerrar, que `SeparadorThink::finalizar` marca como `Think`). `_stream_cloud` acumulaba solo fragmentos `Token` en `full_response` y emitía `chat-complete` con `response: ""` igualmente; la UI lo guardaba como burbuja vacía. Agravante conocido: respuestas en inglés con *"I think..."* confunden al separador textual (el marcador de apertura es `\s+think\b`), así que el texto real se traga como razonamiento.
+
+**Solucion (nunca más burbujas vacías, 3 capas):**
+1. `rutas.rs::_stream_cloud`: si el stream cierra sin texto y sin `tool_call`, `tracing::warn!` con `think_visto` para diagnóstico y se emite `RESPUESTA_VACIA_CLOUD` (aviso reintentable) en vez de `""`.
+2. `rutas.rs::_emitir_como_stream`: mismo guard para finales del ciclo de tools (rondas agotadas con solo `tool_calls`).
+3. `chat.rs` (path sin streaming) + `generacion.rs::generar_completo` (warn si sale vacío): mismo aviso.
+
+**Verificación real:** `cargo test -p src-ia --lib motor_chat` 57/57; `cargo check` Tauri limpio.
+
+**Leccion aprendida:** un protocolo textual de marcadores (`think`/`response`) siempre tiene falsos positivos con prosa natural; la red de seguridad no es un parser más listo, es prohibir la salida vacía en la capa de emisión.

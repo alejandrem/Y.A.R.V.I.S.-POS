@@ -3,6 +3,10 @@
 use rusqlite::Connection;
 
 use super::deteccion::{detectar_tool_call, quitar_tool_calls};
+use super::compras::{
+    get_purchase_detail, query_purchase_orders, query_purchases, query_suppliers,
+};
+use super::operativa::{list_branches, query_branch_stock, query_cost_history, query_expiring};
 use super::inventario::{
     get_product_info, get_products_by_category, list_categories, query_inventory, search_products,
 };
@@ -277,4 +281,215 @@ fn sql_rechaza_tablas_fuera_de_allowlist() {
     .unwrap();
     assert!(v.get("error").is_none());
     assert!(v["filas"][0]["s"].as_i64().unwrap() >= 30000);
+}
+
+// ── Abasto y trazabilidad (migraciones 0012/0013/0018) ──
+
+fn db_abasto() -> Connection {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE proveedores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL, telefono TEXT, correo TEXT,
+            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE compras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id),
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+            monto_pagado INTEGER DEFAULT 0, monto_sugerido INTEGER DEFAULT 0,
+            metodo_pago TEXT DEFAULT 'efectivo', comentario TEXT,
+            cajero_id INTEGER, movimiento_id INTEGER,
+            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+            orden_id INTEGER
+        );
+        CREATE TABLE compras_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            compra_id INTEGER NOT NULL REFERENCES compras(id),
+            producto_id INTEGER, nombre TEXT NOT NULL,
+            presentacion TEXT DEFAULT 'unidad', cantidad REAL NOT NULL,
+            precio_sugerido INTEGER DEFAULT 0
+        );
+        CREATE TABLE ordenes_compra (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id),
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+            estado TEXT DEFAULT 'pendiente', total_estimado INTEGER DEFAULT 0,
+            notas TEXT, creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE ordenes_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            orden_id INTEGER NOT NULL REFERENCES ordenes_compra(id),
+            producto_id INTEGER, nombre TEXT NOT NULL,
+            cantidad REAL NOT NULL DEFAULT 0, cantidad_recibida REAL DEFAULT 0,
+            costo_unitario INTEGER DEFAULT 0
+        );
+        CREATE TABLE historial_costos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id INTEGER, producto_nombre TEXT NOT NULL,
+            costo_anterior INTEGER DEFAULT 0, costo_nuevo INTEGER NOT NULL,
+            proveedor_id INTEGER, compra_id INTEGER,
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE lotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id INTEGER, producto_nombre TEXT NOT NULL,
+            lote TEXT NOT NULL DEFAULT '', caducidad DATE,
+            cantidad REAL DEFAULT 0, compra_id INTEGER,
+            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE sucursales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL, direccion TEXT,
+            creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE stock_sucursal (
+            sucursal_id INTEGER NOT NULL, producto_id INTEGER NOT NULL,
+            stock REAL DEFAULT 0, PRIMARY KEY (sucursal_id, producto_id)
+        );
+        CREATE TABLE productos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT, precio_venta INTEGER DEFAULT 0, precio_costo INTEGER DEFAULT 0,
+            stock REAL DEFAULT 0, stock_minimo REAL DEFAULT 0,
+            vendido REAL DEFAULT 0, categoria TEXT
+        );
+        INSERT INTO proveedores (nombre, telefono) VALUES
+          ('Lala Sur', '555-0001'), ('Bimbo Ruta 7', NULL);
+        INSERT INTO compras (proveedor_id, fecha, monto_pagado, monto_sugerido, metodo_pago) VALUES
+          (1, datetime('now','localtime'), 50000, 48000, 'efectivo'),
+          (1, datetime('now','localtime','-40 days'), 30000, 30000, 'transferencia'),
+          (2, datetime('now','localtime'), 15000, 15000, 'efectivo');
+        INSERT INTO compras_items (compra_id, nombre, cantidad, precio_sugerido) VALUES
+          (1, 'Leche Lala 1L', 100.0, 500),
+          (2, 'Leche Lala 1L', 60.0, 450);
+        INSERT INTO ordenes_compra (proveedor_id, estado, total_estimado) VALUES
+          (1, 'pendiente', 20000), (2, 'recibida', 15000);
+        INSERT INTO ordenes_items (orden_id, nombre, cantidad, cantidad_recibida, costo_unitario) VALUES
+          (1, 'Leche Lala 1L', 40.0, 0.0, 500),
+          (2, 'Pan Bimbo', 30.0, 30.0, 400);
+        INSERT INTO historial_costos (producto_id, producto_nombre, costo_anterior, costo_nuevo) VALUES
+          (1, 'Leche Lala 1L', 400, 500);
+        INSERT INTO lotes (producto_nombre, lote, caducidad, cantidad) VALUES
+          ('Leche Lala 1L', 'L-001', date('now','-5 days'), 10.0),
+          ('Leche Lala 1L', 'L-002', date('now','+10 days'), 20.0),
+          ('Pan Bimbo', 'P-009', date('now','+200 days'), 30.0);
+        INSERT INTO sucursales (nombre) VALUES ('Centro'), ('Norte');
+        INSERT INTO productos (nombre, precio_costo, stock) VALUES
+          ('Leche Lala 1L', 500, 50.0), ('Pan Bimbo', 400, 5.0);
+        INSERT INTO stock_sucursal (sucursal_id, producto_id, stock) VALUES
+          (1, 1, 12.0), (2, 1, 3.0), (2, 2, 0.0);
+        "#,
+    )
+    .unwrap();
+    conn
+}
+
+#[test]
+fn suppliers_con_totales_en_pesos_y_busqueda() {
+    let conn = db_abasto();
+    let v = query_suppliers(&conn, &serde_json::json!({})).unwrap();
+    let lista = v["proveedores"].as_array().unwrap();
+    assert_eq!(lista.len(), 2);
+    assert_eq!(lista[0]["nombre"], "Lala Sur"); // 800 > 150
+    assert_eq!(lista[0]["total_comprado"], 800.0); // 80000 centavos
+    assert_eq!(lista[0]["compras"], 2);
+    let b = query_suppliers(&conn, &serde_json::json!({"search": "bimbo"})).unwrap();
+    assert_eq!(b["proveedores"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn purchases_filtra_por_rango_y_proveedor() {
+    let conn = db_abasto();
+    let v = query_purchases(&conn, &serde_json::json!({"date_range": "this_month"})).unwrap();
+    // Solo las 2 de hoy; la de hace 40 días queda fuera.
+    assert_eq!(v["compras"].as_array().unwrap().len(), 2);
+    assert_eq!(v["total_pagado"], 650.0);
+    let b = query_purchases(
+        &conn,
+        &serde_json::json!({"date_range": "this_month", "proveedor": "bimbo"}),
+    )
+    .unwrap();
+    assert_eq!(b["compras"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn purchase_detail_con_items_y_error_si_no_existe() {
+    let conn = db_abasto();
+    let v = get_purchase_detail(&conn, &serde_json::json!({"compra_id": 1})).unwrap();
+    assert_eq!(v["proveedor"], "Lala Sur");
+    assert_eq!(v["monto_pagado"], 500.0);
+    assert_eq!(v["items"][0]["precio_sugerido"], 5.0); // 500 centavos
+    assert!(get_purchase_detail(&conn, &serde_json::json!({"compra_id": 999}))
+        .unwrap()
+        .get("error")
+        .is_some());
+    assert!(get_purchase_detail(&conn, &serde_json::json!({})).unwrap().get("error").is_some());
+}
+
+#[test]
+fn purchase_orders_filtra_por_estado_con_renglones() {
+    let conn = db_abasto();
+    let v = query_purchase_orders(&conn, &serde_json::json!({"estado": "pendiente"})).unwrap();
+    let lista = v["ordenes"].as_array().unwrap();
+    assert_eq!(lista.len(), 1);
+    assert_eq!(lista[0]["items"][0]["cantidad"], 40.0);
+    assert_eq!(lista[0]["items"][0]["cantidad_recibida"], 0.0);
+    let todas = query_purchase_orders(&conn, &serde_json::json!({"estado": "todas"})).unwrap();
+    assert_eq!(todas["ordenes"].as_array().unwrap().len(), 2);
+    assert!(query_purchase_orders(&conn, &serde_json::json!({"estado": "volando"}))
+        .unwrap()
+        .get("error")
+        .is_some());
+}
+
+#[test]
+fn cost_history_con_historial_y_compras() {
+    let conn = db_abasto();
+    let v = query_cost_history(&conn, &serde_json::json!({"product_id": "lala"})).unwrap();
+    assert_eq!(v["producto"], "Leche Lala 1L");
+    assert_eq!(v["costo_actual"], 5.0);
+    assert_eq!(v["historial"][0]["costo_nuevo"], 5.0);
+    assert_eq!(v["ultimas_compras"].as_array().unwrap().len(), 2);
+    assert!(query_cost_history(&conn, &serde_json::json!({"product_id": "fantasma"}))
+        .unwrap()
+        .get("error")
+        .is_some());
+}
+
+#[test]
+fn expiring_separa_vencidos_y_proximos() {
+    let conn = db_abasto();
+    let v = query_expiring(&conn, &serde_json::json!({"dias": 30})).unwrap();
+    assert_eq!(v["caducados"].as_array().unwrap().len(), 1);
+    assert_eq!(v["caducados"][0]["lote"], "L-001");
+    assert_eq!(v["por_caducar"].as_array().unwrap().len(), 1);
+    assert_eq!(v["por_caducar"][0]["lote"], "L-002");
+    // El de +200 días queda fuera del horizonte.
+    let corto = query_expiring(&conn, &serde_json::json!({"dias": 5})).unwrap();
+    assert_eq!(corto["por_caducar"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn branches_y_stock_por_sucursal() {
+    let conn = db_abasto();
+    let v = list_branches(&conn, &serde_json::json!({})).unwrap();
+    assert_eq!(v["sucursales"].as_array().unwrap().len(), 2);
+    let s = query_branch_stock(&conn, &serde_json::json!({"sucursal": "norte"})).unwrap();
+    assert_eq!(s["sucursal"], "Norte");
+    assert_eq!(s["total_lineas"], 2);
+    assert!(query_branch_stock(&conn, &serde_json::json!({"sucursal": "sur"}))
+        .unwrap()
+        .get("error")
+        .is_some());
+    assert!(query_branch_stock(&conn, &serde_json::json!({})).unwrap().get("error").is_some());
+}
+
+#[test]
+fn sql_permite_tablas_de_abasto() {
+    let conn = db_abasto();
+    let v = sql_readonly(&conn, &serde_json::json!({"query": "SELECT nombre FROM proveedores"}))
+        .unwrap();
+    assert!(v.get("error").is_none());
+    assert_eq!(v["filas"].as_array().unwrap().len(), 2);
 }

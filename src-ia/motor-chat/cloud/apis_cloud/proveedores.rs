@@ -6,7 +6,6 @@
 
 use futures_util::StreamExt;
 use reqwest::Client;
-use std::sync::OnceLock;
 
 use super::super::prompts::Mensaje;
 use super::super::variables::{Provider, MAX_TOKENS, MAX_TOKENS_GOOGLE};
@@ -15,26 +14,37 @@ use super::helpers::normalizar_mensajes;
 use super::sse::sse_lineas;
 use super::tipos::{Evento, Usage};
 
-/// ID de sesión estable por proceso para el free tier de Zen.
-///
-/// Zen exige un session id en `POST /chat/completions`: sin él responde
-/// 400 MissingSessionID ("free tier can only be used in OpenCode") para
-/// TODO modelo free, sin importar el resto del request (verificado
-/// 2026-09-13 con sondas directas). OpenCode manda el suyo propio
-/// (`x-opencode-session`); nosotros mandamos un UUID local en el header
-/// neutro `X-Session-Id` (el mismo que OpenCode usa con terceros, sin
-/// suplantar cliente ni usuario). Con header la puerta abre (200 o 429
-/// de cuota real).
-fn id_sesion_zen() -> &'static str {
-    static ID: OnceLock<String> = OnceLock::new();
-    ID.get_or_init(|| {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        format!("yarvis-{:x}-{:x}", std::process::id(), nanos & 0xffff_ffff_ffff)
-    })
+/// ID de sesión para el free tier de Zen.
+ ///
+ /// Zen exige un session id en `POST /chat/completions`: sin él responde
+ /// 400 MissingSessionID ("free tier can only be used in OpenCode") para
+ /// TODO modelo free (verificado 2026-09-13/15 con sondas directas).
+ /// El CLI oficial manda `x-opencode-session` (+ `x-opencode-client`,
+ /// `x-opencode-request`); con terceros acepta también el alias
+ /// `X-Session-Id`. Mandamos AMBOS para máxima compatibilidad.
+ ///
+ /// Se genera UNO NUEVO POR REQUEST (no estable por proceso): un id estable
+ /// puede quedar clavado por sticky-routing en una réplica rota y fallar
+ /// el 100% de las veces hasta reiniciar (ver sst/opencode#46011).
+ /// Fresco por request pierde algo de prompt-caching pero gana fiabilidad.
+fn nueva_sesion_zen() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static CONTADOR: AtomicU64 = AtomicU64::new(0);
+    let n = CONTADOR.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("yarvis-{:x}-{:x}-{:x}", std::process::id(), (nanos & 0xffff_ffff_ffff) ^ ((n as u128) << 32), n)
+}
+
+/// Modelos que NO hablan `/chat/completions` aunque salgan en `/models`.
+/// `muse-spark-*-contributor-free` usa `/responses` (`@ai-sdk/openai` según
+/// docs de Zen); mandarlo a chat/completions da 500 Internal server error.
+/// Se rechaza temprano con mensaje accionable en vez de romper el stream.
+fn es_solo_responses(modelo: &str) -> bool {
+    modelo.starts_with("muse-spark")
 }
 /// Genera el stream de un modelo específico (gemini u openai-compatible).
 ///
@@ -64,6 +74,17 @@ pub(crate) async fn stream_openai_compatible<'a>(
     messages: &'a [Mensaje],
 ) -> impl futures_util::Stream<Item = Result<Evento, ErrorCloud>> + 'a {
     async_stream::stream! {
+        // Guard temprano: /responses-only a /chat/completions da 500.
+        if cfg.key == "opencode" && es_solo_responses(modelo) {
+            yield Err(ErrorCloud::Http {
+                status: 400,
+                retry_after: None,
+                body: Some(format!(
+                    "El modelo '{modelo}' usa el endpoint /responses de Zen (no /chat/completions). Elige uno chat-compatible: nemotron-3-ultra-free, mimo-v2.5-free o big-pickle."
+                )),
+            });
+            return;
+        }
         let url = format!("{}/chat/completions", cfg.base_url);
         let normalized = normalizar_mensajes(messages);
 
@@ -88,9 +109,16 @@ pub(crate) async fn stream_openai_compatible<'a>(
             let mut req = client
                 .post(&url)
                 .header("Authorization", format!("Bearer {api_key}"));
-            // Zen free tier exige session id (ver `id_sesion_zen`).
+            // Zen free tier exige session id. Se mandan AMBOS headers:
+            // `x-opencode-session` (oficial CLI) + `X-Session-Id` (alias
+            // terceros) + `x-opencode-client`. Id fresco por request para
+            // no clavar sticky-routing en réplica rota.
             if cfg.key == "opencode" {
-                req = req.header("X-Session-Id", id_sesion_zen());
+                let ses = nueva_sesion_zen();
+                req = req
+                    .header("x-opencode-session", ses.clone())
+                    .header("X-Session-Id", ses)
+                    .header("x-opencode-client", "yarvis-pos");
             }
             let resp = match req.json(&body).send().await {
                 Ok(r) => r,

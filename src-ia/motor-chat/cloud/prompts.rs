@@ -50,11 +50,38 @@ Cuando recibas el resultado de la herramienta, respondele al usuario en espanol
 SIEMPRE enumerando los datos concretos del resultado (nombres de productos y cifras,
 uno por linea o en lista). NUNCA digas solamente "aqui estan" sin mostrarlos:
 el usuario NO ve el resultado de la herramienta, SOLO ve tu texto.
+El resultado llega como mensaje `user` con prefijo "Resultado de <tool>:".
 Ejemplo correcto: "Estos son los productos por reabastecer:
 1. LACTEOS - stock 0 (minimo 5)
 2. PAN - stock 0 (minimo 5)"
 Si el resultado viene vacio, dilo claramente: "No hay productos con bajo stock, todo esta surtido."
 Si NINGUNA herramienta aplica a la pregunta, respondele directo sin tool_call."#;
+
+/// Tools de abasto y trazabilidad (migraciones 0012/0013/0018).
+/// Se APPEND al final del prompt: NO modifica TOOLS_LINEA ni
+/// TOOLS_INSTRUCCIONES (el formato exacto del fine-tuning queda intacto).
+/// Solo lectura: jamás escriben en la DB. Dinero en pesos.
+const TOOLS_ABASTO: &str = r#"
+Herramientas de ABASTO y TRAZABILIDAD (ademas de las anteriores):
+- query_suppliers: search OPCIONAL (nombre parcial del proveedor), limit opcional; lista proveedores con cuantas compras y total comprado
+- query_purchases: date_range OPCIONAL (today/yesterday/this_week/this_month/last_month), proveedor OPCIONAL (nombre parcial), limit opcional; recepciones con monto pagado
+- get_purchase_detail: compra_id OBLIGATORIO (id de la recepcion); cabecera + renglones con costo sugerido
+- query_purchase_orders: estado OPCIONAL (pendiente/parcial/recibida/cancelada/todas), limit opcional; pedidos con sus renglones y faltantes (cantidad - cantidad_recibida)
+- query_cost_history: product_id OBLIGATORIO (nombre del producto); costo actual + cambios registrados + ultimos precios pagados
+- query_expiring: dias OPCIONAL (1-365, default 30), product_id OPCIONAL; lotes vencidos y por vencer con dias_restantes
+- list_branches: SIN argumentos; sucursales con lineas y stock conjunto (el stock GLOBAL vive en productos)
+- query_branch_stock: sucursal OBLIGATORIO (nombre o id; usa list_branches primero), product_id OPCIONAL, limit opcional
+Estrategia: "a quien le compro X?" -> query_suppliers con search X; "cuanto gaste en compras?" -> query_purchases; "que pedidos tengo pendientes?" -> query_purchase_orders con estado pendiente; "se va a caducar algo?" -> query_expiring; "hay stock en sucursal Y?" -> list_branches y luego query_branch_stock."#;
+
+/// Subconjunto operativo para el empleado de mostrador (sin montos de
+/// compra ni costos: eso lo maneja el administrador).
+const TOOLS_ABASTO_EMPLEADO: &str = r#"
+Herramientas de ABASTO operativas (ademas de las de inventario):
+- query_suppliers: search OPCIONAL (nombre parcial), limit opcional; para localizar telefono y datos de un proveedor
+- query_expiring: dias OPCIONAL (1-365, default 30), product_id OPCIONAL; lotes vencidos y por vencer
+- list_branches: SIN argumentos; sucursales existentes
+- query_branch_stock: sucursal OBLIGATORIO (nombre o id; usa list_branches primero), product_id OPCIONAL
+Si pregunta por montos pagados, costos o margenes, explica amablemente que esa informacion solo la maneja el administrador."#;
 
 /// Tools de navegación de inventario agregadas para los modelos cloud.
 /// Se APPEND al final del prompt: NO modifica TOOLS_LINEA ni
@@ -74,7 +101,7 @@ precio y stock exactos de un solo articulo."#;
 /// System prompt del ADMIN dueño de la tienda (con sus tools).
 pub fn construir_system_prompt_admin() -> String {
     format!(
-        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}{TOOLS_EXTRAS}
+        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}{TOOLS_EXTRAS}{TOOLS_ABASTO}
 Eres Y.A.R.V.I.S un asistente de una tienda mexicana, responde siempre en español.
 La persona que te escribe es el ADMINISTRADOR/DUENO de la tienda: puedes hablarle
 de finanzas, ganancias, nomina, empleados y decisiones de negocio con total confianza.
@@ -90,7 +117,7 @@ Eres libre de dar opiniones sobre lo que deseas mejorar aunque solo vas a consul
 /// stock, productos, precios de venta y movimientos de su turno.
 pub fn construir_system_prompt_empleado() -> String {
     format!(
-        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}{TOOLS_EXTRAS}
+        "{TOOLS_LINEA}{TOOLS_INSTRUCCIONES}{TOOLS_EXTRAS}{TOOLS_ABASTO_EMPLEADO}
 Eres Y.A.R.V.I.S el asistente de una tienda mexicana, responde siempre en español.
 La persona que te escribe es un EMPLEADO de mostrador, NO el dueno:
 dirigete a el como companero de trabajo.
@@ -224,6 +251,33 @@ mod tests {
             assert!(prompt.contains("get_products_by_category"));
             // ...y el formato del fine-tuning sigue intacto.
             assert!(prompt.contains("[query_sales, compare_periods, get_top_products, query_inventory, forecast_sales, get_product_info, get_restock_analysis]"));
+        }
+    }
+
+    #[test]
+    fn prompts_abasto_por_rol() {
+        let admin = construir_system_prompt_admin();
+        for tool in [
+            "query_suppliers",
+            "query_purchases",
+            "get_purchase_detail",
+            "query_purchase_orders",
+            "query_cost_history",
+            "query_expiring",
+            "list_branches",
+            "query_branch_stock",
+        ] {
+            assert!(admin.contains(tool), "admin sin {tool}");
+        }
+        // El formato del fine-tuning sigue intacto.
+        assert!(admin.contains("[query_sales, compare_periods, get_top_products, query_inventory, forecast_sales, get_product_info, get_restock_analysis]"));
+        let empleado = construir_system_prompt_empleado();
+        for tool in ["query_suppliers", "query_expiring", "list_branches", "query_branch_stock"] {
+            assert!(empleado.contains(tool), "empleado sin {tool}");
+        }
+        // Al empleado no se le documentan montos ni costos.
+        for tool in ["query_purchases", "get_purchase_detail", "query_purchase_orders", "query_cost_history"] {
+            assert!(!empleado.contains(tool), "empleado no debe ver {tool}");
         }
     }
 

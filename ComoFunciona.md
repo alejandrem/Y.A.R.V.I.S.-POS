@@ -56,3 +56,13 @@ En tu lista de días con extra, si el día de hoy todavía no tiene corte Z, en 
 
 * **Sin login no hay avance.** Si no has entrado hoy, la barra va en 0%. El reloj solo no es trabajo.
 * **La hora la pone tu computadora.** El POS cree lo que diga el reloj de Windows. Si la computadora está mal de hora, todo sale mal. Por eso la computadora de la tienda debe tener la hora automática activada.
+
+---
+
+## 10. Cómo piensa Y.A.R.V.I.S. (tu ayudante de la tienda)
+
+Imagina que Y.A.R.V.I.S. es un ayudante con muy buena memoria y varios cuadernos: uno de ventas, uno de inventario, uno de proveedores y otro de caducidades. Cuando le preguntas algo, primero piensa si necesita abrir un cuaderno. Si sí, lo abre, copia el dato exacto y con eso te responde. Nunca inventa números: si el cuaderno está vacío, te lo dice.
+
+Tiene dos formas de pensar. Una es llamar por teléfono a un amigo muy listo que vive lejos: para eso la tienda necesita una llave y tener internet. La otra es pensar solito dentro de la computadora de la tienda, sin internet, aunque es más lento y más sencillo.
+
+Si el amigo de lejos no contesta, no se queda callado: piensa solito y te avisa con un letrerito amarillo de que la respuesta vino de la tienda. Y siempre te dice quién respondió, para que sepas a quién creerle.

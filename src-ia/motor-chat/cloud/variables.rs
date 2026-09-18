@@ -44,8 +44,9 @@ pub const TIMEOUT_CONNECT_SECS: u64 = 30;
 pub const TIMEOUT_IDLE_SECS: u64 = 90;
 
 /// Límite de tokens de SALIDA para OpenCode Zen (OpenAI-compatible usa
-/// `max_tokens`). Los modelos free toleran valores altos.
-pub const MAX_TOKENS: u32 = 39800;
+/// `max_tokens`). Verificado 2026-09-15: 39800 provocaba 400 Upstream en
+/// free; 2048-4096 responde bien. Se deja en 4096 como techo seguro.
+pub const MAX_TOKENS: u32 = 4096;
 
 /// Límite de tokens de SALIDA para Gemini (`generationConfig.maxOutputTokens`).
 /// Los modelos flash tienen techos de salida bajos (8192 en gemini-2.0-flash):
@@ -58,13 +59,15 @@ pub const MODELOS_FREE_EXTRA: &[&str] = &["big-pickle"];
 
 /// Orden de fallback cuando un modelo free de OpenCode satura (429): se cambia
 /// automáticamente al siguiente de la lista hasta agotarlos.
+/// Verificado contra GET /zen/v1/models el 2026-09-15: solo estos free hablan
+/// `/chat/completions`. `muse-spark-*-contributor-free` existe pero usa
+/// `/responses` (otro endpoint) y NO va aquí.
 pub const ORDEN_FALLBACK_FREE: &[&str] = &[
     "nemotron-3-ultra-free",
     "nemotron-3.5-lightning-free",
     "mimo-v2.5-free",
-    "hy3-free",
-    "laguna-s-2.1-free",
     "deepseek-v4-flash-free",
+    "ling-3.0-flash-fin-free",
     "big-pickle",
 ];
 

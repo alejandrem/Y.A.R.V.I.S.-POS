@@ -69,7 +69,7 @@ Interino: vinculador_inventario/similitud.rs usa TF-IDF + fuzzy sin vectores.
 
 ## Fase 6 — Chat hibrido/local + cierre
 
-1. Port del chat hibrido con modelo local (prompts, cache, motor_chat endpoints local) + 10 tools de solo lectura.
+1. Port del chat hibrido con modelo local (prompts, cache, motor_chat endpoints local) + 19 tools de solo lectura.
 2. /model_status, /load_model, /unload_model, /stop en Rust (manager de RAM con llama-cpp-4, unico modelo para parseo y chat).
 3. Retirar Python: cuando los endpoints pasen la suite de equivalencia:
    - Apagar sidecar (sidecar.rs), quitar yarvis-IA/ del repo.
