@@ -3,14 +3,14 @@
 // Esqueleto calcado de adminventas/ventas.tsx: contenedor 1200px, header
 // con subrayado, KPIs, gráfica y grid de 2 columnas. Cada bloque vive en
 // su propio archivo de ./componentes (1 archivo = 1 tarea).
-// Cortes: placeholder PROXIMAMENTE (solo lectura cuando exista comando).
+// Cortes: lista real de `get_mis_cortes` (operator-scoped, solo lectura).
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
 import KpisMisTickets from "./componentes/kpis-mis-tickets";
 import GraficaDiaSueldo from "./componentes/grafica-dia-sueldo";
 import ListaMisTickets from "./componentes/lista-mis-tickets";
-import PanelCortesProx from "./componentes/panel-cortes-prox";
+import PanelCortesProx from "./componentes/panel-mis-cortes";
 import ModalDetalleTicket from "./componentes/modal-detalle-ticket";
 import type { MiTicket } from "../../../services/misventas";
 

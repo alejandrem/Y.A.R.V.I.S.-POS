@@ -52,6 +52,18 @@ export const obtenerMisKpis = (dias = 1) =>
 export const obtenerMisVentasPorDia = (dias = 7) =>
   invokeTauri<VentaDia[]>("get_mis_ventas_por_dia", { dias });
 
+export interface MiCorte {
+  id: number;
+  fecha_apertura: string | null;
+  fecha_cierre: string | null;
+  tipo_corte: string | null;
+  total_ventas: number;
+  estado: string;
+}
+
+export const obtenerMisCortes = (dias = 30) =>
+  invokeTauri<MiCorte[]>("get_mis_cortes", { dias });
+
 export const obtenerMiTicketDetalle = (ventaId: number) => {
   // Tauri matchea args por nombre exacto. El backend acepta ambas
   // (`venta_id` snake y `ventaId` camel para bundles viejos), así que
