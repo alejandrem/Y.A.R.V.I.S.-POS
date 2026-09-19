@@ -52,11 +52,11 @@ interface EmployeeDashboardProps {
 // F8 y ejecución comparten la fuente. Aquí solo se filtran los de topbar.
 
 // Aviso de contraseña débil predeterminada (empleados creados solos desde
-// tickets: pass = nombre+123). Se pregunta al backend en cada login y se
-// muestra hasta que el admin la cambie; "Entendido" solo lo oculta en esta
-// sesión (al salir y entrar vuelve a aparecer si sigue débil).
+// tickets: pass = nombre+123). Se pregunta al backend en cada login y NO se
+// puede ocultar: persiste hasta que el admin la cambie en Empleados (el flag
+// password_defecto se apaga en editar_empleado). Es intencional: con login
+// solo-password, una clave predecible la adivina cualquiera que sepa el nombre.
 export const AvisoPasswordDefecto = () => {
-  const [visible, setVisible] = useState(true);
   const [avisar, setAvisar] = useState(false);
 
   useEffect(() => {
@@ -65,24 +65,18 @@ export const AvisoPasswordDefecto = () => {
       .catch(() => setAvisar(false));
   }, []);
 
-  if (!avisar || !visible) return null;
+  if (!avisar) return null;
   return (
     <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 flex items-start gap-3">
       <div className="flex-1">
         <p className="text-[11px] font-black uppercase tracking-widest text-amber-700">
-          Contraseña predeterminada
+          Contraseña predeterminada — cámbiala con tu administrador
         </p>
         <p className="text-xs font-bold text-amber-800 mt-1">
           Tu contraseña es la que el sistema te asignó al detectarte en los tickets (débil).
-          Pídele a tu administrador que la cambie en Empleados.
+          Pídele a tu administrador que la cambie en Empleados. Este aviso no se puede ocultar.
         </p>
       </div>
-      <button
-        onClick={() => setVisible(false)}
-        className="rounded-xl bg-amber-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-amber-900"
-      >
-        Entendido
-      </button>
     </div>
   );
 };

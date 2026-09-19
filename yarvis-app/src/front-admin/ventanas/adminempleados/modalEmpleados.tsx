@@ -25,7 +25,8 @@ import { guardarEmpleado, editarEmpleado, cambiarEstadoEmpleado } from "../../..
 import SelectorHorarios from "./componentes/selector-horarios";
 import CampoSalario from "./componentes/campo-salario";
 import SeccionEstado from "./componentes/seccion-estado";
-import { bloqueVacio, calcularHorasTotales, type Bloque, type EmpleadoEditable } from "./utilidades/horario-empleado";
+import { useBloquesHorario } from "./utilidades/use-bloques-horario";
+import type { EmpleadoEditable } from "./utilidades/horario-empleado";
 
 interface ModalEmpleadosProps {
   onClose: () => void;
@@ -40,37 +41,27 @@ const ModalEmpleados = ({ onClose, onSaved, empleado }: ModalEmpleadosProps) => 
   const [pass, setPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const [bloques, setBloques] = useState<Bloque[]>(
+  const {
+    bloques,
+    diasSemana,
+    horasTotales,
+    diasOcupadosEn,
+    toggleDia,
+    setBloque,
+    agregarBloque,
+    eliminarBloque,
+    validar: validarBloques,
+    aEnvio: bloquesAEnvio,
+  } = useBloquesHorario(
     empleado?.horarios.length
       ? empleado.horarios.map((h) => ({ dias: [...h.dias], inicio: h.hora_inicio, fin: h.hora_fin }))
-      : [bloqueVacio()],
+      : undefined,
   );
   const [salarioSemanal, setSalarioSemanal] = useState(empleado?.salario_semanal ?? 0);
   const [guardando, setGuardando] = useState(false);
   const [estadoActual, setEstadoActual] = useState(empleado?.estado ?? "activo");
   const [cambiandoEstado, setCambiandoEstado] = useState(false);
   const [confirmarDesactivar, setConfirmarDesactivar] = useState(false);
-  const diasOcupadosEn = (idxBloque: number) =>
-    new Set(bloques.filter((_, i) => i !== idxBloque).flatMap((b) => b.dias));
-
-  const toggleDia = (idxBloque: number, dia: number) =>
-    setBloques((prev) =>
-      prev.map((b, i) => {
-        if (i !== idxBloque) return b;
-        return b.dias.includes(dia)
-          ? { ...b, dias: b.dias.filter((d) => d !== dia) }
-          : diasOcupadosEn(idxBloque).has(dia)
-            ? b // el día ya pertenece a otro bloque: ignorar
-            : { ...b, dias: [...b.dias, dia].sort() };
-      }),
-    );
-
-  const setBloque = (idxBloque: number, patch: Partial<Bloque>) =>
-    setBloques((prev) => prev.map((b, i) => (i === idxBloque ? { ...b, ...patch } : b)));
-
-  // Totales derivados
-  const diasSemana = new Set(bloques.flatMap((b) => b.dias)).size;
-  const horasTotales = calcularHorasTotales(bloques);
 
   const cambiarEstado = async (nuevoEstado: string) => {
     if (!empleado) return;
@@ -104,23 +95,14 @@ const ModalEmpleados = ({ onClose, onSaved, empleado }: ModalEmpleadosProps) => 
         return;
       }
     }
-    for (let i = 0; i < bloques.length; i++) {
-      if (bloques[i].dias.length === 0) {
-        notificarError(`El horario #${i + 1} no tiene días seleccionados`);
-        return;
-      }
-      if (!bloques[i].inicio || !bloques[i].fin) {
-        notificarError(`Define la hora de entrada y salida del horario #${i + 1}`);
-        return;
-      }
-    }
-    if (diasSemana === 0) {
-      notificarError("Selecciona al menos un día de trabajo");
+    const errorBloques = validarBloques();
+    if (errorBloques) {
+      notificarError(errorBloques);
       return;
     }
     setGuardando(true);
     try {
-      const horarios = bloques.map((b) => ({ dias: b.dias, horaInicio: b.inicio, horaFin: b.fin }));
+      const horarios = bloquesAEnvio();
       if (modoEdicion && empleado) {
         await editarEmpleado({
           empleadoId: empleado.id,
@@ -202,8 +184,8 @@ const ModalEmpleados = ({ onClose, onSaved, empleado }: ModalEmpleadosProps) => 
           diasOcupadosEn={diasOcupadosEn}
           onToggleDia={toggleDia}
           onSetBloque={setBloque}
-          onEliminar={(idx) => setBloques((prev) => prev.filter((_, i) => i !== idx))}
-          onAgregar={() => setBloques((prev) => [...prev, bloqueVacio()])}
+          onEliminar={eliminarBloque}
+          onAgregar={agregarBloque}
         />
 
         {/* ── PAGO SEMANAL ───────────────────────────────────────── */}

@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { MorphIcon } from "morphicons/react";
 import type { IconInput } from "morphicons/react";
 import { ICONO_USUARIO, ICONO_TIENDA, ICONO_CANDADO, ICONO_OJO, ICONO_OJO_OCULTO } from "../icons";
+import { notificarError } from "../components/notificaciones";
+import type { HorarioEnvio } from "../services/empleados";
+import SelectorHorarios from "./ventanas/adminempleados/componentes/selector-horarios";
+import CampoSalario from "./ventanas/adminempleados/componentes/campo-salario";
+import { useBloquesHorario } from "./ventanas/adminempleados/utilidades/use-bloques-horario";
 
 const SMILE: IconInput =
   "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z M9 10h.01M15 10h.01 M9.5 15a3.5 3.5 0 0 0 5 0";
@@ -39,7 +44,7 @@ interface SetupWizardProps {
   setConfirmPassword: (pass: string) => void;
   showPassword: boolean;
   setShowPassword: (show: boolean) => void;
-  handleSaveEmployee: () => void;
+  handleSaveEmployee: (salarioSemanal: number, horarios: HorarioEnvio[]) => void;
   handleSaveAdmin: () => void;
   setShowAddEmployeeForm: (show: boolean) => void;
   showAddEmployeeForm: boolean;
@@ -83,6 +88,50 @@ const PrimerInicio = ({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showNewEmpConfirmPass, setShowNewEmpConfirmPass] = useState(false);
   const [hoverEmpleado, setHoverEmpleado] = useState(false);
+  // Alta completa en primer inicio: mismos bloques de horario + pago
+  // semanal que ModalEmpleados vía hook compartido (sin NOMBRE123).
+  const {
+    bloques,
+    diasSemana,
+    horasTotales,
+    diasOcupadosEn,
+    toggleDia,
+    setBloque,
+    agregarBloque,
+    eliminarBloque,
+    restablecer: restablecerBloques,
+    validar: validarBloques,
+    aEnvio: bloquesAEnvio,
+  } = useBloquesHorario();
+  const [salarioSemanal, setSalarioSemanal] = useState(0);
+  const [guardandoEmpleado, setGuardandoEmpleado] = useState(false);
+  // Al cerrar el formulario (guardado exitoso o cancelar) se restablece
+  // para que la siguiente alta empiece limpia.
+  useEffect(() => {
+    if (!showAddEmployeeForm) {
+      restablecerBloques();
+      setSalarioSemanal(0);
+      setGuardandoEmpleado(false);
+    }
+  }, [showAddEmployeeForm]);
+
+  const guardarEmpleadoCompleto = () => {
+    if (!newEmployeeName.trim()) {
+      notificarError("El nombre del empleado es obligatorio");
+      return;
+    }
+    const errorBloques = validarBloques();
+    if (errorBloques) {
+      notificarError(errorBloques);
+      return;
+    }
+    setGuardandoEmpleado(true);
+    try {
+      handleSaveEmployee(salarioSemanal, bloquesAEnvio());
+    } finally {
+      setGuardandoEmpleado(false);
+    }
+  };
 
   const handleLoginGoogle = async () => {
     setLoadingGoogle(true);
@@ -100,12 +149,12 @@ const PrimerInicio = ({
 
   if (showAddEmployeeForm) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar pr-1">
         <header className="mb-4 text-center">
           <p className="text-[10px] font-semibold tracking-[0.2em] text-neutral-400 uppercase mb-1">Primeros pasos</p>
           <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight">Nuevo Empleado</h2>
           <div className="h-0.5 w-8 bg-neutral-900 mx-auto mt-2 rounded-full" />
-          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mt-2">Perfil de Acceso</p>
+          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mt-2">Registro completo en un solo paso</p>
         </header>
 
         <div className="space-y-4">
@@ -132,13 +181,31 @@ const PrimerInicio = ({
               <MorphIcon icon={ICONO_CANDADO} size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
               <input type={showNewEmpConfirmPass ? "text" : "password"} value={newEmployeeConfirmPass} onChange={(e) => setNewEmployeeConfirmPass(e.target.value)} className={`${INPUT_CLS} pr-10`} />
               <button type="button" onClick={() => setShowNewEmpConfirmPass(!showNewEmpConfirmPass)} aria-label={showNewEmpConfirmPass ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors">
-                <MorphIcon icon={showNewEmpConfirmPass ? ICONO_OJO : ICONO_OJO_OCULTO} size={18} strokeWidth={1.8} />
+                <MorphIcon icon={showNewEmpConfirmPass ? ICONO_OJO_OCULTO : ICONO_OJO} size={18} strokeWidth={1.8} />
               </button>
             </div>
           </div>
 
+          <SelectorHorarios
+            bloques={bloques}
+            diasSemana={diasSemana}
+            diasOcupadosEn={diasOcupadosEn}
+            onToggleDia={toggleDia}
+            onSetBloque={setBloque}
+            onEliminar={eliminarBloque}
+            onAgregar={agregarBloque}
+          />
+
+          <CampoSalario
+            salarioSemanal={salarioSemanal}
+            onChange={setSalarioSemanal}
+            diasSemana={diasSemana}
+            horasTotales={horasTotales}
+            totalBloques={bloques.length}
+          />
+
           <div className="pt-2 space-y-3">
-            <button type="button" onClick={handleSaveEmployee} className="w-full py-3.5 rounded-xl bg-neutral-900 text-white text-xs font-black uppercase tracking-[0.2em] hover:bg-neutral-800 hover:shadow-lg transition-all shadow-md">Guardar Usuario</button>
+            <button type="button" onClick={guardarEmpleadoCompleto} disabled={guardandoEmpleado} className="w-full py-3.5 rounded-xl bg-neutral-900 text-white text-xs font-black uppercase tracking-[0.2em] hover:bg-neutral-800 hover:shadow-lg transition-all shadow-md disabled:opacity-40">Registrar Empleado</button>
             <button type="button" onClick={() => setShowAddEmployeeForm(false)} className="w-full py-2.5 rounded-xl border border-dashed border-neutral-300 text-[10px] font-bold text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 hover:bg-neutral-50 transition-all uppercase tracking-widest">Cancelar</button>
           </div>
         </div>

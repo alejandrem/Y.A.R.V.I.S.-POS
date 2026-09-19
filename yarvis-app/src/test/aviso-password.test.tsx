@@ -1,9 +1,9 @@
 // TEST — Aviso de contraseña predeterminada (empleados auto-creados).
 // El backend dice si el operador logueado sigue con pass débil; el banner
-// se muestra cada login hasta que el admin la cambie, y "Entendido" solo
-// lo oculta en la sesión actual.
+// se muestra cada login y NO se puede ocultar: persiste hasta que el admin
+// la cambie en Empleados (apaga password_defecto).
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { mockInvoke } from "./setup";
 import { AvisoPasswordDefecto } from "../front-empleado/EmployeeDashboard";
 
@@ -18,7 +18,7 @@ describe("aviso password por defecto", () => {
       return Promise.resolve(null);
     });
     render(<AvisoPasswordDefecto />);
-    expect(await screen.findByText("Contraseña predeterminada")).toBeInTheDocument();
+    expect(await screen.findByText(/Contraseña predeterminada/i)).toBeInTheDocument();
     expect(screen.getByText(/pídele a tu administrador/i)).toBeInTheDocument();
     expect(mockInvoke).toHaveBeenCalledWith("aviso_password_defecto");
   });
@@ -30,11 +30,11 @@ describe("aviso password por defecto", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("Entendido lo oculta solo en esta sesión", async () => {
+  it("no se puede ocultar: no hay botón Entendido", async () => {
     mockInvoke.mockResolvedValue(true);
     render(<AvisoPasswordDefecto />);
-    await screen.findByText("Contraseña predeterminada");
-    fireEvent.click(screen.getByText("Entendido"));
-    expect(screen.queryByText("Contraseña predeterminada")).toBeNull();
+    await screen.findByText(/Contraseña predeterminada/i);
+    expect(screen.queryByText("Entendido")).toBeNull();
+    expect(screen.getByText(/no se puede ocultar/i)).toBeInTheDocument();
   });
 });

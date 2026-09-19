@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { invokeTauri } from "./tauri";
+import type { HorarioEnvio } from "./empleados";
 
 export interface AdminProfile {
   nombre: string;
@@ -23,8 +24,8 @@ export const loginAdmin = (pass: string) =>
 export const obtenerAdminData = () =>
   invokeTauri<AdminProfile>("get_admin_data");
 
-export const guardarEmpleadoInicial = (name: string, pass: string) =>
-  invokeTauri<string>("guardar_empleado", { name, pass });
+export const guardarEmpleadoInicial = (name: string, pass: string, salarioSemanal = 0, horarios: HorarioEnvio[] = []) =>
+  invokeTauri<string>("guardar_empleado", { name, pass, salarioSemanal, horarios });
 
 export const loginEmpleado = (pass: string) =>
   invokeTauri<string | null>("validar_login_empleado", { pass });

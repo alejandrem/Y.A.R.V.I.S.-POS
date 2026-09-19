@@ -13,6 +13,7 @@ import {
   verificarSetup, guardarAdmin, loginAdmin, obtenerAdminData,
   guardarEmpleadoInicial, loginEmpleado, cerrarSesion,
 } from "./services/auth";
+import type { HorarioEnvio } from "./services/empleados";
 import "./App.css";
 
 declare global {
@@ -215,7 +216,7 @@ function AppInner() {
     }
   };
 
-  const handleSaveEmployee = async () => {
+  const handleSaveEmployee = async (salarioSemanal = 0, horarios: HorarioEnvio[] = []) => {
     if (!isPasswordValid(newEmployeePass)) {
       notificarError("La contraseña del empleado debe tener letras y números.");
       return;
@@ -223,7 +224,7 @@ function AppInner() {
 
     if (newEmployeeName && newEmployeePass === newEmployeeConfirmPass) {
       try {
-        await guardarEmpleadoInicial(newEmployeeName, newEmployeePass);
+        await guardarEmpleadoInicial(newEmployeeName, newEmployeePass, salarioSemanal, horarios);
         setNewEmployeeName("");
         setNewEmployeePass("");
         setNewEmployeeConfirmPass("");
