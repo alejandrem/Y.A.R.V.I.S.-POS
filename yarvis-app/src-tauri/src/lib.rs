@@ -246,6 +246,10 @@ pub fn run() {
             backventanas::backadmin::admintarvis::chat::set_local_model_path,
             backventanas::backadmin::admintarvis::chat::load_chat_model,
             backventanas::backadmin::admintarvis::chat::unload_chat_model,
+            // Cuenta OpenCode del dueño (OAuth loopback, free tier real)
+            backventanas::backadmin::admintarvis::zen_auth::zen_estado,
+            backventanas::backadmin::admintarvis::zen_auth::zen_login,
+            backventanas::backadmin::admintarvis::zen_auth::zen_salir,
             // Impresora termica — Camino A Fase 1 (spooler Windows RAW)
             impresora::commands::listar_impresoras,
             impresora::commands::imprimir_bytes_raw,

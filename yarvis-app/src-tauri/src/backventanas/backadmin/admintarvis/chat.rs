@@ -19,6 +19,7 @@ use super::ciclo_tools::{resolver_ciclo_tools, Generador};
 use super::rutas::{
     construir_historial, db_path_de, _chat_local, _stream_cloud, _stream_local, ChatResponse,
 };
+use super::zen_auth::clave_para_proveedor;
 
 /// Estado de los modelos locales y la RAM del sistema (nativo).
 #[tauri::command]
@@ -109,14 +110,16 @@ pub async fn load_chat_model(
 /// el endpoint `/cloud_models` al que reemplaza.
 #[tauri::command]
 pub async fn get_cloud_models(
+    app: tauri::AppHandle,
     auth: tauri::State<'_, AuthState>,
     provider: String,
     api_key: Option<String>,
 ) -> Result<serde_json::Value, String> {
     auth.require_operator()?;
+    let api_key = clave_para_proveedor(&app, &provider, api_key.unwrap_or_default()).await;
     let modelos = src_ia::motor_chat::cloud::apis_cloud::listar_modelos(
         &provider,
-        api_key.as_deref().unwrap_or(""),
+        api_key.as_str(),
     )
     .await?;
     Ok(serde_json::json!({ "models": modelos }))
@@ -174,6 +177,7 @@ fn sin_fallback_local() -> bool {
 /// Chat sin streaming (respuesta completa).
 #[tauri::command]
 pub async fn send_chat_message(
+    app: tauri::AppHandle,
     auth: tauri::State<'_, AuthState>,
     state: tauri::State<'_, sqlx::SqlitePool>,
     messages: Vec<serde_json::Value>,
@@ -188,7 +192,7 @@ pub async fn send_chat_message(
     // Modo cloud: lo responde Rust directamente (port de generar_completo).
     // Si falla, cae al modelo local.
     if !provider.is_empty() {
-        let api_key = api_key.unwrap_or_default();
+        let api_key = clave_para_proveedor(&app, &provider, api_key.unwrap_or_default()).await;
         let es_empleado = auth.es_empleado();
         let chat = construir_historial(&messages, es_empleado, &db_path);
         match generar_completo(&provider, &api_key, &model, chat.clone()).await {
@@ -264,7 +268,7 @@ pub async fn send_chat_stream(
     // Si el proveedor falla, se avisa al frontend con `chat-fallback`
     // y se responde con el modelo local (antes era silencioso).
     if !provider.is_empty() {
-        let api_key = api_key.unwrap_or_default();
+        let api_key = clave_para_proveedor(&app, &provider, api_key.unwrap_or_default()).await;
         let es_empleado = auth.es_empleado();
         let chat = construir_historial(&messages, es_empleado, &db_path);
         match _stream_cloud(&app, &provider, &api_key, &model, chat, &db_path, es_empleado, session.user_id, 0).await {

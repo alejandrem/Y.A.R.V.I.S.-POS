@@ -18,6 +18,8 @@ import { reportarError } from "../../../services/tauri";
 import {
   leerApiKeys, guardarApiKeys, setLocalModelPath as guardarRutaModelo,
   cargarModeloLocal, obtenerModelStatus, obtenerCloudModels,
+  obtenerEstadoZen, vincularCuentaZen, desvincularCuentaZen,
+  type EstadoZen,
 } from "../../../services/yarvis";
 import ChatWidget, {
   type ChatModelSelection,
@@ -98,6 +100,11 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const [configMessage, setConfigMessage] = useState("");
   const [clearIcon, setClearIcon] = useState<IconInput>(ICONO_REINICIAR);
   const [configIcon, setConfigIcon] = useState<IconInput>(ICONO_ENGRANAJE);
+  // Cuenta OpenCode del dueño (OAuth): sin ella el free tier responde 403
+  // aunque la sk- sea válida. El backend sustituye el token solo; aquí
+  // solo estado + vincular/desvincular (admin).
+  const [zenEstado, setZenEstado] = useState<EstadoZen>({ vinculado: false, email: "" });
+  const [zenCargando, setZenCargando] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const clearIconTimeoutsRef = useRef<number[]>([]);
   // El estado vivo del chat (sesiones + stream) vive en ChatProvider, arriba
@@ -269,7 +276,8 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   };
 
   const selectProvider = (provider: ProviderId) => {
-    if (!apiKeys[provider]) {
+    const conAcceso = !!apiKeys[provider] || (provider === "opencode" && zenEstado.vinculado);
+    if (!conAcceso) {
       setShowConfig(true);
       setConfigSection(provider);
       return;
@@ -356,6 +364,44 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
 
   const isLocalLoaded = Object.values(loadedModels).some(Boolean);
 
+  // Cuenta OpenCode: se consulta al abrir la config (barato, sin secretos).
+  useEffect(() => {
+    if (!showConfig) return;
+    obtenerEstadoZen()
+      .then(setZenEstado)
+      .catch(() => setZenEstado({ vinculado: false, email: "" }));
+  }, [showConfig]);
+
+  // Abre el navegador: el DUEÑO se loguea ahí con su cuenta (YARVIS nunca
+  // ve su contraseña). Al volver, el backend ya sustituye el token solo.
+  const vincularZen = async () => {
+    setZenCargando(true);
+    setConfigMessage("");
+    try {
+      const email = await vincularCuentaZen();
+      setZenEstado({ vinculado: true, email });
+      setConfigMessage(email ? `Cuenta ${email} vinculada: el free tier ya responde.` : "Cuenta vinculada: el free tier ya responde.");
+      refreshCloudModels("opencode");
+    } catch (error) {
+      setConfigMessage(`No se pudo vincular: ${String(error)}`);
+    } finally {
+      setZenCargando(false);
+    }
+  };
+
+  const desvincularZen = async () => {
+    setZenCargando(true);
+    try {
+      await desvincularCuentaZen();
+      setZenEstado({ vinculado: false, email: "" });
+      setConfigMessage("Cuenta desvinculada: OpenCode vuelve a usar tu sk-.");
+    } catch (error) {
+      setConfigMessage(`No se pudo desvincular: ${String(error)}`);
+    } finally {
+      setZenCargando(false);
+    }
+  };
+
   return (
     <div className="yarvis-shell flex h-full min-h-0 flex-col animate-in fade-in duration-500">
       <header className="flex flex-shrink-0 flex-wrap items-center justify-between gap-4 px-6 pb-4 pt-6 sm:px-8 sm:pt-8">
@@ -378,8 +424,8 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /><span className="min-w-0 flex-1"><span className="yarvis-text block truncate text-xs font-black">{localModelName}</span><span className="yarvis-faint block truncate text-[10px] font-bold">{localModelPath || "Configura una ruta GGUF"}</span><span className="yarvis-faint block text-[9px] font-bold">RAM libre: {ramGb > 0 ? `${ramGb.toFixed(1)} GB` : "…"}</span></span><span className="text-[9px] font-black uppercase text-emerald-500">{isLocalLoaded ? "Listo" : "Cargar"}</span>
               </button>
               {API_PROVIDERS.map((provider) => <div key={provider.id} className="mt-1">
-                <button onClick={() => selectProvider(provider.id)} disabled={!apiKeys[provider.id]} className={`yarvis-hover-panel flex w-full items-center gap-3 rounded-xl p-3 text-left disabled:cursor-not-allowed disabled:opacity-40 ${selectedProvider === provider.id ? "yarvis-panel-soft ring-1 ring-sky-500" : ""}`}>
-                  <span className="h-2.5 w-2.5 rounded-full bg-sky-500" /><span className="min-w-0 flex-1"><span className="yarvis-text block text-xs font-black">{provider.name}</span><span className="yarvis-faint block text-[10px] font-bold">{apiKeys[provider.id] ? `${cloudModels[provider.id]?.length || 0} modelos detectados` : "Agrega una API para activar"}</span></span><span className="text-xs opacity-50">›</span>
+                <button onClick={() => selectProvider(provider.id)} disabled={!apiKeys[provider.id] && !(provider.id === "opencode" && zenEstado.vinculado)} className={`yarvis-hover-panel flex w-full items-center gap-3 rounded-xl p-3 text-left disabled:cursor-not-allowed disabled:opacity-40 ${selectedProvider === provider.id ? "yarvis-panel-soft ring-1 ring-sky-500" : ""}`}>
+                  <span className="h-2.5 w-2.5 rounded-full bg-sky-500" /><span className="min-w-0 flex-1"><span className="yarvis-text block text-xs font-black">{provider.name}</span><span className="yarvis-faint block text-[10px] font-bold">{apiKeys[provider.id] ? `${cloudModels[provider.id]?.length || 0} modelos detectados` : provider.id === "opencode" && zenEstado.vinculado ? "Cuenta vinculada" : "Agrega una API para activar"}</span></span><span className="text-xs opacity-50">›</span>
                 </button>
                 {selectedProvider === provider.id && <div className="max-h-44 overflow-y-auto px-2 pb-2">
                   <button onClick={() => refreshCloudModels(provider.id)} className="yarvis-muted mb-1 flex w-full justify-end text-[9px] font-black uppercase tracking-widest">{cloudModelsLoading[provider.id] ? "Actualizando…" : "↻ Actualizar lista"}</button>
@@ -407,7 +453,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
           <div className="yarvis-border flex items-center justify-between border-b px-6 py-5 sm:px-8"><div><h3 className="yarvis-text text-lg font-black uppercase tracking-tight">Fuentes de inteligencia</h3><p className="yarvis-muted mt-1 text-[10px] font-bold uppercase tracking-widest">Configura API cloud o tu modelo local</p></div><button onClick={() => setShowConfig(false)} className="yarvis-panel-soft yarvis-muted flex h-9 w-9 items-center justify-center rounded-xl text-xl">×</button></div>
           <div className="flex gap-2 overflow-x-auto px-6 pt-5 sm:px-8">{[{ id: "opencode", label: "OpenCode" }, { id: "google", label: "Gemini" }, { id: "local", label: "Modelo local" }].map((item) => <button key={item.id} onClick={() => setConfigSection(item.id as typeof configSection)} className={`flex-shrink-0 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${configSection === item.id ? "yarvis-primary" : "yarvis-panel-soft yarvis-muted"}`}>{item.label}</button>)}</div>
           <div className="custom-scrollbar max-h-[55vh] overflow-y-auto px-6 py-6 sm:px-8">
-            {configSection !== "local" ? <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">{configSection === "opencode" ? "OpenCode" : "Gemini"}</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">{API_PROVIDERS.find((provider) => provider.id === configSection)?.description}</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">API key</label><input type="password" value={apiKeys[configSection] || ""} onChange={(event) => setApiKeys({ ...apiKeys, [configSection]: event.target.value })} placeholder={API_PROVIDERS.find((provider) => provider.id === configSection)?.placeholder} readOnly={rol === "empleado" && !!apiKeys[configSection]} className={`yarvis-input mt-2 w-full rounded-xl border px-4 py-3 text-sm outline-none focus:border-sky-500 ${rol === "empleado" && apiKeys[configSection] ? "opacity-70 cursor-not-allowed" : ""}`} />{rol === "empleado" && apiKeys[configSection] && <p className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] font-bold text-emerald-600">🔒 Clave configurada por el administrador — protegida, no se puede quitar ni modificar.</p>}<div className="mt-5 flex items-center justify-between"><span className="yarvis-faint text-[10px] font-bold">{cloudModels[configSection]?.length || 0} modelos disponibles</span><button onClick={() => refreshCloudModels(configSection)} className="yarvis-muted text-[10px] font-black uppercase tracking-widest">{cloudModelsLoading[configSection] ? "Actualizando…" : "Actualizar modelos"}</button></div></div></div> : <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">Cualquier modelo GGUF</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">Selecciona Qwen 0.5B, 1.5B, 1.7B, 1.9B u otro modelo compatible con llama.cpp. El contexto local usa un valor seguro de 4096.</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">Ruta del archivo .gguf</label><div className="mt-2 flex gap-2"><input value={localModelPath} onChange={(event) => setLocalModelPath(event.target.value)} placeholder="/home/ale/Modelos/Qwen.gguf" className={`yarvis-input min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm outline-none ${rol === "empleado" ? "focus:border-emerald-600" : "focus:border-emerald-500"}`} /><button onClick={chooseLocalModel} className={rol === "empleado" ? "yarvis-panel-soft yarvis-border yarvis-text shrink-0 rounded-xl border px-4 text-xs font-black" : "yarvis-primary rounded-xl px-4 text-[10px] font-black uppercase tracking-widest"}>{rol === "empleado" ? "Examinar…" : "Buscar"}</button></div>{rol === "empleado" ? <button onClick={() => localModelPath && loadLocalModel()} disabled={!localModelPath || loadingModel === "local"} className="yarvis-primary mt-3 w-full rounded-xl py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-40">{loadingModel === "local" ? "Cargando…" : "Cargar modelo local"}</button> : localModelName && <p className="yarvis-muted mt-3 truncate text-[10px] font-bold">Actual: {localModelName}</p>}</div></div>}
+            {configSection !== "local" ? <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">{configSection === "opencode" ? "OpenCode" : "Gemini"}</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">{API_PROVIDERS.find((provider) => provider.id === configSection)?.description}</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">API key</label><input type="password" value={apiKeys[configSection] || ""} onChange={(event) => setApiKeys({ ...apiKeys, [configSection]: event.target.value })} placeholder={API_PROVIDERS.find((provider) => provider.id === configSection)?.placeholder} readOnly={rol === "empleado" && !!apiKeys[configSection]} className={`yarvis-input mt-2 w-full rounded-xl border px-4 py-3 text-sm outline-none focus:border-sky-500 ${rol === "empleado" && apiKeys[configSection] ? "opacity-70 cursor-not-allowed" : ""}`} />{rol === "empleado" && apiKeys[configSection] && <p className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] font-bold text-emerald-600">🔒 Clave configurada por el administrador — protegida, no se puede quitar ni modificar.</p>}<div className="mt-5 flex items-center justify-between"><span className="yarvis-faint text-[10px] font-bold">{cloudModels[configSection]?.length || 0} modelos disponibles</span><button onClick={() => refreshCloudModels(configSection)} className="yarvis-muted text-[10px] font-black uppercase tracking-widest">{cloudModelsLoading[configSection] ? "Actualizando…" : "Actualizar modelos"}</button></div></div>{configSection === "opencode" && <div className="yarvis-panel-soft yarvis-border mt-5 rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">Cuenta OpenCode</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">El free tier solo responde a la cuenta del dueño logueada (la sk- sola recibe 403). Vincula una vez: se abre tu navegador, te logueas tú, y YARVIS guarda solo los tokens.</p>{zenEstado.vinculado ? <div className="mt-4 flex items-center justify-between gap-3"><p className="yarvis-text truncate text-xs font-black">{zenEstado.email || "Cuenta vinculada"}</p>{rol === "admin" && <button onClick={desvincularZen} disabled={zenCargando} className="yarvis-muted flex-shrink-0 text-[10px] font-black uppercase tracking-widest">Desvincular</button>}</div> : rol === "admin" ? <button onClick={vincularZen} disabled={zenCargando} className="yarvis-primary mt-4 w-full rounded-xl py-3 text-[10px] font-black uppercase tracking-widest">{zenCargando ? "Abriendo navegador… completa tu login ahí" : "Conectar cuenta OpenCode"}</button> : <p className="yarvis-muted mt-4 text-[10px] font-bold uppercase tracking-widest">Pídele al administrador que vincule su cuenta.</p>}</div>}</div> : <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">Cualquier modelo GGUF</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">Selecciona Qwen 0.5B, 1.5B, 1.7B, 1.9B u otro modelo compatible con llama.cpp. El contexto local usa un valor seguro de 4096.</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">Ruta del archivo .gguf</label><div className="mt-2 flex gap-2"><input value={localModelPath} onChange={(event) => setLocalModelPath(event.target.value)} placeholder="/home/ale/Modelos/Qwen.gguf" className={`yarvis-input min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm outline-none ${rol === "empleado" ? "focus:border-emerald-600" : "focus:border-emerald-500"}`} /><button onClick={chooseLocalModel} className={rol === "empleado" ? "yarvis-panel-soft yarvis-border yarvis-text shrink-0 rounded-xl border px-4 text-xs font-black" : "yarvis-primary rounded-xl px-4 text-[10px] font-black uppercase tracking-widest"}>{rol === "empleado" ? "Examinar…" : "Buscar"}</button></div>{rol === "empleado" ? <button onClick={() => localModelPath && loadLocalModel()} disabled={!localModelPath || loadingModel === "local"} className="yarvis-primary mt-3 w-full rounded-xl py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-40">{loadingModel === "local" ? "Cargando…" : "Cargar modelo local"}</button> : localModelName && <p className="yarvis-muted mt-3 truncate text-[10px] font-bold">Actual: {localModelName}</p>}</div></div>}
             {configMessage && <p className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-xs font-bold text-sky-500">{configMessage}</p>}
           </div>
           <div className="yarvis-border flex gap-3 border-t px-6 py-5 sm:px-8"><button onClick={() => setShowConfig(false)} className="yarvis-panel-soft yarvis-muted flex-1 rounded-xl py-3 text-[10px] font-black uppercase tracking-widest">Cerrar</button><button onClick={saveApiConfig} className="yarvis-primary flex-1 rounded-xl py-3 text-[10px] font-black uppercase tracking-widest">Guardar configuración</button></div>
