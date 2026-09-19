@@ -57,10 +57,18 @@ export interface TicketVentaPrint {
   lineas: LineaVentaPrint[];
   /** Descuento global en pesos (fuera de las líneas). Opcional = 0. */
   descuento_global?: number | null;
+  /** Ancho de papel en mm (80/58). Opcional = 80mm. */
+  ancho_mm?: number | null;
   total: number;
   pagos: PagoPrint[];
   qr?: string | null;
 }
+
+/** Anchos de papel soportados (térmica 80mm/48cols o 58mm/32cols). */
+export const ANCHOS_PAPEL = [
+  { mm: 80, label: "80mm" },
+  { mm: 58, label: "58mm" },
+] as const;
 
 /** Chequeo TCP sin gastar papel (típico 9100). */
 export async function probarRed(ip: string, puerto: number): Promise<string> {
@@ -75,16 +83,23 @@ export async function imprimirTicketVenta(
   return invoke<string>("imprimir_ticket_venta", { destino, ticket });
 }
 
-/** La que usa el botón "Imprimir Lista": arma el ticket 80mm en Rust y lo manda RAW. */
+/** Pulso de apertura de cajón (ESC p) por spooler o red. */
+export async function abrirCajon(destino: DestinoPrint): Promise<string> {
+  return invoke<string>("abrir_cajon", { destino });
+}
+
+/** La que usa el botón "Imprimir Lista": arma el ticket en Rust y lo manda RAW. */
 export async function imprimirListaConciliacion(
   nombreImpresora: string,
   filas: FilaConciliacionPrint[],
   tienda?: string,
+  anchoMm?: number | null,
 ): Promise<string> {
   return invoke<string>("imprimir_lista_conciliacion", {
     nombreImpresora,
     tienda: tienda ?? null,
     filas,
+    ancho_mm: anchoMm ?? null,
   });
 }
 
@@ -99,10 +114,12 @@ export async function imprimirListaStockBajo(
   nombreImpresora: string,
   filas: FilaStockBajoPrint[],
   tienda?: string,
+  anchoMm?: number | null,
 ): Promise<string> {
   return invoke<string>("imprimir_lista_stock_bajo", {
     nombreImpresora,
     tienda: tienda ?? null,
     filas,
+    ancho_mm: anchoMm ?? null,
   });
 }

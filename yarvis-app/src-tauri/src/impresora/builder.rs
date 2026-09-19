@@ -15,6 +15,8 @@
 
 /// Columnas de una termica de 80mm con fuente A.
 pub const ANCHO_80MM_COLS: usize = 48;
+/// Columnas de una termica de 58mm con fuente A.
+pub const ANCHO_58MM_COLS: usize = 32;
 /// Tope de filas por trabajo para no saturar el spooler en Fase 1.
 pub const MAX_FILAS: usize = 2000;
 
@@ -24,6 +26,41 @@ const ALIGN_CENTER: &[u8] = &[0x1B, 0x61, 0x01];
 const BOLD_ON: &[u8] = &[0x1B, 0x45, 0x01];
 const BOLD_OFF: &[u8] = &[0x1B, 0x45, 0x00];
 const CORTE: &[u8] = &[0x1D, 0x56, 0x00];
+/// Pulso de apertura de cajon: ESC p m t1 t2 (cajon 0, 50ms on, 500ms off).
+/// El cajon va por RJ11 a la termica: no necesita driver propio.
+pub const ABRIR_CAJON: &[u8] = &[0x1B, 0x70, 0x00, 0x19, 0xFA];
+
+/// Ancho de papel soportado. El frontend lo manda como `ancho_mm`
+/// (80/58, default 80); cualquier otro valor cae a 80mm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnchoPapel {
+    #[default]
+    Mm80,
+    Mm58,
+}
+
+impl AnchoPapel {
+    pub fn desde_mm(mm: u8) -> Self {
+        match mm {
+            58 => Self::Mm58,
+            _ => Self::Mm80,
+        }
+    }
+    pub fn cols(self) -> usize {
+        match self {
+            Self::Mm80 => ANCHO_80MM_COLS,
+            Self::Mm58 => ANCHO_58MM_COLS,
+        }
+    }
+}
+
+/// INIT + pulso de cajon, listo para spooler o red.
+pub fn construir_apertura_cajon() -> Vec<u8> {
+    let mut out = Vec::with_capacity(INIT.len() + ABRIR_CAJON.len());
+    out.extend_from_slice(INIT);
+    out.extend_from_slice(ABRIR_CAJON);
+    out
+}
 
 /// Una fila de la tabla de conciliacion fisico vs sistema.
 #[derive(Debug, Clone)]
@@ -35,7 +72,9 @@ pub struct FilaConciliacion {
 }
 
 /// Translitera a ASCII imprimible. La termica no entiende UTF-8.
-fn sanitizar(texto: &str) -> String {
+/// Compartida con ticket.rs (Fase 2): todo texto humano pasa por aqui,
+/// nunca UTF-8 crudo al papel.
+pub(crate) fn sanitizar(texto: &str) -> String {
     texto
         .chars()
         .map(|c| match c {
@@ -57,9 +96,16 @@ fn linea(out: &mut Vec<u8>, texto: &str) {
     out.push(0x0A);
 }
 
-fn separador(out: &mut Vec<u8>) {
-    out.extend_from_slice(vec![b'-'; ANCHO_80MM_COLS].as_slice());
+fn separador(out: &mut Vec<u8>, cols: usize) {
+    out.extend_from_slice(vec![b'-'; cols].as_slice());
     out.push(0x0A);
+}
+
+/// Trunca por CHARS (nunca por bytes: `truncate(n)` revienta si corta
+/// un boundary UTF-8; hoy sanitizar() deja ASCII pero esto no depende
+/// de eso).
+fn recortar(texto: &str, max_chars: usize) -> String {
+    texto.chars().take(max_chars).collect()
 }
 
 fn centrada(out: &mut Vec<u8>, texto: &str) {
@@ -74,7 +120,14 @@ pub fn construir_lista_conciliacion(
     tienda: &str,
     fecha_str: &str,
     filas: &[FilaConciliacion],
+    ancho: AnchoPapel,
 ) -> Vec<u8> {
+    let cols = ancho.cols();
+    // Layout por ancho (nombre + numeros + estado = cols exactas).
+    let w_nom = match ancho {
+        AnchoPapel::Mm80 => 20,
+        AnchoPapel::Mm58 => 12,
+    };
     let mut out: Vec<u8> = Vec::with_capacity(2048 + filas.len() * 64);
     out.extend_from_slice(INIT);
     out.extend_from_slice(ALIGN_LEFT);
@@ -86,11 +139,17 @@ pub fn construir_lista_conciliacion(
     centrada(&mut out, "Conciliacion de inventario");
     centrada(&mut out, "Fisico vs Sistema");
     centrada(&mut out, fecha_str);
-    separador(&mut out);
+    separador(&mut out, cols);
 
-    // Columnas: NOMBRE(20) FIS(5) SIS(5) DIF(6) ESTADO(8) = 44 + espacios
-    linea(&mut out, "NOMBRE               FIS   SIS   DIF  ESTADO");
-    separador(&mut out);
+    // Cabecera de columnas con los mismos anchos que las filas.
+    linea(
+        &mut out,
+        &match ancho {
+            AnchoPapel::Mm80 => "NOMBRE               FIS   SIS   DIF  ESTADO".to_string(),
+            AnchoPapel::Mm58 => format!("{:<12} {:>3} {:>3} {:>4} {:<6}", "NOMBRE", "FIS", "SIS", "DIF", "ESTADO"),
+        },
+    );
+    separador(&mut out, cols);
 
     let mut faltantes: i32 = 0;
     let mut sobrantes: i32 = 0;
@@ -98,7 +157,9 @@ pub fn construir_lista_conciliacion(
     let mut perdida_total: f64 = 0.0;
 
     for f in filas.iter().take(MAX_FILAS) {
-        let dif = f.fisico - f.sistema;
+        // i64 a proposito: fisico - sistema en i32 revienta en extremos
+        // (ej. MAX/-MIN) y dif.abs() panica con i32::MIN.
+        let dif = f.fisico as i64 - f.sistema as i64;
         // Sobreventa: sistema en negativo = reabasto sin capturar.
         // Nunca OK aunque dif == 0 (ej: -1/-1).
         let estado = if f.sistema < 0 {
@@ -114,31 +175,45 @@ pub fn construir_lista_conciliacion(
             perdida_total += (dif.abs() as f64) * f.precio_venta;
             "FALTA"
         };
-        let mut nombre = sanitizar(&f.nombre);
-        if nombre.len() > 20 {
-            nombre.truncate(20);
-        }
-        // Fila monoespaciada de 48 cols aprox.
-        let fila = format!(
-            "{:<20} {:>5} {:>5} {:>+5}  {:<8}",
-            nombre, f.fisico, f.sistema, dif, estado
-        );
+        let nombre = recortar(&sanitizar(&f.nombre), w_nom);
+        // Fila monoespaciada de `cols` exactas.
+        let fila = match ancho {
+            AnchoPapel::Mm80 => format!(
+                "{:<20} {:>5} {:>5} {:>+5}  {:<8}",
+                nombre, f.fisico, f.sistema, dif, estado
+            ),
+            AnchoPapel::Mm58 => format!(
+                "{:<12} {:>3} {:>3} {:>+4} {:<6}",
+                nombre, f.fisico, f.sistema, dif, estado
+            ),
+        };
         linea(&mut out, &fila);
     }
 
-    separador(&mut out);
+    separador(&mut out, cols);
     out.extend_from_slice(BOLD_ON);
-    linea(
-        &mut out,
-        &format!(
+    let resumen = match ancho {
+        AnchoPapel::Mm80 => format!(
             "Items:{} Faltan:{} Sobran:{} Concil:{}",
             filas.len().min(MAX_FILAS),
             faltantes,
             sobrantes,
             por_conciliar
         ),
-    );
-    linea(&mut out, &format!("Perdida est.: ${:.2}", perdida_total));
+        AnchoPapel::Mm58 => format!(
+            "It:{} F:{} S:{} C:{}",
+            filas.len().min(MAX_FILAS),
+            faltantes,
+            sobrantes,
+            por_conciliar
+        ),
+    };
+    linea(&mut out, &resumen);
+    let perdida = match ancho {
+        AnchoPapel::Mm80 => format!("Perdida est.: ${:.2}", perdida_total),
+        AnchoPapel::Mm58 => format!("Perd:${:.2}", perdida_total),
+    };
+    linea(&mut out, &perdida);
     out.extend_from_slice(BOLD_OFF);
     out.push(0x0A);
     out.push(0x0A);
@@ -156,7 +231,13 @@ pub fn construir_lista_stock_bajo(
     tienda: &str,
     fecha_str: &str,
     filas: &[FilaStockBajo],
+    ancho: AnchoPapel,
 ) -> Vec<u8> {
+    let cols = ancho.cols();
+    let w_nom = match ancho {
+        AnchoPapel::Mm80 => 20,
+        AnchoPapel::Mm58 => 12,
+    };
     let mut out: Vec<u8> = Vec::with_capacity(1024 + filas.len() * 48);
     out.extend_from_slice(INIT);
     out.extend_from_slice(ALIGN_LEFT);
@@ -166,26 +247,37 @@ pub fn construir_lista_stock_bajo(
     out.extend_from_slice(BOLD_OFF);
     centrada(&mut out, "Alerta de stock bajo");
     centrada(&mut out, fecha_str);
-    separador(&mut out);
+    separador(&mut out, cols);
 
-    linea(&mut out, "NOMBRE               STOCK   MIN");
-    separador(&mut out);
+    linea(
+        &mut out,
+        &match ancho {
+            AnchoPapel::Mm80 => "NOMBRE               STOCK   MIN".to_string(),
+            AnchoPapel::Mm58 => format!("{:<12} {:>7} {:>5}", "NOMBRE", "STOCK", "MIN"),
+        },
+    );
+    separador(&mut out, cols);
 
     for f in filas.iter().take(MAX_FILAS) {
-        let mut nombre = sanitizar(&f.nombre);
-        if nombre.len() > 20 {
-            nombre.truncate(20);
-        }
-        let fila = format!(
-            "{:<20} {:>7} {:>5}",
-            nombre,
-            fmt_cant(f.stock),
-            fmt_cant(f.minimo)
-        );
+        let nombre = recortar(&sanitizar(&f.nombre), w_nom);
+        let fila = match ancho {
+            AnchoPapel::Mm80 => format!(
+                "{:<20} {:>7} {:>5}",
+                nombre,
+                fmt_cant(f.stock),
+                fmt_cant(f.minimo)
+            ),
+            AnchoPapel::Mm58 => format!(
+                "{:<12} {:>7} {:>5}",
+                nombre,
+                fmt_cant(f.stock),
+                fmt_cant(f.minimo)
+            ),
+        };
         linea(&mut out, &fila);
     }
 
-    separador(&mut out);
+    separador(&mut out, cols);
     out.extend_from_slice(BOLD_ON);
     linea(
         &mut out,
@@ -234,7 +326,7 @@ mod tests {
             sistema: 12,
             precio_venta: 20.0,
         }];
-        let bytes = construir_lista_conciliacion("Mi Tienda", "2026-09-09", &filas);
+        let bytes = construir_lista_conciliacion("Mi Tienda", "2026-09-09", &filas, AnchoPapel::Mm80);
         assert!(bytes.starts_with(INIT));
         assert!(bytes.ends_with(CORTE));
         let texto = String::from_utf8_lossy(&bytes);
@@ -252,7 +344,7 @@ mod tests {
             sistema: -1,
             precio_venta: 20.0,
         }];
-        let bytes = construir_lista_conciliacion("Mi Tienda", "2026-09-09", &filas);
+        let bytes = construir_lista_conciliacion("Mi Tienda", "2026-09-09", &filas, AnchoPapel::Mm80);
         let texto = String::from_utf8_lossy(&bytes);
         assert!(texto.contains("CONCIL"));
         assert!(texto.contains("Concil:1"));
@@ -266,7 +358,7 @@ mod tests {
             FilaStockBajo { nombre: "Coca-Cola 600ml".into(), stock: -1.0, minimo: 5.0 },
             FilaStockBajo { nombre: "Jumex Durazno 500ml".into(), stock: 3.0, minimo: 5.0 },
         ];
-        let bytes = construir_lista_stock_bajo("Mi Tienda", "2026-09-09", &filas);
+        let bytes = construir_lista_stock_bajo("Mi Tienda", "2026-09-09", &filas, AnchoPapel::Mm80);
         assert!(bytes.starts_with(INIT));
         assert!(bytes.ends_with(CORTE));
         let texto = String::from_utf8_lossy(&bytes);
@@ -282,8 +374,61 @@ mod tests {
             "Abarrotes Hernández",
             "2026-09-09",
             &[],
+            AnchoPapel::Mm80,
         );
         let texto = String::from_utf8_lossy(&bytes);
         assert!(texto.contains("Hernandez"));
+    }
+
+    #[test]
+    fn apertura_cajon_manda_init_y_pulso() {
+        let bytes = construir_apertura_cajon();
+        assert!(bytes.starts_with(INIT));
+        assert!(bytes.ends_with(ABRIR_CAJON));
+        assert_eq!(
+            &bytes[bytes.len() - ABRIR_CAJON.len()..],
+            &[0x1B, 0x70, 0x00, 0x19, 0xFA]
+        );
+    }
+
+    #[test]
+    fn ancho_58mm_no_pasa_de_32_columnas() {
+        // Valores realistas de mostrador (los numeros jamas se truncan:
+        // con 100k+ piezas se desborda igual en 80mm, por diseño).
+        let filas = vec![FilaConciliacion {
+            nombre: "Coca-Cola 600ml presentacion familiar grande".into(),
+            fisico: 25,
+            sistema: -3,
+            precio_venta: 20.0,
+        }];
+        let bytes = construir_lista_conciliacion("Mi Tienda Larga Nombre", "2026-09-09", &filas, AnchoPapel::Mm58);
+        assert!(bytes.starts_with(INIT));
+        assert!(bytes.ends_with(CORTE));
+        // Separadores exactos de 32; ninguna linea de texto pasa de 32.
+        let texto = String::from_utf8_lossy(&bytes);
+        assert!(texto.contains(&"-".repeat(32)));
+        assert!(!texto.contains(&"-".repeat(33)));
+        for linea in texto.lines() {
+            // Quita comandos ESC (1B ..) que no ocupan papel.
+            let visible: String = linea
+                .replace("\u{1b}@", "")
+                .replace("\u{1b}a\u{0}", "")
+                .replace("\u{1b}a\u{1}", "")
+                .replace("\u{1b}E\u{0}", "")
+                .replace("\u{1b}E\u{1}", "")
+                .replace("\u{1d}V\u{0}", "");
+            assert!(
+                visible.chars().count() <= 32,
+                "linea pasada de 32: {visible:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn desde_mm_cae_a_80_si_es_raro() {
+        assert_eq!(AnchoPapel::desde_mm(80), AnchoPapel::Mm80);
+        assert_eq!(AnchoPapel::desde_mm(58), AnchoPapel::Mm58);
+        assert_eq!(AnchoPapel::desde_mm(0), AnchoPapel::Mm80);
+        assert_eq!(AnchoPapel::desde_mm(255), AnchoPapel::Mm80);
     }
 }

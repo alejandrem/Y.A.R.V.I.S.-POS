@@ -12,6 +12,7 @@ use super::comun::{
     TotalesVentana,
 };
 use crate::backventanas::auth::{AuthState, Role};
+use crate::impresora::builder::{sanitizar, AnchoPapel};
 use crate::impresora::commands::Destino;
 use crate::impresora::memoria::MemoriaDriver;
 use escpos::printer::Printer;
@@ -19,8 +20,6 @@ use escpos::printer_options::PrinterOptions;
 use escpos::utils::{JustifyMode, Protocol};
 use sqlx::{Row, SqlitePool};
 
-/// Ancho útil de térmica 80mm en fuente A.
-const COLS: usize = 48;
 /// Tope de líneas por corte para no saturar el spooler.
 const MAX_LINEAS_CORTE: usize = 500;
 
@@ -29,18 +28,18 @@ fn dinero(monto: f64) -> String {
 }
 
 /// Fila monoespaciada: izquierda recortada + importe a la derecha.
-fn fila(importe: &str, izquierda: &str) -> String {
+fn fila(importe: &str, izquierda: &str, cols: usize) -> String {
     let der = importe.chars().count();
-    let max_izq = COLS.saturating_sub(der + 1);
+    let max_izq = cols.saturating_sub(der + 1);
     let mut izq: String = izquierda.chars().take(max_izq).collect();
-    while izq.chars().count() + der < COLS {
+    while izq.chars().count() + der < cols {
         izq.push(' ');
     }
     format!("{izq}{importe}")
 }
 
-fn linea_corte() -> String {
-    "-".repeat(COLS)
+fn linea_corte(cols: usize) -> String {
+    "-".repeat(cols)
 }
 
 /// "YYYY-MM-DD HH:MM:SS" -> "DD/MM/YYYY HH:MM".
@@ -98,29 +97,39 @@ async fn cargar_datos(pool: &SqlitePool, corte_id: i64) -> Result<DatosCorte, St
     })
 }
 
-fn encabezado(d: &DatosCorte) -> Vec<String> {
-    vec![
+fn encabezado(d: &DatosCorte, cols: usize) -> Vec<String> {
+    // Todo texto humano transliterado: la termica no entiende UTF-8
+    // (nombres de cajero/tienda con ñ saldrian basura).
+    let mut head = vec![
         format!("*** CORTE {} EN MONEDA:MXN ***", d.tipo),
-        d.tienda.clone(),
-        format!("Cajero: {}", d.cajero_nombre.to_uppercase()),
-        linea_corte(),
+        sanitizar(&d.tienda),
+        format!("Cajero: {}", sanitizar(&d.cajero_nombre).to_uppercase()),
+        linea_corte(cols),
         format!("Corte {} #{}", d.tipo, d.numero),
-        format!("{} - {}", fmt_fecha(&d.apertura), fmt_fecha(&d.cierre)),
-        linea_corte(),
-        "** VENTAS DEL TURNO **".into(),
-    ]
+    ];
+    // El rango "apertura - cierre" mide 35 y no cabe en 58mm (32):
+    // ahi va en dos renglones en vez de dejar que la impresora corte.
+    if cols < 35 {
+        head.push(fmt_fecha(&d.apertura));
+        head.push(fmt_fecha(&d.cierre));
+    } else {
+        head.push(format!("{} - {}", fmt_fecha(&d.apertura), fmt_fecha(&d.cierre)));
+    }
+    head.push(linea_corte(cols));
+    head.push("** VENTAS DEL TURNO **".into());
+    head
 }
 
-fn pie_totales(t: &TotalesVentana) -> Vec<String> {
+fn pie_totales(t: &TotalesVentana, cols: usize) -> Vec<String> {
     vec![
-        linea_corte(),
-        fila(&dinero(t.total_ventas), "Total ventas"),
-        fila(&dinero(t.total_efectivo), "Efectivo"),
-        fila(&dinero(t.total_tarjeta), "Tarjeta"),
-        fila(&dinero(t.total_transferencia), "Transferencia"),
-        linea_corte(),
+        linea_corte(cols),
+        fila(&dinero(t.total_ventas), "Total ventas", cols),
+        fila(&dinero(t.total_efectivo), "Efectivo", cols),
+        fila(&dinero(t.total_tarjeta), "Tarjeta", cols),
+        fila(&dinero(t.total_transferencia), "Transferencia", cols),
+        linea_corte(cols),
         format!("Tickets: {}", t.num_tickets),
-        linea_corte(),
+        linea_corte(cols),
     ]
 }
 
@@ -156,7 +165,12 @@ fn a_bytes(titulo_centrado: &[String], cuerpo_izq: &[String]) -> Result<Vec<u8>,
     Ok(bytes)
 }
 
-async fn construir_corte_x(pool: &SqlitePool, d: &DatosCorte) -> Result<Vec<u8>, String> {
+async fn construir_corte_x(
+    pool: &SqlitePool,
+    d: &DatosCorte,
+    ancho: AnchoPapel,
+) -> Result<Vec<u8>, String> {
+    let cols = ancho.cols();
     let tickets: Vec<TicketResumen> =
         tickets_en_ventana(pool, d.cajero_id, &d.apertura, &d.cierre).await?;
     let totales: TotalesVentana =
@@ -164,17 +178,22 @@ async fn construir_corte_x(pool: &SqlitePool, d: &DatosCorte) -> Result<Vec<u8>,
 
     let mut cuerpo: Vec<String> = tickets
         .iter()
-        .map(|t| fila(&dinero(t.total), &t.folio))
+        .map(|t| fila(&dinero(t.total), &sanitizar(&t.folio), cols))
         .collect();
-    cuerpo.extend(pie_totales(&totales));
+    cuerpo.extend(pie_totales(&totales, cols));
     cuerpo.push("X informativo: no cierra tu turno".into());
-    cuerpo.push(linea_corte());
+    cuerpo.push(linea_corte(cols));
 
-    let head = encabezado(d);
+    let head = encabezado(d, cols);
     a_bytes(&head[..3], &[head[3..].to_vec(), cuerpo].concat())
 }
 
-async fn construir_corte_z(pool: &SqlitePool, d: &DatosCorte) -> Result<Vec<u8>, String> {
+async fn construir_corte_z(
+    pool: &SqlitePool,
+    d: &DatosCorte,
+    ancho: AnchoPapel,
+) -> Result<Vec<u8>, String> {
+    let cols = ancho.cols();
     let productos: Vec<ProductoAgregado> =
         productos_en_ventana(pool, d.cajero_id, &d.apertura, &d.cierre).await?;
     let totales: TotalesVentana =
@@ -185,16 +204,17 @@ async fn construir_corte_z(pool: &SqlitePool, d: &DatosCorte) -> Result<Vec<u8>,
         .map(|pr| {
             fila(
                 &dinero(pr.monto),
-                &format!("{} {}x", pr.producto_nombre, fmt_cant(pr.cantidad)),
+                &sanitizar(&format!("{} {}x", pr.producto_nombre, fmt_cant(pr.cantidad))),
+                cols,
             )
         })
         .collect();
-    cuerpo.extend(pie_totales(&totales));
+    cuerpo.extend(pie_totales(&totales, cols));
     cuerpo.push("*** TURNO CERRADO ***".into());
     cuerpo.push("Contador reiniciado a $0.00".into());
-    cuerpo.push(linea_corte());
+    cuerpo.push(linea_corte(cols));
 
-    let head = encabezado(d);
+    let head = encabezado(d, cols);
     a_bytes(&head[..3], &[head[3..].to_vec(), cuerpo].concat())
 }
 
@@ -227,6 +247,7 @@ pub async fn imprimir_corte(
     auth: tauri::State<'_, AuthState>,
     destino: Destino,
     corte_id: i64,
+    ancho_mm: Option<u8>,
 ) -> Result<String, String> {
     let session = auth.require_operator()?;
     let datos = cargar_datos(&*state, corte_id).await?;
@@ -236,11 +257,13 @@ pub async fn imprimir_corte(
     if datos.tipo != "X" && datos.tipo != "Z" {
         return Err("Tipo de corte desconocido.".into());
     }
+    // `None` (frontends viejos) = 80mm.
+    let ancho = AnchoPapel::desde_mm(ancho_mm.unwrap_or(80));
 
     let bytes = if datos.tipo == "X" {
-        construir_corte_x(&*state, &datos).await?
+        construir_corte_x(&*state, &datos, ancho).await?
     } else {
-        construir_corte_z(&*state, &datos).await?
+        construir_corte_z(&*state, &datos, ancho).await?
     };
     let n = bytes.len();
     let etiqueta = format!("CORTE-{}-#{}", datos.tipo, datos.numero);

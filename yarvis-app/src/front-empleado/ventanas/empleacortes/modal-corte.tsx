@@ -37,6 +37,7 @@ export default function ModalCorte({ onClose, cajero }: ModalCorteProps) {
   const [reporteZ, setReporteZ] = useState<CorteZReporte | null>(null);
   const [impresoras, setImpresoras] = useState<ImpresoraInfo[]>([]);
   const [impresoraSel, setImpresoraSel] = useState("");
+  const [anchoMm, setAnchoMm] = useState<80 | 58>(80);
   const [imprimiendo, setImprimiendo] = useState(false);
   const [msgImpresion, setMsgImpresion] = useState("");
 
@@ -96,7 +97,7 @@ export default function ModalCorte({ onClose, cajero }: ModalCorteProps) {
     setMsgImpresion("");
     try {
       const destino: DestinoPrint = { Spooler: { nombre: impresoraSel } };
-      const msg = await imprimirCorte(destino, corteId);
+      const msg = await imprimirCorte(destino, corteId, anchoMm);
       setMsgImpresion(msg);
     } catch (err) {
       setError(String(err));
@@ -203,11 +204,26 @@ export default function ModalCorte({ onClose, cajero }: ModalCorteProps) {
                 {textoPrevia}
               </pre>
 
-              {/* SELECTOR DE IMPRESORA */}
+              {/* SELECTOR DE IMPRESORA + ANCHO */}
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                  Impresora térmica
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    Impresora térmica
+                  </label>
+                  <div className="flex bg-neutral-100 rounded-lg p-0.5">
+                    {([80, 58] as const).map((mm) => (
+                      <button
+                        key={mm}
+                        onClick={() => setAnchoMm(mm)}
+                        className={`px-2.5 py-1 text-[8px] font-black rounded-md transition-all ${
+                          anchoMm === mm ? "bg-neutral-950 text-white" : "text-neutral-400"
+                        }`}
+                      >
+                        {mm}mm
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <select
                   value={impresoraSel}
                   onChange={(e) => setImpresoraSel(e.target.value)}

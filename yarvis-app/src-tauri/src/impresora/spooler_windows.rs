@@ -11,9 +11,9 @@
 // ============================================================
 
 use windows::core::{HSTRING, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{GetLastError, HANDLE};
+use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, HANDLE};
 use windows::Win32::Graphics::Printing::{
-    ClosePrinter, EndDocPrinter, EndPagePrinter, EnumPrintersW, GetDefaultPrinterW,
+    AbortPrinter, ClosePrinter, EndDocPrinter, EndPagePrinter, EnumPrintersW, GetDefaultPrinterW,
     OpenPrinterW, StartDocPrinterW, StartPagePrinter, WritePrinter, DOC_INFO_1W,
     PRINTER_ACCESS_USE, PRINTER_DEFAULTSW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL,
     PRINTER_INFO_2W,
@@ -34,9 +34,13 @@ fn pwstr_de(vec: &mut [u16]) -> PWSTR {
     PWSTR(vec.as_mut_ptr())
 }
 
-fn ultimo_error(contexto: &str) -> String {
-    let codigo = unsafe { GetLastError() };
-    format!("{} (Win32 error {})", contexto, codigo.0)
+/// Mensaje legible con codigo Win32 (el numero solo no le dice nada
+/// al tendero). OJO: capturar INMEDIATAMENTE despues del fallo: cualquier
+/// llamada Win32 intermedia (ClosePrinter, EndDoc...) pisa GetLastError
+/// y el mensaje saldria con "Win32 error 0".
+fn win32_mensaje(contexto: &str) -> String {
+    let err = windows::core::Error::from_win32();
+    format!("{} (Win32 error {}: {})", contexto, err.code().0, err.message())
 }
 
 fn nombre_default() -> String {
@@ -63,24 +67,41 @@ pub fn listar_impresoras_sistema() -> Result<Vec<ImpresoraSistema>, String> {
         let flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
         let mut necesitados: u32 = 0;
         let mut devueltas: u32 = 0;
-        // Sondeo de tamaño: se espera ERROR_INSUFFICIENT_BUFFER.
-        let _ = EnumPrintersW(
+        // Sondeo de tamaño: se espera ERROR_INSUFFICIENT_BUFFER. Cualquier
+        // otro codigo (spooler parado, permisos) es error REAL y antes se
+        // tragaba devolviendo "sin impresoras".
+        match EnumPrintersW(
             flags,
             PCWSTR::null(),
             2,
             None,
             &mut necesitados,
             &mut devueltas,
-        );
+        ) {
+            Ok(()) => {}
+            // Tamaño sondeado: el unico "error" esperado en esta llamada.
+            Err(e) if e.code() == ERROR_INSUFFICIENT_BUFFER.into() => {}
+            Err(e) => {
+                return Err(format!(
+                    "No se pudo enumerar impresoras. Revisa que el spooler este activo (Win32 error {}: {})",
+                    e.code().0,
+                    e.message()
+                ));
+            }
+        }
         if necesitados == 0 {
             return Ok(vec![]);
         }
-        let mut buf: Vec<u8> = vec![0; necesitados as usize];
+        // Vec<u64> a proposito: alinear a 8 como PRINTER_INFO_2W (un
+        // Vec<u8> casteado seria UB por alineacion).
+        let celdas = (necesitados as usize).div_ceil(8);
+        let mut buf: Vec<u64> = vec![0; celdas];
+        let bytes = std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u8, celdas * 8);
         EnumPrintersW(
             flags,
             PCWSTR::null(),
             2,
-            Some(buf.as_mut_slice()),
+            Some(bytes),
             &mut necesitados,
             &mut devueltas,
         )
@@ -145,19 +166,19 @@ pub fn enviar_bytes_raw(nombre: &str, bytes: &[u8]) -> Result<(), String> {
             pOutputFile: PWSTR::null(),
             pDatatype: pwstr_de(&mut tipo_w),
         };
-        // StartDoc devuelve job id (0 = fallo).
+        // StartDoc devuelve job id (0 = fallo). El mensaje se captura
+        // ANTES de cerrar: ClosePrinter pisaria GetLastError.
         let job = StartDocPrinterW(handle, 1, &doc);
         if job == 0 {
+            let msg = win32_mensaje("El spooler rechazo el trabajo");
             let _ = ClosePrinter(handle);
-            return Err(format!(
-                "El spooler rechazo el trabajo. {}",
-                ultimo_error("StartDocPrinterW")
-            ));
+            return Err(msg);
         }
         if !StartPagePrinter(handle).as_bool() {
+            let msg = win32_mensaje("No se pudo iniciar pagina");
             let _ = EndDocPrinter(handle);
             let _ = ClosePrinter(handle);
-            return Err(format!("No se pudo iniciar pagina. {}", ultimo_error("StartPage")));
+            return Err(msg);
         }
         let mut escritos: u32 = 0;
         let ok = WritePrinter(
@@ -165,19 +186,27 @@ pub fn enviar_bytes_raw(nombre: &str, bytes: &[u8]) -> Result<(), String> {
             bytes.as_ptr() as *const std::ffi::c_void,
             bytes.len() as u32,
             &mut escritos,
-        );
+        )
+        .as_bool();
+        // Verificar ANTES de confirmar: confirmar un trabajo trunco saca
+        // papel a medias. AbortPrinter lo cancela limpio.
+        if !ok || escritos as usize != bytes.len() {
+            let msg = if ok {
+                format!(
+                    "Solo se escribieron {}/{} bytes al spooler",
+                    escritos,
+                    bytes.len()
+                )
+            } else {
+                win32_mensaje("Fallo escribiendo al spooler")
+            };
+            let _ = AbortPrinter(handle);
+            let _ = ClosePrinter(handle);
+            return Err(format!("{msg}. Se cancelo el trabajo para no sacar papel a medias."));
+        }
         let _ = EndPagePrinter(handle);
         let _ = EndDocPrinter(handle);
         let _ = ClosePrinter(handle);
-
-        if !ok.as_bool() || escritos as usize != bytes.len() {
-            return Err(format!(
-                "Solo se escribieron {}/{} bytes. {}",
-                escritos,
-                bytes.len(),
-                ultimo_error("WritePrinter")
-            ));
-        }
         Ok(())
     }
 }

@@ -21,9 +21,18 @@ use std::time::Duration;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 
-use super::builder::{self, FilaConciliacion};
+use super::builder::{self, AnchoPapel, FilaConciliacion};
 use super::ticket::{LineaVenta, TicketVenta};
 use super::{enviar_bytes_raw, listar_impresoras_sistema};
+
+/// Tope de caracteres del QR: mas alla el modulo crece tanto que no cabe
+/// en el papel (ni en 80mm) e infla el trabajo al tope de 512KB.
+const QR_MAX_CHARS: usize = 500;
+
+/// Resuelve el ancho de papel del payload (80/58, default 80).
+fn ancho_de(mm: Option<u8>) -> AnchoPapel {
+    AnchoPapel::desde_mm(mm.unwrap_or(80))
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ImpresoraInfo {
@@ -79,6 +88,7 @@ pub async fn imprimir_lista_conciliacion(
     nombre_impresora: String,
     tienda: Option<String>,
     filas: Vec<FilaConciliacionPayload>,
+    ancho_mm: Option<u8>,
 ) -> Result<String, String> {
     let nombre = nombre_impresora.trim().to_string();
     if nombre.is_empty() {
@@ -116,7 +126,7 @@ pub async fn imprimir_lista_conciliacion(
         .collect();
 
     let fecha = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let bytes = builder::construir_lista_conciliacion(&tienda, &fecha, &filas);
+    let bytes = builder::construir_lista_conciliacion(&tienda, &fecha, &filas, ancho_de(ancho_mm));
     let n = bytes.len();
 
     tokio::task::spawn_blocking(move || enviar_bytes_raw(&nombre, &bytes))
@@ -146,6 +156,7 @@ pub async fn imprimir_lista_stock_bajo(
     nombre_impresora: String,
     tienda: Option<String>,
     filas: Vec<FilaStockBajoPayload>,
+    ancho_mm: Option<u8>,
 ) -> Result<String, String> {
     let nombre = nombre_impresora.trim().to_string();
     if nombre.is_empty() {
@@ -180,7 +191,7 @@ pub async fn imprimir_lista_stock_bajo(
         .collect();
 
     let fecha = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let bytes = builder::construir_lista_stock_bajo(&tienda, &fecha, &filas);
+    let bytes = builder::construir_lista_stock_bajo(&tienda, &fecha, &filas, ancho_de(ancho_mm));
     let n = bytes.len();
 
     tokio::task::spawn_blocking(move || enviar_bytes_raw(&nombre, &bytes))
@@ -238,6 +249,9 @@ pub struct TicketVentaPayload {
     /// Descuento global en pesos (fuera de las lineas). `default` = 0.
     #[serde(default)]
     pub descuento_global: f64,
+    /// Ancho de papel en mm (80/58). `None` = 80mm.
+    #[serde(default)]
+    pub ancho_mm: Option<u8>,
     pub total: f64,
     #[serde(default)]
     pub pagos: Vec<PagoPayload>,
@@ -269,6 +283,13 @@ fn checar_red(ip: &str, puerto: u16) -> Result<(), String> {
 }
 
 fn enviar_red(ip: &str, puerto: u16, bytes: &[u8]) -> Result<(), String> {
+    // Misma validacion que checar_red (antes daba "IP/host invalido ''").
+    if ip.trim().is_empty() {
+        return Err("Escribe la IP de la impresora de red.".into());
+    }
+    if puerto == 0 {
+        return Err("Puerto invalido (tipico: 9100).".into());
+    }
     let ip = ip.trim().to_string();
     let dir = format!("{ip}:{puerto}")
         .to_socket_addrs()
@@ -382,6 +403,16 @@ pub async fn imprimir_ticket_venta(
         .filter(|f| !f.is_empty())
         .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M").to_string());
 
+    let qr = ticket.qr.map(|q| limpiar(&q)).filter(|q| !q.is_empty());
+    if let Some(q) = &qr {
+        if q.chars().count() > QR_MAX_CHARS {
+            return Err(format!(
+                "QR demasiado largo ({} caracteres, maximo {QR_MAX_CHARS}). Usa un folio corto o URL corta.",
+                q.chars().count()
+            ));
+        }
+    }
+
     let venta = TicketVenta {
         tienda,
         ubicacion: ticket.ubicacion.map(|u| limpiar(&u)).filter(|u| !u.is_empty()),
@@ -392,9 +423,10 @@ pub async fn imprimir_ticket_venta(
         total: ticket.total,
         pagos,
         cambio,
-        qr: ticket.qr.map(|q| limpiar(&q)).filter(|q| !q.is_empty()),
+        qr,
     };
-    let bytes = super::ticket::construir_ticket_venta(&venta)?;
+    let ancho = ancho_de(ticket.ancho_mm);
+    let bytes = super::ticket::construir_ticket_venta(&venta, ancho)?;
     let n = bytes.len();
 
     match destino {
@@ -417,5 +449,94 @@ pub async fn imprimir_ticket_venta(
             tracing::info!(folio = %folio, bytes = n, ip = %ip, "ticket vendido por red");
             Ok(format!("Ticket {folio} enviado a {ip}:{puerto} ({n} bytes)."))
         }
+    }
+}
+
+/// Pulso de apertura de cajon (ESC p) por spooler o red.
+/// El cajon va conectado por RJ11 a la termica: no necesita driver
+/// ni impresora aparte, sale por el mismo canal que el ticket.
+#[tauri::command]
+pub async fn abrir_cajon(destino: Destino) -> Result<String, String> {
+    let bytes = builder::construir_apertura_cajon();
+    match destino {
+        Destino::Spooler { nombre } => {
+            let nombre_c = limpiar(&nombre);
+            if nombre_c.is_empty() {
+                return Err("Elige una impresora instalada.".into());
+            }
+            tokio::task::spawn_blocking(move || enviar_bytes_raw(&nombre_c, &bytes))
+                .await
+                .map_err(|e| format!("Fallo interno abriendo cajon: {e}"))??;
+            tracing::info!(impresora = %nombre, "cajon abierto por spooler");
+            Ok("Pulso de apertura enviado al cajon.".to_string())
+        }
+        Destino::Red { ip, puerto } => {
+            let ip_c = limpiar(&ip);
+            tokio::task::spawn_blocking(move || enviar_red(&ip_c, puerto, &bytes))
+                .await
+                .map_err(|e| format!("Fallo interno abriendo cajon: {e}"))??;
+            tracing::info!(ip = %ip, "cajon abierto por red");
+            Ok(format!("Pulso de apertura enviado a {ip}:{puerto}."))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    /// Puerto cerrado garantizado: se abre un listener, se toma su puerto
+    /// y se suelta (nadie lo ocupa en ese instante).
+    fn puerto_cerrado() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    #[test]
+    fn red_loopback_recibe_bytes_exactos() {
+        // Transporte de red real (sin impresora): lo que entra por un
+        // extremo sale identico por el otro.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let puerto = listener.local_addr().unwrap().port();
+        let esperados = builder::construir_apertura_cajon();
+        let clon = esperados.clone();
+        let hilo = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut buf = Vec::new();
+            s.read_to_end(&mut buf).unwrap();
+            buf
+        });
+        enviar_red("127.0.0.1", puerto, &clon).unwrap();
+        let recibidos = hilo.join().unwrap();
+        assert_eq!(recibidos, esperados);
+    }
+
+    #[test]
+    fn red_sin_ip_o_puerto_da_error_claro() {
+        let e = enviar_red("", 9100, &[1, 2, 3]).unwrap_err();
+        assert!(e.contains("IP"), "mensaje confuso: {e}");
+        let e = enviar_red("127.0.0.1", 0, &[1, 2, 3]).unwrap_err();
+        assert!(e.contains("Puerto"), "mensaje confuso: {e}");
+        let e = enviar_red("127.0.0.1", puerto_cerrado(), &[1, 2, 3]).unwrap_err();
+        assert!(e.contains("Sin conexion"), "mensaje confuso: {e}");
+    }
+
+    #[test]
+    fn checar_red_rechazada_da_error_claro() {
+        let e = checar_red("127.0.0.1", puerto_cerrado()).unwrap_err();
+        assert!(e.contains("Sin conexion"), "mensaje confuso: {e}");
+        assert!(checar_red("", 9100).is_err());
+    }
+
+    #[test]
+    fn ancho_raro_cae_a_80mm() {
+        assert_eq!(ancho_de(None), AnchoPapel::Mm80);
+        assert_eq!(ancho_de(Some(80)), AnchoPapel::Mm80);
+        assert_eq!(ancho_de(Some(58)), AnchoPapel::Mm58);
+        assert_eq!(ancho_de(Some(0)), AnchoPapel::Mm80);
     }
 }

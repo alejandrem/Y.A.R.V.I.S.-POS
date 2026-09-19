@@ -13,10 +13,9 @@ use escpos::utils::{
     JustifyMode, Protocol, QRCodeCorrectionLevel, QRCodeModel, QRCodeOption,
 };
 
+use super::builder::{sanitizar, AnchoPapel};
 use super::memoria::MemoriaDriver;
 
-/// Ancho util de termica 80mm en fuente A (igual que builder.rs).
-const COLS: usize = 48;
 /// Tope de lineas por ticket para no saturar el spooler.
 pub const MAX_LINEAS: usize = 500;
 
@@ -56,18 +55,21 @@ pub struct TicketVenta {
 }
 
 /// Fila monoespaciada: izquierda recortada + importe a la derecha.
-fn fila(importe: &str, izquierda: &str) -> String {
+fn fila(importe: &str, izquierda: &str, cols: usize) -> String {
     let der = importe.chars().count();
-    let max_izq = COLS.saturating_sub(der + 1);
+    let max_izq = cols.saturating_sub(der + 1);
     let mut izq: String = izquierda.chars().take(max_izq).collect();
-    while izq.chars().count() + der < COLS {
+    while izq.chars().count() + der < cols {
         izq.push(' ');
     }
     format!("{izq}{importe}")
 }
 
 /// Renderiza el ticket a bytes ESC/POS listos para el spooler o red.
-pub fn construir_ticket_venta(t: &TicketVenta) -> Result<Vec<u8>, String> {
+/// Todo texto humano se translitera a ASCII (igual que builder.rs): la
+/// termica generica no entiende UTF-8 y "Hernández" saldria basura.
+/// El QR NO se toca: es payload, no texto visible.
+pub fn construir_ticket_venta(t: &TicketVenta, ancho: AnchoPapel) -> Result<Vec<u8>, String> {
     if t.lineas.is_empty() {
         return Err("El ticket no trae productos.".into());
     }
@@ -78,6 +80,14 @@ pub fn construir_ticket_venta(t: &TicketVenta) -> Result<Vec<u8>, String> {
             MAX_LINEAS
         ));
     }
+    let cols = ancho.cols();
+    // QR mas chico en 58mm: el modulo 5 no cabe en 384 puntos.
+    let qr_size = match ancho {
+        AnchoPapel::Mm80 => 5,
+        AnchoPapel::Mm58 => 3,
+    };
+    let tienda = sanitizar(&t.tienda);
+    let ubicacion = t.ubicacion.as_deref().map(sanitizar);
 
     let driver = MemoriaDriver::default();
     let sonda = driver.clone();
@@ -90,15 +100,15 @@ pub fn construir_ticket_venta(t: &TicketVenta) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Ticket: {e}"))?;
     p.bold(true).map_err(|e| format!("Ticket: {e}"))?;
     p.size(2, 2).map_err(|e| format!("Ticket: {e}"))?;
-    p.writeln(&t.tienda).map_err(|e| format!("Ticket: {e}"))?;
+    p.writeln(&tienda).map_err(|e| format!("Ticket: {e}"))?;
     p.bold(false).map_err(|e| format!("Ticket: {e}"))?;
     p.size(1, 1).map_err(|e| format!("Ticket: {e}"))?;
-    if let Some(u) = t.ubicacion.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        p.writeln(u).map_err(|e| format!("Ticket: {e}"))?;
+    if let Some(u) = ubicacion.as_deref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        p.writeln(&u).map_err(|e| format!("Ticket: {e}"))?;
     }
-    p.writeln(&format!("Folio {}  {}", t.folio, t.fecha))
+    p.writeln(&format!("Folio {}  {}", sanitizar(&t.folio), sanitizar(&t.fecha)))
         .map_err(|e| format!("Ticket: {e}"))?;
-    p.writeln(&"-".repeat(COLS))
+    p.writeln(&"-".repeat(cols))
         .map_err(|e| format!("Ticket: {e}"))?;
 
     // Lineas (importe NETO; el descuento de la linea se muestra
@@ -119,15 +129,16 @@ pub fn construir_ticket_venta(t: &TicketVenta) -> Result<Vec<u8>, String> {
         };
         p.writeln(&fila(
             &dinero(bruto - desc),
-            &format!("{cant} {}", l.nombre),
+            &format!("{cant} {}", sanitizar(&l.nombre)),
+            cols,
         ))
         .map_err(|e| format!("Ticket: {e}"))?;
         if desc > 0.0 {
-            p.writeln(&fila(&format!("-{}", dinero(desc)), "  Desc:"))
+            p.writeln(&fila(&format!("-{}", dinero(desc)), "  Desc:", cols))
                 .map_err(|e| format!("Ticket: {e}"))?;
         }
     }
-    p.writeln(&"-".repeat(COLS))
+    p.writeln(&"-".repeat(cols))
         .map_err(|e| format!("Ticket: {e}"))?;
 
     // Subtotal + descuento (solo si hubo) + total + pagos + cambio.
@@ -135,27 +146,27 @@ pub fn construir_ticket_venta(t: &TicketVenta) -> Result<Vec<u8>, String> {
     // se ahorro contra etiquetas.
     let desc_total = desc_lineas + t.descuento_global.max(0.0);
     if desc_total > 0.0 {
-        p.writeln(&fila(&dinero(subtotal_bruto), "SUBTOTAL"))
+        p.writeln(&fila(&dinero(subtotal_bruto), "SUBTOTAL", cols))
             .map_err(|e| format!("Ticket: {e}"))?;
-        p.writeln(&fila(&format!("-{}", dinero(desc_total)), "DESCUENTO"))
+        p.writeln(&fila(&format!("-{}", dinero(desc_total)), "DESCUENTO", cols))
             .map_err(|e| format!("Ticket: {e}"))?;
-        p.writeln(&"-".repeat(COLS))
+        p.writeln(&"-".repeat(cols))
             .map_err(|e| format!("Ticket: {e}"))?;
     }
     p.bold(true).map_err(|e| format!("Ticket: {e}"))?;
     p.size(2, 1).map_err(|e| format!("Ticket: {e}"))?;
-    p.writeln(&fila(&dinero(t.total), "TOTAL"))
+    p.writeln(&fila(&dinero(t.total), "TOTAL", cols))
         .map_err(|e| format!("Ticket: {e}"))?;
     p.bold(false).map_err(|e| format!("Ticket: {e}"))?;
     p.size(1, 1).map_err(|e| format!("Ticket: {e}"))?;
     for (metodo, monto) in &t.pagos {
         if *monto > 0.0 {
-            p.writeln(&fila(&dinero(*monto), metodo))
+            p.writeln(&fila(&dinero(*monto), &sanitizar(metodo), cols))
                 .map_err(|e| format!("Ticket: {e}"))?;
         }
     }
     if t.cambio > 0.0 {
-        p.writeln(&fila(&dinero(t.cambio), "CAMBIO"))
+        p.writeln(&fila(&dinero(t.cambio), "CAMBIO", cols))
             .map_err(|e| format!("Ticket: {e}"))?;
     }
 
@@ -164,7 +175,7 @@ pub fn construir_ticket_venta(t: &TicketVenta) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Ticket: {e}"))?;
     p.feed().map_err(|e| format!("Ticket: {e}"))?;
     if let Some(qr) = t.qr.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        p.qrcode_option(qr, QRCodeOption::new(QRCodeModel::Model2, 5, QRCodeCorrectionLevel::M))
+        p.qrcode_option(qr, QRCodeOption::new(QRCodeModel::Model2, qr_size, QRCodeCorrectionLevel::M))
             .map_err(|e| format!("QR: {e}"))?;
         p.feed().map_err(|e| format!("Ticket: {e}"))?;
     }
@@ -206,7 +217,7 @@ mod tests {
 
     #[test]
     fn ticket_arranca_con_init_y_trae_folio() {
-        let bytes = construir_ticket_venta(&demo()).expect("render");
+        let bytes = construir_ticket_venta(&demo(), AnchoPapel::Mm80).expect("render");
         assert!(bytes.starts_with(&[0x1B, 0x40]), "sin INIT");
         assert!(bytes.len() > 100, "ticket sospechosamente chico");
         let txt = String::from_utf8_lossy(&bytes);
@@ -220,7 +231,7 @@ mod tests {
         let mut t = demo();
         t.qr = None;
         t.ubicacion = None;
-        let bytes = construir_ticket_venta(&t).expect("render");
+        let bytes = construir_ticket_venta(&t, AnchoPapel::Mm80).expect("render");
         // print_cut() de escpos 0.20 cierra con GS V A (corte parcial).
         assert!(bytes.ends_with(&[0x1D, 0x56, 0x41, 0x00]), "sin corte");
     }
@@ -229,7 +240,7 @@ mod tests {
     fn ticket_vacio_da_error_claro() {
         let mut t = demo();
         t.lineas.clear();
-        assert!(construir_ticket_venta(&t).is_err());
+        assert!(construir_ticket_venta(&t, AnchoPapel::Mm80).is_err());
     }
 
     #[test]
@@ -238,7 +249,7 @@ mod tests {
         t.lineas[0].descuento = 5.0;
         t.descuento_global = 3.0;
         t.total = 32.0;
-        let bytes = construir_ticket_venta(&t).expect("render");
+        let bytes = construir_ticket_venta(&t, AnchoPapel::Mm80).expect("render");
         let txt = String::from_utf8_lossy(&bytes);
         assert!(txt.contains("SUBTOTAL"), "falta SUBTOTAL");
         assert!(txt.contains("DESCUENTO"), "falta DESCUENTO");
@@ -250,7 +261,7 @@ mod tests {
 
     #[test]
     fn ticket_sin_descuento_no_muestra_subtotal() {
-        let bytes = construir_ticket_venta(&demo()).expect("render");
+        let bytes = construir_ticket_venta(&demo(), AnchoPapel::Mm80).expect("render");
         let txt = String::from_utf8_lossy(&bytes);
         assert!(
             !txt.contains("SUBTOTAL"),
@@ -260,5 +271,28 @@ mod tests {
             !txt.contains("DESCUENTO"),
             "sin descuento no debe salir DESCUENTO"
         );
+    }
+
+    #[test]
+    fn ticket_translitera_tildes_en_papel() {
+        // La termica generica no entiende UTF-8: "Hernández/Café" debe
+        // salir "Hernandez/Cafe", nunca bytes crudos multibyte.
+        let mut t = demo();
+        t.tienda = "Abarrotes Hernández".into();
+        t.lineas[0].nombre = "Café 500g".into();
+        let bytes = construir_ticket_venta(&t, AnchoPapel::Mm80).expect("render");
+        let txt = String::from_utf8_lossy(&bytes);
+        assert!(txt.contains("Hernandez"), "tienda sin transliterar");
+        assert!(txt.contains("Cafe 500g"), "producto sin transliterar");
+        assert!(!txt.contains('é'), "quedo UTF-8 crudo en el papel");
+    }
+
+    #[test]
+    fn ticket_58mm_usa_separadores_de_32() {
+        let bytes = construir_ticket_venta(&demo(), AnchoPapel::Mm58).expect("render");
+        assert!(bytes.starts_with(&[0x1B, 0x40]), "sin INIT");
+        let txt = String::from_utf8_lossy(&bytes);
+        assert!(txt.contains(&"-".repeat(32)), "sin separador de 32");
+        assert!(!txt.contains(&"-".repeat(33)), "se colo un separador de 80mm");
     }
 }

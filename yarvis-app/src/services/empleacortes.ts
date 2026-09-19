@@ -20,7 +20,11 @@ export async function pedirCorteZ(observaciones: string | null = null): Promise<
 }
 
 /** Manda un corte ya guardado a la térmica (spooler o red). */
-export async function imprimirCorte(destino: DestinoPrint, corteId: number): Promise<string> {
+export async function imprimirCorte(
+  destino: DestinoPrint,
+  corteId: number,
+  anchoMm?: number | null,
+): Promise<string> {
   // Tauri matchea args por nombre exacto: el comando espera `corte_id`.
-  return invoke<string>("imprimir_corte", { destino, corte_id: corteId });
+  return invoke<string>("imprimir_corte", { destino, corte_id: corteId, ancho_mm: anchoMm ?? null });
 }

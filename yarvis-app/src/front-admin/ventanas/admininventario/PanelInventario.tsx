@@ -43,6 +43,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   const [printMode, setPrintMode] = useState<"conciliacion" | "stock_bajo">("conciliacion");
   const [impresoras, setImpresoras] = useState<ImpresoraInfo[]>([]);
   const [impresoraSel, setImpresoraSel] = useState("");
+  const [anchoMm, setAnchoMm] = useState<80 | 58>(80);
   const [cargandoImp, setCargandoImp] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
   const [showNuevo, setShowNuevo] = useState(false);
@@ -197,7 +198,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
           reportarError("No hay filas que imprimir", "Sin críticos");
           return;
         }
-        const msg = await imprimirListaStockBajo(impresoraSel, filas);
+        const msg = await imprimirListaStockBajo(impresoraSel, filas, undefined, anchoMm);
         notificarExito(msg);
       } else {
         const filas = sortedInventory
@@ -212,7 +213,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
           reportarError("No hay filas que imprimir", "Lista vacía");
           return;
         }
-        const msg = await imprimirListaConciliacion(impresoraSel, filas);
+        const msg = await imprimirListaConciliacion(impresoraSel, filas, undefined, anchoMm);
         notificarExito(msg);
       }
       setShowPrint(false);
@@ -725,9 +726,24 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                 </div>
               ) : (
                 <>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-neutral-400">
-                    Impresora destino ({impresoras.length})
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-neutral-400">
+                      Impresora destino ({impresoras.length})
+                    </p>
+                    <div className="flex bg-white/10 rounded-lg p-0.5">
+                      {([80, 58] as const).map((mm) => (
+                        <button
+                          key={mm}
+                          onClick={() => setAnchoMm(mm)}
+                          className={`px-2.5 py-1 text-[8px] font-black rounded-md transition-all ${
+                            anchoMm === mm ? "bg-white text-neutral-900" : "text-neutral-400"
+                          }`}
+                        >
+                          {mm}mm
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                     {impresoras.map((imp) => (
                       <button

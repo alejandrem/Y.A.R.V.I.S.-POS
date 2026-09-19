@@ -252,6 +252,7 @@ pub fn run() {
             // Impresora termica — Camino C Fase 2 (ticket `escpos` + red)
             impresora::commands::imprimir_ticket_venta,
             impresora::commands::probar_red,
+            impresora::commands::abrir_cajon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

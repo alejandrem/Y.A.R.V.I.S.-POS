@@ -6,6 +6,8 @@ import {
   listarImpresoras,
   imprimirTicketVenta,
   probarRed,
+  abrirCajon,
+  ANCHOS_PAPEL,
   type DestinoPrint,
   type ImpresoraInfo,
 } from "../../../services/impresora";
@@ -44,10 +46,12 @@ export default function ModalTicket({
   const [tabPrint, setTabPrint] = useState<"local" | "red">("local");
   const [impresoras, setImpresoras] = useState<ImpresoraInfo[]>([]);
   const [impresoraSel, setImpresoraSel] = useState("");
+  const [anchoMm, setAnchoMm] = useState<80 | 58>(80);
   const [ipRed, setIpRed] = useState("");
   const [puertoRed, setPuertoRed] = useState(9100);
   const [probando, setProbando] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
+  const [abriendo, setAbriendo] = useState(false);
 
   useEffect(() => {
     obtenerTiendaInfo()
@@ -95,6 +99,20 @@ export default function ModalTicket({
     }
   };
 
+  const handleAbrirCajon = async () => {
+    const destino = armarDestino();
+    if (!destino) return;
+    setAbriendo(true);
+    try {
+      const msg = await abrirCajon(destino);
+      notificarExito(msg);
+    } catch (error) {
+      reportarError("No se pudo abrir el cajón", error);
+    } finally {
+      setAbriendo(false);
+    }
+  };
+
   const handleImprimir = async () => {
     const destino = armarDestino();
     if (!destino) return;
@@ -110,6 +128,7 @@ export default function ModalTicket({
         ubicacion: tienda?.ubicacion ?? null,
         folio: `#${ticketNumber}`,
         fecha: null,
+        ancho_mm: anchoMm,
         lineas: cart.map((item) => ({
           nombre: item.nombre,
           cantidad: item.cantidad,
@@ -268,6 +287,29 @@ export default function ModalTicket({
               </div>
             )}
 
+            <div className="flex gap-2">
+              <div className="flex bg-white/10 rounded-xl p-1 shrink-0">
+                {ANCHOS_PAPEL.map((a) => (
+                  <button
+                    key={a.mm}
+                    onClick={() => setAnchoMm(a.mm)}
+                    className={`px-2.5 py-2 text-[9px] font-black rounded-lg transition-all ${
+                      anchoMm === a.mm ? "bg-white text-neutral-900" : "text-neutral-400"
+                    }`}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleAbrirCajon}
+                disabled={abriendo || imprimiendo}
+                title="Manda el pulso de apertura al cajón (va conectado a la térmica)"
+                className="flex-1 py-3 rounded-xl bg-white/10 text-white text-[9px] font-black uppercase tracking-[0.2em] hover:bg-white/20 transition-all disabled:opacity-40"
+              >
+                {abriendo ? "Abriendo…" : "🗄 Abrir cajón"}
+              </button>
+            </div>
             <button
               onClick={handleImprimir}
               disabled={imprimiendo}

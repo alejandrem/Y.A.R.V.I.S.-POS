@@ -10,7 +10,7 @@
 // el spooler RAW de Fase 1 o por TCP directo (puerto 9100).
 //
 // Estructura:
-//   builder.rs          -> conciliacion 80mm/48cols, puro Rust (Fase 1)
+//   builder.rs          -> listas 80/58mm + cajon, puro Rust sin deps
 //   memoria.rs          -> driver escpos que captura a memoria (Fase 2)
 //   ticket.rs           -> ticket de venta con QR via `escpos` (Fase 2)
 //   spooler_windows.rs  -> EnumPrintersW + OpenPrinterW/WritePrinter (win)
