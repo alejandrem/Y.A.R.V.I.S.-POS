@@ -62,11 +62,13 @@ pub const MODELOS_FREE_EXTRA: &[&str] = &["big-pickle"];
 /// Verificado contra GET /zen/v1/models el 2026-09-15: solo estos free hablan
 /// `/chat/completions`. `muse-spark-*-contributor-free` existe pero usa
 /// `/responses` (otro endpoint) y NO va aquí.
+/// NOTA 2026-09-19: deepseek-v4-flash-free se retiró aguas arriba (400 "Model
+/// is unavailable") y salió de la lista. Además TODO free responde 403
+/// FreeTierError a apps terceras: el relevo solo revive si Zen reabre.
 pub const ORDEN_FALLBACK_FREE: &[&str] = &[
     "nemotron-3-ultra-free",
     "nemotron-3.5-lightning-free",
     "mimo-v2.5-free",
-    "deepseek-v4-flash-free",
     "ling-3.0-flash-fin-free",
     "big-pickle",
 ];
