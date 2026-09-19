@@ -4,7 +4,7 @@
 > de columnas la detecta el detector estadistico (`cerebro/analizador_tickets/detector/`)
 > verificando la ecuacion `cantidad x precio - descuento ≈ total` contra cientos de
 > lineas reales del lote; el mapeo ganador esta matematicamente demostrado, no
-> "adivinado" por un modelo. El Qwen 1.7B queda SOLO para el chat local.
+> "adivinado" por un modelo. El Qwen2.5-Coder 1.5B queda SOLO para el chat local.
 >
 > Novedades de septiembre (verificadas con 1000 tickets reales de 6 meses):
 > - **Folio 10/10 formatos**: etiquetas FOLIO/FOL/TICKET/SERIE/NOTA/RECIBO,
@@ -202,7 +202,7 @@ Antes existian "Aceptar Mapeo" + "Guardar Ticket Analizado" por separado; ahora 
 La gestion descargar_modelos() de Python (auto-unload en finally, endpoints /unload_llm) ya no existe como HTTP. Hoy:
 
 - El comando Tauri descargar_modelos existe por compatibilidad (adminparser/parser_commands.rs) y libera el modelo compartido si es necesario.
-- El parseo de tickets ya NO toca el modelo: puro regex + verificacion matematica, instantaneo incluso en laptops viejas. El Qwen 1.7B solo lo carga el chat local, controlado via load_chat_model / unload_chat_model con verificacion de RAM.
+- El parseo de tickets ya NO toca el modelo: puro regex + verificacion matematica, instantaneo incluso en laptops viejas. El Qwen2.5-Coder 1.5B solo lo carga el chat local, controlado via load_chat_model / unload_chat_model con verificacion de RAM.
 
 ---
 
@@ -300,7 +300,7 @@ interface Producto {
 - ColumnMapper inline: aparece dentro del Modulo de Importacion Inteligente (reutilizado en adminconfig/components/importmodule/).
 - Rust como escritor unico: el parseo lee archivos, pero la escritura en DB siempre pasa por comandos Tauri.
 - Idioma: espanol para Mexico (pesos mexicanos).
-- El mapeo de columnas es estadistico (ver seccion 9): el unico LLM del sistema es el CHAT (Qwen 3 1.7B local + cloud fallback), que nunca entra al pipeline de parseo.
+- El mapeo de columnas es estadistico (ver seccion 9): el unico LLM del sistema es el CHAT (Qwen2.5-Coder 1.5B local + cloud fallback), que nunca entra al pipeline de parseo.
 
 ---
 
