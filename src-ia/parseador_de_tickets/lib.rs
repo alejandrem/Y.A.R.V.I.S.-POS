@@ -9,6 +9,12 @@ pub mod cerebro;
 pub mod formatos;
 pub mod rutas;
 
+// Tests de formatos reales de tickets: un archivo por familia, con la
+// forma COMPLETA del ticket documentada en comentarios al inicio.
+// Solo compila en test (`cargo test --lib`); no toca el binario.
+#[cfg(test)]
+mod test;
+
 // Parseador de cortes de caja X/Z (vive en `src-ia/parseador_de_cortes/`,
 // hermano de este módulo). Determinista como el de tickets: sin IA.
 #[path = "../parseador_de_cortes/mod.rs"]

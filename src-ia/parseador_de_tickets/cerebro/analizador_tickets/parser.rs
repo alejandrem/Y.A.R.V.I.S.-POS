@@ -153,11 +153,20 @@ pub fn es_linea_util(linea: &str) -> bool {
 static RE_DOLAR_ESPACIO: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$\s+(\d)").expect("regex dolar espacio"));
 
-/// Puntos de relleno que PEGAN precio y total en un solo token:
-/// "$8.00..........$16.00" -> "$8.00 $16.00". Solo entre dos montos
-/// con `$` y centavos, asi que "..." de texto no se toca.
+/// Puntos de relleno que PEGAN tokens: "$8.00..........$16.00" o
+/// "15% off).$34.00" -> separa los puntos que van pegados a un monto
+/// (" $16.00"). Solo si hay `$` + centavos despues; "v1.0" y "..."
+/// de texto no se tocan.
 static RE_PUNTOS_PEGADOS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(\$[\d,]+\.\d{2})\.+(\$[\d,]+\.\d{2})").expect("regex puntos pegados")
+    Regex::new(r"\.+(\$[\d,]+\.\d{2})").expect("regex puntos pegados")
+});
+
+/// Descuento con muletilla entre parentesis: "(10% off)" -> "10%".
+/// Sin esto el token "(10%" no es porcentaje, el "off)" rompe la
+/// cobertura y la linea entera se pierde (1418 archivos reales).
+/// Solo con numero+% adentro; "(PROMO)" y cia no se tocan.
+static RE_DESC_PARENTESIS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\((\d+(?:[.,]\d+)?)\s*%\s*[A-Za-z]*\)").expect("regex descuento parentesis")
 });
 
 static RE_CANTIDAD_X: LazyLock<Regex> =
@@ -170,7 +179,10 @@ pub(crate) fn preprocesar_linea(linea: &str) -> String {
     // OJO con la sintaxis de reemplazo: `$$` es un $ literal y `${1}` el
     // grupo 1. Antes era `"$$1"` → "$ 25.00" salía como "$15.00" (¡precio
     // corrupto!): `$$` + "1" literal.
-    let separada = RE_PUNTOS_PEGADOS.replace_all(linea, "$1 $2");
+    // Orden: primero parentesis ("(15% off).$34.00" -> "15%.$34.00"),
+    // luego puntos ("15%.$34.00" -> "15% $34.00").
+    let sin_parentesis = RE_DESC_PARENTESIS.replace_all(linea, "$1%");
+    let separada = RE_PUNTOS_PEGADOS.replace_all(&sin_parentesis, " $1");
     let unida = RE_DOLAR_ESPACIO.replace_all(&separada, "$$$1");
     unida
         .split_whitespace()
