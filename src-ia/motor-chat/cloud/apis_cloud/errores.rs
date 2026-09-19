@@ -52,6 +52,16 @@ fn error_amigable(status: u16, display: &str, body: Option<&str>) -> String {
     {
         return "Zen bloqueó el free tier: solo funciona dentro de OpenCode (tu key sí sirve). Cambia al proveedor Gemini con tu clave de Google, o usa el modelo local Qwen.".to_string();
     }
+    // Key válida pero sin fondos: Zen responde 401 CreditsError "No payment
+    // method" (verificado en campo 2026-09-19). No es key inválida: es
+    // cartera vacía. No confundir con un 401 de auth real.
+    if display == "OpenCode"
+        && body
+            .map(|b| b.contains("CreditsError") || b.contains("No payment method"))
+            .unwrap_or(false)
+    {
+        return "Tu key de Zen sí sirve pero no tiene fondos: agrega método de pago en opencode.ai, o cambia al proveedor Gemini (gratis) o al Qwen local.".to_string();
+    }
     let base = match status {
         429 => {
             "Error 429: muchas preguntas al mismo tiempo. Espera 1 minuto y reintenta.".to_string()
@@ -183,5 +193,32 @@ mod tests {
         };
         let msg = err.amigable("Google");
         assert!(msg.contains("API key inválida (error 403)"), "{msg}");
+    }
+
+    #[test]
+    fn error_401_sin_fondos_zen_no_es_key_invalida() {
+        // Verificado en campo 2026-09-19 con key gratuita real: 401
+        // CreditsError "No payment method" (free bloqueado + sin fondos).
+        let err = ErrorCloud::Http {
+            status: 401,
+            retry_after: None,
+            body: Some(
+                r#"{"type":"error","error":{"type":"CreditsError","message":"No payment method. Add a payment method here: https://opencode.ai/billing"}}"#.to_string(),
+            ),
+        };
+        let msg = err.amigable("OpenCode");
+        assert!(msg.contains("no tiene fondos"), "{msg}");
+        assert!(!msg.contains("inválida"), "cero mención a key inválida: {msg}");
+    }
+
+    #[test]
+    fn error_401_auth_real_sigue_siendo_key_invalida() {
+        let err = ErrorCloud::Http {
+            status: 401,
+            retry_after: None,
+            body: Some(r#"{"error":{"message":"incorrect api key"}}"#.to_string()),
+        };
+        let msg = err.amigable("OpenCode");
+        assert!(msg.contains("API key inválida (error 401)"), "{msg}");
     }
 }
