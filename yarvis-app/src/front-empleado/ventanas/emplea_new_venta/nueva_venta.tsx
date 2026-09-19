@@ -13,10 +13,9 @@ import { reportarError } from "../../../services/tauri";
 import { notificarExito } from "../../../components/notificaciones";
 import { registrarPendiente } from "../../../services/semaforo";
 import { buscarProductoSimilar } from "../../../services/venta";
-import ModalVenta from "./modalventa";
-import ModalTicket from "./modalticket";
+import VentanaCobro from "./ventana-cobro/ventana-cobro";
 import BotonCorte from "../empleacortes/boton-corte";
-import { TECLA_CORTE, TECLA_PAGAR, TECLA_REIMPRIMIR, TECLA_AYUDA, TECLA_BUSCAR, fijarBloqueoAtajo, suscribirAccion, consumirAccion } from "../../atajos/atajos";
+import { TECLA_CORTE, TECLA_PAGAR, TECLA_REIMPRIMIR, TECLA_AYUDA, TECLA_BUSCAR, TECLA_CAJON, fijarBloqueoAtajo, suscribirAccion, consumirAccion } from "../../atajos/atajos";
 import { useCart } from "./CartProvider";
 import BuscadorProductos from "./componentes/buscador-productos";
 import TablaCarrito from "./componentes/tabla-carrito";
@@ -44,10 +43,7 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [iaStatus, setIaStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [iaSuggestion, setIaSuggestion] = useState("");
-  const [showModalVenta, setShowModalVenta] = useState(false); const [showModalTicket, setShowModalTicket] = useState(false);
-  const [lastVentaId, setLastVentaId] = useState(0); const [lastTicketNumber, setLastTicketNumber] = useState(0);
-  const [lastMontoEfectivo, setLastMontoEfectivo] = useState(0); const [lastMontoTarjeta, setLastMontoTarjeta] = useState(0);
-  const [lastMontoTransferencia, setLastMontoTransferencia] = useState(0);
+  const [showCobro, setShowCobro] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -74,20 +70,20 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
 
   useEffect(() => {
     const handleF5 = (e: KeyboardEvent) => {
-      if (e.key === "F5" && cart.length > 0 && !showModalVenta && !showModalTicket) {
-        e.preventDefault(); setShowModalVenta(true);
+      if (e.key === "F5" && cart.length > 0 && !showCobro) {
+        e.preventDefault(); setShowCobro(true);
       }
     };
     window.addEventListener("keydown", handleF5);
     return () => window.removeEventListener("keydown", handleF5);
-  }, [cart, showModalVenta, showModalTicket]);
+  }, [cart, showCobro]);
 
   // F5 global (viene del shell): abre el cobro solo si hay carrito y no
   // hay otro modal. Si el carrito está vacío se ignora en silencio.
   const intentarCobro = useCallback(() => {
-    if (cart.length === 0 || showModalVenta || showModalTicket) return;
-    setShowModalVenta(true);
-  }, [cart, showModalVenta, showModalTicket]);
+    if (cart.length === 0 || showCobro) return;
+    setShowCobro(true);
+  }, [cart, showCobro]);
 
   // F7 global: deja el buscador listo para escribir.
   const enfocarBuscador = useCallback(() => {
@@ -112,23 +108,26 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
     return desuscribir;
   }, [intentarCobro, enfocarBuscador]);
 
-  // Mientras el cobro/ticket está abierto, F3/F4/F2/F8/F7 quedan
-  // bloqueados para no encimar modales ni cambiar de tab.
+  // Mientras la ventana de cobro está abierta, F3/F4/F2/F8/F7/F6 quedan
+  // bloqueados para no encimar modales ni cambiar de tab (el cajón se
+  // abre desde la propia ventana de cobro).
   useEffect(() => {
-    const ocupado = showModalVenta || showModalTicket;
+    const ocupado = showCobro;
     fijarBloqueoAtajo(TECLA_CORTE, ocupado);
     fijarBloqueoAtajo(TECLA_PAGAR, ocupado);
     fijarBloqueoAtajo(TECLA_REIMPRIMIR, ocupado);
     fijarBloqueoAtajo(TECLA_AYUDA, ocupado);
     fijarBloqueoAtajo(TECLA_BUSCAR, ocupado);
+    fijarBloqueoAtajo(TECLA_CAJON, ocupado);
     return () => {
       fijarBloqueoAtajo(TECLA_CORTE, false);
       fijarBloqueoAtajo(TECLA_PAGAR, false);
       fijarBloqueoAtajo(TECLA_REIMPRIMIR, false);
       fijarBloqueoAtajo(TECLA_AYUDA, false);
       fijarBloqueoAtajo(TECLA_BUSCAR, false);
+      fijarBloqueoAtajo(TECLA_CAJON, false);
     };
-  }, [showModalVenta, showModalTicket]);
+  }, [showCobro]);
 
   const loadInventory = async () => {
     try { setInventory(await obtenerInventario()); }
@@ -190,16 +189,11 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
     inputRef.current?.focus();
   };
 
-  const handleAbrirCobro = () => { if (cart.length === 0) return; setShowModalVenta(true); };
+  const handleAbrirCobro = () => { if (cart.length === 0) return; setShowCobro(true); };
 
-  const handleVentaCompletada = (ventaId: number, ticketNumber: number, efectivo: number, tarjeta: number, transferencia: number) => {
-    setLastVentaId(ventaId); setLastTicketNumber(ticketNumber);
-    setLastMontoEfectivo(efectivo); setLastMontoTarjeta(tarjeta);
-    setLastMontoTransferencia(transferencia);
-    setShowModalVenta(false); setShowModalTicket(true);
-  };
+  const handleCancelarCobro = () => { setShowCobro(false); };
 
-  const handleCerrarTicket = () => { setShowModalTicket(false); limpiarCarrito(); };
+  const handleTerminarCobro = () => { setShowCobro(false); limpiarCarrito(); };
 
   /** Pitazo sin match + Enter: se guarda en la cola del semáforo (rojo)
    * para vincularlo después en Códigos. El backend es idempotente
@@ -226,7 +220,13 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") { setShowDropdown(false); return; }
-    if (!showDropdown) return;
+    // Sin dropdown: Enter abre el cobro directo (el carrito ya tiene
+    // productos y el foco está en el buscador). Con dropdown abierto,
+    // Enter sigue eligiendo producto como siempre.
+    if (!showDropdown) {
+      if (e.key === "Enter") { e.preventDefault(); intentarCobro(); }
+      return;
+    }
     if (e.key === "ArrowDown" && searchResults.length > 0) {
       e.preventDefault(); setSelectedIndex((prev) => (prev < searchResults.length - 1 ? prev + 1 : 0));
     } else if (e.key === "ArrowUp" && searchResults.length > 0) {
@@ -267,16 +267,12 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
       </TablaCarrito>
     </div>
 
-    {showModalVenta && (
-      <ModalVenta onClose={() => setShowModalVenta(false)} onVentaCompletada={handleVentaCompletada} cart={cart} cartTotal={cartTotal} />
-    )}
-
-    {showModalTicket && (
-      <ModalTicket
-        onClose={handleCerrarTicket} cart={cart} cartTotal={cartTotal}
-        ticketNumber={lastTicketNumber} ventaId={lastVentaId}
-        montoEfectivo={lastMontoEfectivo} montoTarjeta={lastMontoTarjeta}
-        montoTransferencia={lastMontoTransferencia}
+    {showCobro && (
+      <VentanaCobro
+        cart={cart}
+        cartTotal={cartTotal}
+        onCancelar={handleCancelarCobro}
+        onTerminar={handleTerminarCobro}
       />
     )}
     </>

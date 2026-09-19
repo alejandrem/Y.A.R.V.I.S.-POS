@@ -84,7 +84,7 @@ Y.A.R.V.I.S.-POS/
     │   └── front-empleado/            # Modulos del Empleado (Punto de Venta).
     │       ├── EmployeeDashboard.tsx
     │       └── ventanas/
-    │           ├── emplea_new_venta/  #   nueva_venta.tsx (+ modalventa, modalticket)
+    │           ├── emplea_new_venta/  #   nueva_venta.tsx (+ ventana-cobro/)
     │           ├── empleaajustes/ajustes.tsx
     │           ├── empleaproveedores/ #   proveedores.tsx + componentes/ (modal-alta, modal-compra, modal-factura)
     │           ├── empleainventario/inventario.tsx
