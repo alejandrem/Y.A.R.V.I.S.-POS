@@ -20,8 +20,10 @@ pub const PROVIDERS: &[Provider] = &[
         name: "Gemini",
         base_url: "https://generativelanguage.googleapis.com/v1beta",
         // gemini-2.x fue RETIRADO para keys nuevas ("no longer available to new
-        // users", error 404). La API recomienda gemini-3.6-flash (verificado).
-        default_model: "gemini-3.6-flash",
+        // users", error 404). Verificado en vivo 2026-09-19 con key AIza real:
+        // gemini-3.5-flash-lite responde 200 + stream SSE correcto; es además
+        // el más ligero/barato (ideal para caja). 3.6-flash también responde.
+        default_model: "gemini-3.5-flash-lite",
     },
     Provider {
         key: "opencode",

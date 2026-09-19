@@ -29,7 +29,7 @@ export interface ChatSession {
 export type ModelKey = string;
 
 export const CLOUD_PROVIDERS: { id: "google" | "opencode"; display: string; defaultModel: string }[] = [
-  { id: "google", display: "Gemini", defaultModel: "gemini-3.6-flash" },
+  { id: "google", display: "Gemini", defaultModel: "gemini-3.5-flash-lite" },
   { id: "opencode", display: "OpenCode", defaultModel: "nemotron-3-ultra-free" },
 ];
 
