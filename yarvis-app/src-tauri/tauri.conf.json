@@ -51,7 +51,11 @@
       "dlls/ggml.dll": "ggml.dll",
       "dlls/ggml-base.dll": "ggml-base.dll",
       "dlls/ggml-cpu.dll": "ggml-cpu.dll",
-      "dlls/mtmd.dll": "mtmd.dll"
+      "dlls/mtmd.dll": "mtmd.dll",
+      "datasets/abarrotes.csv": "datasets/abarrotes.csv",
+      "datasets/botana.csv": "datasets/botana.csv",
+      "datasets/lacteos.csv": "datasets/lacteos.csv",
+      "datasets/refrescos.csv": "datasets/refrescos.csv"
     }
   }
 }

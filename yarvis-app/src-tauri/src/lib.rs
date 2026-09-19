@@ -111,6 +111,7 @@ pub fn run() {
             backventanas::codigos_barras::get_product_by_barcode,
             backventanas::codigos_barras::semaforo_verde::verde_autoasignar,
             backventanas::codigos_barras::semaforo_verde::verde_importar_catalogo,
+            backventanas::codigos_barras::semaforo_verde::cargar_catalogo_incluido,
             backventanas::codigos_barras::semaforo_verde::verde_contar_hoy,
             backventanas::codigos_barras::semaforo_rojo::rojo_registrar_pendiente,
             backventanas::codigos_barras::semaforo_rojo::rojo_listar_pendientes,
@@ -195,6 +196,7 @@ pub fn run() {
             backventanas::backempleado::empleatickets::mis_tickets::get_mis_kpis,
             backventanas::backempleado::empleatickets::mis_tickets::get_mis_ventas_por_dia,
             backventanas::backempleado::empleatickets::mis_tickets::get_mi_ticket_detalle,
+            backventanas::backempleado::empleatickets::mis_cortes::get_mis_cortes,
             // Finanzas - Gastos
             backventanas::backadmin::adminfinanzas::gastos::get_gastos_recurrentes,
             backventanas::backadmin::adminfinanzas::gastos::crear_gasto,

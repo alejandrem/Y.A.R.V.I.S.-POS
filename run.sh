@@ -40,6 +40,11 @@ if [ ! -d "node_modules" ]; then
     fi
 fi
 
+# 3. Refrescar datasets incluidos (dataset/ es canónico; src-tauri/datasets/
+#    es la copia que viaja en resources del bundle y que usa el dev).
+mkdir -p src-tauri/datasets
+cp -f "$ROOT_DIR/dataset/"*.csv src-tauri/datasets/ 2>/dev/null || true
+
 echo ""
 echo "[INFO] Iniciando Y.A.R.V.I.S. POS en modo desarrollo..."
 npm run tauri dev

@@ -49,6 +49,11 @@ if not exist "node_modules\" (
 REM 3. Ajustes de compatibilidad bindgen / Clang para MSVC 2026 en Windows
 set "BINDGEN_EXTRA_CLANG_ARGS=-D__clang_major__=20"
 
+REM 4. Refrescar datasets incluidos (dataset\ es canonico; src-tauri\datasets\
+REM    es la copia que viaja en resources del bundle y que usa el dev).
+if not exist "src-tauri\datasets\" mkdir "src-tauri\datasets"
+copy /y "..\dataset\*.csv" "src-tauri\datasets\" >nul
+
 echo.
 echo [INFO] Iniciando Y.A.R.V.I.S. POS en modo desarrollo...
 call npm run tauri dev

@@ -92,3 +92,43 @@ longitud+charset, deteccion de duplicado por mensaje SQLite.
 - El escaner no es un "modulo": son 3 capas delgadas (migracion + 1 archivo
   Rust + filtro existente). A proposito, para no crear una Fase solo para
   un pitido.
+
+## 7. De donde salen los codigos: catálogo de fábrica + CSV (semáforo)
+
+Los productos nacidos de tickets no traen EAN, así que la cola puede
+nacer vacía (0 vínculos, 0 pendientes). El llenado vive en
+Inventario → Códigos (`PanelCodigos.tsx`), con dos entradas:
+
+- **De fábrica** (`cargar_catalogo_incluido`): cruza los 4 CSV
+  incluidos en el `.exe` (`tauri.conf.json` resources →
+  `datasets/*.csv`, copia de `dataset/`; `src-tauri/datasets/` en
+  dev, refrescada por `run`/`build`) con tu inventario. Un clic,
+  sin buscar archivos.
+- **Importar CSV** (`verde_importar_catalogo`): elige tus propios
+  CSV con formato `dataset/` (`ean,nombre,marca,
+  cantidad,unidad,categoria`).
+
+En ambos el embudo es el mismo:
+
+- Gemelo exacto (mismo nombre normalizado + presentación + marca +
+  EAN válido y libre) → **verde**: asigna + audita en
+  `vinculos_codigos` (`origen='auto-verde'`).
+- Todo lo demás → **semáforo** vía el mismo `sugerir` del pitazo en
+  caja (`semaforo_verde/verde.rs:derivar_a_semaforo`): amarillo con
+  candidatos, rojo sin match o conflicto si 2 productos lo reclaman.
+- Re-importar es idempotente: espejo hace upsert, el verde no duplica
+  y los pendientes existentes no se tocan (ni `veces_visto` sube).
+
+- Gemelo exacto (mismo nombre normalizado + presentación + marca +
+  EAN válido y libre) → **verde**: asigna + audita en
+  `vinculos_codigos` (`origen='auto-verde'`).
+- Todo lo demás → **semáforo** vía el mismo `sugerir` del pitazo en
+  caja (`semaforo_verde/verde.rs:derivar_a_semaforo`): amarillo con
+  candidatos, rojo sin match o conflicto si 2 productos lo reclaman.
+- Re-importar es idempotente: espejo hace upsert, el verde no duplica
+  y los pendientes existentes no se tocan (ni `veces_visto` sube).
+
+El resumen vuelve al frontend (`verde_asignados`, `sin_match`,
+`conflictos`, `pendientes_nuevos`, `errores`) y la cola se administra
+igual venga de caja o de catálogo: confirmar amarillo, alta o
+asignación desde rojo, o pasar conflicto a rojo.

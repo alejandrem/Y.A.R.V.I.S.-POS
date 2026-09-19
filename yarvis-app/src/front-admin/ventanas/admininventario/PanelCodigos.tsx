@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MorphIcon } from "morphicons/react";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   ICONO_ALERTA_CIRCULO,
   ICONO_BUSCAR,
@@ -16,18 +17,22 @@ import {
   ICONO_EQUIS,
   ICONO_INFO,
   ICONO_RELOJ,
+  ICONO_SUBIR,
 } from "../../../icons";
 import { notificarExito } from "../../../components/notificaciones";
-import { reportarError } from "../../../services/tauri";
+import { invokeTauri, reportarError } from "../../../services/tauri";
 import { obtenerInventario, type InventoryItem } from "../../../services/inventario";
 import {
   confirmarAmarillo,
   contarPendientes,
   contarVerdeHoy,
+  importarCatalogoBarras,
   listarPendientes,
   ningunoAmarillo,
+  usarCatalogoIncluido,
   type ConteosPendientes,
   type ConteosVerde,
+  type FilaCatalogoBarras,
   type PendienteCodigo,
 } from "../../../services/semaforo";
 import TarjetaAmarilla from "./TarjetaAmarilla";
@@ -42,6 +47,38 @@ const FILTROS: { id: FiltroEstado; label: string }[] = [
   { id: "conflicto", label: "Conflicto" },
 ];
 
+/** Parsea CSV con formato dataset (ean,nombre,marca,cantidad,unidad,
+ * categoria). Puro y testeable: ignora BOM, header, líneas vacías y
+ * filas sin ean/nombre o con cantidad no numérica (esas las reporta
+ * el backend en `errores`). Los campos no traen comas por regla del
+ * dataset, así que el split simple basta. */
+export const parsearCsvBarras = (texto: string): FilaCatalogoBarras[] => {
+  const lineas = texto
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const datos = lineas.length > 0 && lineas[0].toLowerCase().startsWith("ean,")
+    ? lineas.slice(1)
+    : lineas;
+  const filas: FilaCatalogoBarras[] = [];
+  for (const linea of datos) {
+    const [ean, nombre, marca, cantidad, unidad, categoria] = linea.split(",").map((c) => c.trim());
+    if (!ean || !nombre) continue;
+    const cant = Number(cantidad);
+    if (!Number.isFinite(cant)) continue;
+    filas.push({
+      ean,
+      nombre,
+      marca: marca || null,
+      cantidad: cant,
+      unidad: unidad || "",
+      categoria: categoria || null,
+    });
+  }
+  return filas;
+};
+
 const PanelCodigos = () => {
   const [conteos, setConteos] = useState<ConteosPendientes>({ rojo: 0, amarillo: 0, conflicto: 0, resuelto: 0 });
   const [verdes, setVerdes] = useState<ConteosVerde>({ verdes_hoy: 0, total_vinculos: 0 });
@@ -52,6 +89,7 @@ const PanelCodigos = () => {
   const [seleccionadas, setSeleccionadas] = useState<number[]>([]);
   const [cargando, setCargando] = useState(true);
   const [enLote, setEnLote] = useState(false);
+  const [importando, setImportando] = useState(false);
 
   const cargar = async () => {
     setCargando(true);
@@ -136,6 +174,63 @@ const PanelCodigos = () => {
     }
   };
 
+  // Catálogo de fábrica (datasets/ dentro del .exe): un clic, sin
+  // buscar archivos. Comparte resumen y recarga con importarCatalogo.
+  const usarIncluido = async () => {
+    try {
+      setImportando(true);
+      const res = await usarCatalogoIncluido();
+      notificarExito(
+        `De fábrica: ${res.verde_asignados} verde, ${res.pendientes_nuevos} a la cola (${res.sin_match} sin match, ${res.conflictos} conflicto)`,
+      );
+      if (res.errores.length > 0) {
+        reportarError(`${res.errores.length} filas con error`, res.errores.slice(0, 5).join(" · "));
+      }
+      await cargar();
+    } catch (e) {
+      reportarError("No se pudo cargar el catálogo incluido", e);
+    } finally {
+      setImportando(false);
+    }
+  };
+
+  // Importa uno o varios CSV con formato dataset (ean,nombre,marca,
+  // cantidad,unidad,categoria): el backend cruza cada fila con el
+  // inventario (verde al gemelo exacto) y deriva el resto al semáforo
+  // para administración manual. Idempotente: re-importar no duplica.
+  const importarCatalogo = async () => {
+    try {
+      const sel = await open({
+        multiple: true,
+        filters: [{ name: "Catálogo de códigos", extensions: ["csv"] }],
+      });
+      if (!sel) return;
+      const rutas = (Array.isArray(sel) ? sel : [sel]) as string[];
+      setImportando(true);
+      const filas: FilaCatalogoBarras[] = [];
+      for (const ruta of rutas) {
+        const texto = await invokeTauri<string>("leer_archivo_raw", { path: ruta });
+        filas.push(...parsearCsvBarras(texto));
+      }
+      if (!filas.length) {
+        reportarError("Sin filas válidas", "El CSV no trae filas ean,nombre,marca,cantidad,unidad,categoria");
+        return;
+      }
+      const res = await importarCatalogoBarras(filas);
+      notificarExito(
+        `Catálogo: ${res.verde_asignados} verde, ${res.pendientes_nuevos} a la cola (${res.sin_match} sin match, ${res.conflictos} conflicto)`,
+      );
+      if (res.errores.length > 0) {
+        reportarError(`${res.errores.length} filas con error`, res.errores.slice(0, 5).join(" · "));
+      }
+      await cargar();
+    } catch (e) {
+      reportarError("No se pudo importar el catálogo", e);
+    } finally {
+      setImportando(false);
+    }
+  };
+
   const tiles = [
     { label: "Verde auto hoy", valor: verdes.verdes_hoy, icon: ICONO_CHECK_CIRCULO, cls: "text-emerald-600 bg-emerald-50 border-emerald-200" },
     { label: "Amarillo por confirmar", valor: conteos.amarillo, icon: ICONO_ALERTA_CIRCULO, cls: "text-amber-600 bg-amber-50 border-amber-200" },
@@ -152,13 +247,31 @@ const PanelCodigos = () => {
             Cola semáforo · {verdes.total_vinculos} vínculos · {conteos.resuelto} resueltos
           </p>
         </div>
-        <button
-          onClick={cargar}
-          disabled={cargando}
-          className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-700 disabled:opacity-50"
-        >
-          <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.5} /> {cargando ? "Cargando…" : "Actualizar"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={usarIncluido}
+            disabled={importando || cargando}
+            title="Cruza los 308 productos incluidos en la app con tu inventario"
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 disabled:opacity-50"
+          >
+            <MorphIcon icon={ICONO_CHECK_CIRCULO} size={14} strokeWidth={2.5} /> {importando ? "Cruzando…" : "De fábrica"}
+          </button>
+          <button
+            onClick={importarCatalogo}
+            disabled={importando || cargando}
+            title="Elige tus propios CSV con formato dataset"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-neutral-200 text-neutral-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-neutral-900 hover:text-neutral-900 disabled:opacity-50"
+          >
+            <MorphIcon icon={ICONO_SUBIR} size={14} strokeWidth={2.5} /> {importando ? "Importando…" : "Importar CSV"}
+          </button>
+          <button
+            onClick={cargar}
+            disabled={cargando}
+            className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-700 disabled:opacity-50"
+          >
+            <MorphIcon icon={ICONO_RELOJ} size={14} strokeWidth={2.5} /> {cargando ? "Cargando…" : "Actualizar"}
+          </button>
+        </div>
       </header>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -230,7 +343,23 @@ const PanelCodigos = () => {
         <div className="rounded-[2rem] border border-neutral-200 bg-white p-12 text-center">
           <MorphIcon icon={ICONO_CODIGO_BARRAS} size={32} strokeWidth={2} className="mx-auto text-neutral-300" />
           <p className="mt-3 text-xs font-black uppercase tracking-widest text-neutral-900">Cola vacía</p>
-          <p className="mt-1 text-[10px] font-bold uppercase text-neutral-400">Pita o importa para estrenar el semáforo</p>
+          <p className="mt-1 text-[10px] font-bold uppercase text-neutral-400">Cruza el catálogo de fábrica o importa tu CSV para estrenar el semáforo</p>
+          <div className="mt-5 flex items-center justify-center gap-2 flex-wrap">
+            <button
+              onClick={usarIncluido}
+              disabled={importando}
+              className="inline-flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 disabled:opacity-50"
+            >
+              <MorphIcon icon={ICONO_CHECK_CIRCULO} size={14} strokeWidth={2.5} /> {importando ? "Cruzando…" : "Usar catálogo de fábrica"}
+            </button>
+            <button
+              onClick={importarCatalogo}
+              disabled={importando}
+              className="inline-flex items-center gap-2 px-5 py-3 bg-white border border-neutral-200 text-neutral-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-neutral-900 hover:text-neutral-900 disabled:opacity-50"
+            >
+              <MorphIcon icon={ICONO_SUBIR} size={14} strokeWidth={2.5} /> {importando ? "Importando…" : "Importar CSV"}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-6">

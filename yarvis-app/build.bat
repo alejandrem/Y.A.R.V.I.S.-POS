@@ -86,6 +86,15 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
+echo [INFO] Refrescando src-tauri\datasets\ con los CSV canonicos de dataset\...
+if not exist "src-tauri\datasets\" mkdir "src-tauri\datasets"
+copy /y "..\dataset\*.csv" "src-tauri\datasets\" >nul
+if !errorlevel! neq 0 (
+    echo [ERROR] No se pudieron copiar los CSV a src-tauri\datasets\.
+    pause
+    exit /b 1
+)
+
 REM 6. Fase 2: bundles. Por defecto NSIS (un solo .exe instalador).
 REM    Si pasas argumentos, se usan tal cual. Ej: build.bat --bundles msi
 set "BUNDLES=--bundles nsis"

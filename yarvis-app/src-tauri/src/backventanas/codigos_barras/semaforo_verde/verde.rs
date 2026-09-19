@@ -21,9 +21,11 @@ use super::presentacion::{
     extraer_presentacion, misma_presentacion, presentacion_de_catalogo, quitar_presentacion,
 };
 use crate::backventanas::auth::AuthState;
+use crate::backventanas::codigos_barras::semaforo_amarillo::sugerir_impl;
 use crate::backventanas::codigos_barras::{
     normalizar_codigo_obligatorio, validar_codigo_barras,
 };
+use tauri::Manager;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
@@ -48,6 +50,10 @@ pub struct ResumenImportCatalogo {
     pub verde_asignados: usize,
     pub sin_match: usize,
     pub conflictos: usize,
+    /// Pendientes NUEVOS que el lote derivó al semáforo (amarillo /
+    /// rojo / conflicto) para administración manual. Lo ya existente
+    /// o resuelto no se toca ni se cuenta aquí.
+    pub pendientes_nuevos: usize,
     pub errores: Vec<String>,
 }
 
@@ -213,6 +219,35 @@ pub async fn intentar_verde_impl(
 
 // ---------- Lote: importar dataset + auto-asignar ----------
 
+/// Embudo del lote al semáforo: lo que no logró verde entra a la cola
+/// (amarillo / rojo / conflicto) por el MISMO `sugerir` del pitazo en
+/// caja — el admin lo administra igual, venga de donde venga.
+///
+/// Si el pendiente ya existe (re-import o ya resuelto), no se toca:
+/// lo resuelto queda en 'resuelto' y lo pendiente sigue su flujo.
+/// Devuelve true si se creó un pendiente nuevo.
+async fn derivar_a_semaforo(
+    pool: &SqlitePool,
+    ticket_txt: &str,
+    marca: Option<&str>,
+    ean: &str,
+) -> Result<bool, String> {
+    let nombre_norm = src_ia::embeddings::normalizar(ticket_txt);
+    let existe: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pendientes_codigos WHERE nombre_norm = ? AND ean = ?",
+    )
+    .bind(&nombre_norm)
+    .bind(ean)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if existe > 0 {
+        return Ok(false);
+    }
+    sugerir_impl(pool, ticket_txt, marca, Some(ean)).await?;
+    Ok(true)
+}
+
 /// Guarda el dataset en `catalogo_barras` (upsert idempotente) y por
 /// cada fila busca UN producto gemelo (mismo nombre_norm + misma
 /// presentacion + misma marca + sin codigo). 0 gemelos = sin_match,
@@ -235,6 +270,7 @@ pub async fn importar_catalogo_barras_impl(
         verde_asignados: 0,
         sin_match: 0,
         conflictos: 0,
+        pendientes_nuevos: 0,
         errores: vec![],
     };
     for f in filas {
@@ -296,30 +332,47 @@ pub async fn importar_catalogo_barras_impl(
                 _ => continue,
             }
         }
+        // El `nombre` del dataset viene SIN presentacion
+        // (dataset/README.md), pero el verde compara texto de
+        // ticket (que SI la trae: "cocacola 600"). Se reconstruye
+        // el texto-ticket para el intento y para el semáforo; el
+        // vinculo guarda ese texto, que es justo lo que pitara la
+        // tienda despues.
+        let cant_txt = if f.cantidad.fract() == 0.0 {
+            format!("{}", f.cantidad as i64)
+        } else {
+            format!("{}", f.cantidad)
+        };
+        let ticket_txt = format!("{} {}{}", f.nombre, cant_txt, unidad_canon);
         match gemelos.len() {
-            0 => res.sin_match += 1,
+            0 => {
+                res.sin_match += 1;
+                if derivar_a_semaforo(pool, &ticket_txt, f.marca.as_deref(), &ean).await? {
+                    res.pendientes_nuevos += 1;
+                }
+            }
             1 => {
-                // El `nombre` del dataset viene SIN presentacion
-                // (dataset/README.md), pero el verde compara texto de
-                // ticket (que SI la trae: "cocacola 600"). Se reconstruye
-                // el texto-ticket para el intento; el vinculo guarda ese
-                // texto, que es justo lo que pitara la tienda despues.
-                let cant_txt = if f.cantidad.fract() == 0.0 {
-                    format!("{}", f.cantidad as i64)
-                } else {
-                    format!("{}", f.cantidad)
-                };
-                let ticket_txt = format!("{} {}{}", f.nombre, cant_txt, unidad_canon);
                 let v = intentar_verde_impl(pool, &ticket_txt, f.marca.as_deref(), &ean, gemelos[0], confirmado_por).await?;
                 if v.asignado {
                     res.verde_asignados += 1;
                 } else if v.motivo.contains("conflicto") || v.motivo.contains("reclamado") {
                     res.conflictos += 1;
+                    if derivar_a_semaforo(pool, &ticket_txt, f.marca.as_deref(), &ean).await? {
+                        res.pendientes_nuevos += 1;
+                    }
                 } else {
                     res.sin_match += 1;
+                    if derivar_a_semaforo(pool, &ticket_txt, f.marca.as_deref(), &ean).await? {
+                        res.pendientes_nuevos += 1;
+                    }
                 }
             }
-            _ => res.conflictos += 1,
+            _ => {
+                res.conflictos += 1;
+                if derivar_a_semaforo(pool, &ticket_txt, f.marca.as_deref(), &ean).await? {
+                    res.pendientes_nuevos += 1;
+                }
+            }
         }
     }
     Ok(res)
@@ -348,6 +401,86 @@ pub async fn verde_importar_catalogo(
 ) -> Result<ResumenImportCatalogo, String> {
     let ses = auth.require_admin()?;
     importar_catalogo_barras_impl(&*state, &filas, Some(ses.user_id)).await
+}
+
+/// Catálogos incluidos en el instalador (`tauri.conf.json` resources →
+/// `datasets/*.csv`; en dev viven en `src-tauri/datasets/`). Son la
+/// copia de `dataset/` de la raíz del repo.
+const CATALOGOS_INCLUIDOS: &[&str] = &["abarrotes", "botana", "lacteos", "refrescos"];
+
+/// Parsea CSV con formato dataset (`ean,nombre,marca,cantidad,unidad,
+/// categoria`). Puro y testeable: ignora BOM, header, líneas vacías y
+/// filas sin ean/nombre o con cantidad no numérica (esas las reporta
+/// `importar_catalogo_barras_impl` en `errores`). Los campos no traen
+/// comas por regla del dataset, así que el split simple basta.
+pub fn parsear_csv_barras(texto: &str, categoria_defecto: &str) -> Vec<CatalogoRow> {
+    let mut filas = vec![];
+    for linea in texto.replace('\u{FEFF}', "").lines() {
+        let linea = linea.trim();
+        if linea.is_empty() || linea.to_lowercase().starts_with("ean,") {
+            continue;
+        }
+        let partes: Vec<&str> = linea.split(',').map(str::trim).collect();
+        let ean = partes.first().copied().unwrap_or("");
+        let nombre = partes.get(1).copied().unwrap_or("");
+        if ean.is_empty() || nombre.is_empty() {
+            continue;
+        }
+        let cantidad: f64 = match partes.get(3).copied().unwrap_or("").parse() {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let marca_txt = partes.get(2).copied().unwrap_or("");
+        let categoria_txt = partes.get(5).copied().unwrap_or("");
+        filas.push(CatalogoRow {
+            ean: ean.into(),
+            nombre: nombre.into(),
+            marca: if marca_txt.is_empty() { None } else { Some(marca_txt.into()) },
+            cantidad,
+            unidad: partes.get(4).copied().unwrap_or("").into(),
+            categoria: Some(if categoria_txt.is_empty() {
+                categoria_defecto.into()
+            } else {
+                categoria_txt.into()
+            }),
+        });
+    }
+    filas
+}
+
+/// Comando Tauri: carga los 4 CSV incluidos en el `.exe` y los cruza
+/// con el inventario (mismo embudo que `verde_importar_catalogo`).
+/// Un clic, sin buscar archivos. Solo admin (escribe inventario).
+#[tauri::command]
+pub async fn cargar_catalogo_incluido(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+) -> Result<ResumenImportCatalogo, String> {
+    let ses = auth.require_admin()?;
+    let base = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("datasets");
+    let mut filas = vec![];
+    let mut faltantes = vec![];
+    for nombre in CATALOGOS_INCLUIDOS {
+        match std::fs::read_to_string(base.join(format!("{nombre}.csv"))) {
+            Ok(texto) => filas.extend(parsear_csv_barras(&texto, nombre)),
+            Err(e) => faltantes.push(format!("{nombre}.csv: {e}")),
+        }
+    }
+    if filas.is_empty() {
+        return Err(if faltantes.is_empty() {
+            "Los catálogos incluidos no traen filas válidas.".into()
+        } else {
+            format!("No se pudieron leer los catálogos incluidos: {}", faltantes.join(" · "))
+        });
+    }
+    let mut res = importar_catalogo_barras_impl(&*state, &filas, Some(ses.user_id)).await?;
+    res.errores = faltantes.into_iter().chain(res.errores).collect();
+    Ok(res)
 }
 
 /// Auto-verdes de hoy + vinculos totales (contadores del front).

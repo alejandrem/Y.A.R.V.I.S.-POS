@@ -18,7 +18,8 @@ use yarvis_app_lib::backventanas::codigos_barras::semaforo_rojo::{
     registrar_pendiente_impl, resolver_asignando_impl, resolver_con_alta_impl,
 };
 use yarvis_app_lib::backventanas::codigos_barras::semaforo_verde::{
-    contar_verde_impl, importar_catalogo_barras_impl, intentar_verde_impl, CatalogoRow,
+    contar_verde_impl, importar_catalogo_barras_impl, intentar_verde_impl, parsear_csv_barras,
+    CatalogoRow,
 };
 
 fn fila(ean: &str, nombre: &str, marca: &str, cantidad: f64, unidad: &str) -> CatalogoRow {
@@ -162,6 +163,68 @@ async fn importar_dataset_guarda_espejo_y_autoasigna_gemelo() {
 }
 
 #[tokio::test]
+async fn importar_dataset_deriva_sin_match_al_semaforo() {    let pool = db().await;
+    let id = seed_con_presentacion(&pool, "LECHE SANTA CLARA CAFE", "Santa Clara", 250.0, "ml").await;
+
+    // SABRITAS no tiene gemelo en tienda: sin_match + pendiente nuevo.
+    let res = importar_catalogo_barras_impl(
+        &pool,
+        &[
+            fila("7501055370276", "LECHE SANTA CLARA CAFE", "Santa Clara", 250.0, "ml"),
+            fila("7501011101456", "SABRITAS ORIGINAL", "Sabritas", 42.0, "g"),
+        ],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(res.verde_asignados, 1);
+    assert_eq!(res.pendientes_nuevos, 1);
+
+    let pendientes = escalar_i64(&pool, "SELECT COUNT(*) FROM pendientes_codigos").await;
+    assert_eq!(pendientes, 1);
+    let estado: String = sqlx::query_scalar(
+        "SELECT estado FROM pendientes_codigos WHERE ean = '7501011101456'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        ["rojo", "amarillo", "conflicto"].contains(&estado.as_str()),
+        "estado inesperado: {estado}"
+    );
+
+    // Re-importar no crea otro pendiente ni bumpea veces_visto.
+    let res2 = importar_catalogo_barras_impl(
+        &pool,
+        &[fila("7501011101456", "SABRITAS ORIGINAL", "Sabritas", 42.0, "g")],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(res2.pendientes_nuevos, 0);
+    assert_eq!(
+        escalar_i64(&pool, "SELECT COUNT(*) FROM pendientes_codigos").await,
+        1
+    );
+    let veces: i64 = sqlx::query_scalar(
+        "SELECT veces_visto FROM pendientes_codigos WHERE ean = '7501011101456'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(veces, 1);
+
+    // El verde de la leche siguió intacto.
+    let cb: Option<String> =
+        sqlx::query_scalar("SELECT codigo_barras FROM productos WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(cb.as_deref(), Some("7501055370276"));
+}
+
+#[tokio::test]
 async fn rojo_registra_idempotente_y_resuelve_asignando() {
     let pool = db().await;
     let prod = seed_con_presentacion(&pool, "PAN DULCE SURTIDO", "Bimbo", 500.0, "g").await;
@@ -247,4 +310,21 @@ async fn contar_verde_hoy_solo_cuenta_los_de_hoy() {
     let c = contar_verde_impl(&pool).await.unwrap();
     assert_eq!(c.verdes_hoy, 1);
     assert_eq!(c.total_vinculos, 2);
+}
+
+#[test]
+fn parsear_csv_barras_tolera_bom_header_y_filas_malas() {
+    let texto = "\u{FEFF}ean,nombre,marca,cantidad,unidad,categoria\r\n\
+                 7501011101456,SABRITAS ORIGINAL,Sabritas,42,g,botana\r\n\
+                 \r\n\
+                 ,SIN EAN,Sabritas,42,g,botana\r\n\
+                 7501055304745,COCA COLA ORIGINAL,,600,ml,\r\n\
+                 7501011101463,MALA CANTIDAD,Sabritas,xx,g,botana\r\n";
+    let filas = parsear_csv_barras(texto, "botana");
+    assert_eq!(filas.len(), 2);
+    assert_eq!(filas[0].ean, "7501011101456");
+    assert_eq!(filas[0].cantidad, 42.0);
+    // Marca/categoría vacías: marca None, categoría = defecto (archivo).
+    assert_eq!(filas[1].marca, None);
+    assert_eq!(filas[1].categoria.as_deref(), Some("botana"));
 }

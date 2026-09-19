@@ -19,6 +19,11 @@
 set -e
 cd "$(dirname "$0")"
 
+# datasets/ incluidos: dataset/ (raíz) es canónico; src-tauri/datasets/
+# es la copia que viaja en resources del bundle.
+mkdir -p src-tauri/datasets
+cp -f ../dataset/*.csv src-tauri/datasets/
+
 export NO_STRIP=1
 export LD_LIBRARY_PATH="$PWD/src-tauri/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 

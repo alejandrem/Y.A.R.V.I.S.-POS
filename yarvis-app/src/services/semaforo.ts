@@ -43,6 +43,40 @@ export interface SugerenciaTop {
   candidatos: CandidatoCodigo[];
 }
 
+export interface FilaCatalogoBarras {
+  ean: string;
+  nombre: string;
+  marca?: string | null;
+  cantidad: number;
+  unidad: string;
+  categoria?: string | null;
+}
+
+export interface ResumenImportCatalogo {
+  catalogo_upserts: number;
+  verde_asignados: number;
+  sin_match: number;
+  conflictos: number;
+  pendientes_nuevos: number;
+  errores: string[];
+}
+
+/** Cruza un lote de filas (formato dataset/*.csv) con el inventario:
+ * verde auto-asigna al gemelo exacto y lo demás cae al semáforo
+ * (amarillo/rojo/conflicto) para administración manual. Solo admin. */
+export async function importarCatalogoBarras(
+  filas: FilaCatalogoBarras[],
+): Promise<ResumenImportCatalogo> {
+  return invoke<ResumenImportCatalogo>("verde_importar_catalogo", { filas });
+}
+
+/** Cruza los 4 CSV incluidos de fábrica en el `.exe` (datasets/) con el
+ * inventario: verde al gemelo exacto, resto al semáforo. Un clic, sin
+ * buscar archivos. Solo admin. Idempotente: repetir no duplica. */
+export async function usarCatalogoIncluido(): Promise<ResumenImportCatalogo> {
+  return invoke<ResumenImportCatalogo>("cargar_catalogo_incluido");
+}
+
 export async function contarVerdeHoy(): Promise<ConteosVerde> {
   return invoke<ConteosVerde>("verde_contar_hoy");
 }
