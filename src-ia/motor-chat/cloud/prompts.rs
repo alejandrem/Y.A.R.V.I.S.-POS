@@ -1,7 +1,7 @@
 //! prompts.rs — Prompt mínimo para modelos de API/nube (sin RAG ni tools).
 //!
-//! Versión ligera de prompts.py: los proveedores de nube (OpenCode Zen, Gemini)
-//! no leen la base de datos ni el RAG. Reciben solo un system prompt corto de
+//! Versión ligera de prompts.py: los proveedores de nube (Gemini y
+//! compatibles OpenAI) no leen la base de datos ni el RAG. Reciben solo un system prompt corto de
 //! asistente de ventas + el historial del usuario.
 //! Espejo de `yarvis-IA/chatbot/motor_chat/modelos_API/prompts_api.py`.
 

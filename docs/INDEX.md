@@ -24,7 +24,7 @@ Documentos sobre el diseño del sistema, estructura de código y comunicación e
 - 📐 [**Arquitectura de Software**](arquitectura/arquitectura.md):
   Estructura de directorios del monorepo, ciclo de vida de la aplicación, comunicación IPC Tauri v2 y árbol de componentes.
 - 💻 [**Tecnologías y Stack Técnico**](arquitectura/tecnologias.md):
-  Stack 100% verificado: Tauri v2, Rust (2021), React 18, Vite, TypeScript, Tailwind CSS, SQLite con WAL y motor de chat híbrido (OpenCode Zen / Gemini / Qwen local).
+  Stack 100% verificado: Tauri v2, Rust (2021), React 18, Vite, TypeScript, Tailwind CSS, SQLite con WAL y motor de chat híbrido (Gemini / Qwen local).
 - 🔌 [**Interconexión y Comunicación**](arquitectura/interconexion.md):
   Protocolo de interacción entre la interfaz de usuario en React y el backend en Rust mediante comandos `invoke()`, eventos y contratos de datos.
 

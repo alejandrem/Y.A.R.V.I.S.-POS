@@ -1,7 +1,7 @@
 // ============================================================
 // generacion — API pública del motor cloud: `generar_stream` y
-// `generar_completo`. HTTP client compartido y relevo 429 entre
-// modelos (cola de modelos free de OpenCode). Parte de apis_cloud.
+// `generar_completo`. HTTP client compartido y reintento ante 429.
+// Parte de apis_cloud.
 // ============================================================
 
 use std::time::Duration;
@@ -31,11 +31,10 @@ pub(crate) fn cliente() -> Client {
         .expect("Error creando HTTP client compartido")
 }
 
-/// Genera el streaming del proveedor indicado, con relevo 429 entre modelos.
+/// Genera el streaming del proveedor indicado, con reintento ante 429.
 ///
 /// Espejo de `generar_stream` de Python:
-///     - OpenCode free → prueba hasta `MAX_MODELOS_A_PROBAR` modelos gratuitos.
-///     - Cualquier otro modelo → espera 2-4 s y reintenta una vez.
+///     - Ante 429 espera 2-4 s y reintenta (una vez más al agotar).
 ///     - Si el modelo YA cedió tokens y luego falla, el error se propaga tal cual.
 ///
 /// Devuelve [`Evento::Texto`] (texto + modelo real) y [`Evento::Uso`].

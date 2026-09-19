@@ -14,6 +14,10 @@ pub struct Provider {
 }
 
 /// Proveedores de nube soportados (espejo de PROVIDERS de Python).
+/// Solo Gemini: OpenCode Zen se retiró 2026-09-19 (su free tier bloquea
+/// a terceros y no hay facturación; ver bitácora). El transporte
+/// OpenAI-compatible (`stream_openai_compatible`) se conserva genérico
+/// para el día que entre otro proveedor (p. ej. NVIDIA).
 pub const PROVIDERS: &[Provider] = &[
     Provider {
         key: "google",
@@ -24,14 +28,6 @@ pub const PROVIDERS: &[Provider] = &[
         // gemini-3.5-flash-lite responde 200 + stream SSE correcto; es además
         // el más ligero/barato (ideal para caja). 3.6-flash también responde.
         default_model: "gemini-3.5-flash-lite",
-    },
-    Provider {
-        key: "opencode",
-        name: "OpenCode",
-        base_url: "https://opencode.ai/zen/v1",
-        // Verificado con la API real (2026-09-13): mimo/big-pickle se saturan;
-        // nemotron ultra respondió 200 + texto por el camino OpenAI-compatible.
-        default_model: "nemotron-3-ultra-free",
     },
 ];
 
@@ -45,9 +41,9 @@ pub const TIMEOUT_CONNECT_SECS: u64 = 30;
 /// mitad de respuesta.
 pub const TIMEOUT_IDLE_SECS: u64 = 90;
 
-/// Límite de tokens de SALIDA para OpenCode Zen (OpenAI-compatible usa
-/// `max_tokens`). Verificado 2026-09-15: 39800 provocaba 400 Upstream en
-/// free; 2048-4096 responde bien. Se deja en 4096 como techo seguro.
+/// Límite de tokens de SALIDA para el transporte OpenAI-compatible
+/// (`/chat/completions` usa `max_tokens`). Techo seguro 4096 para el día
+/// que entre otro proveedor por esta vía (p. ej. NVIDIA).
 pub const MAX_TOKENS: u32 = 4096;
 
 /// Límite de tokens de SALIDA para Gemini (`generationConfig.maxOutputTokens`).
@@ -56,31 +52,8 @@ pub const MAX_TOKENS: u32 = 4096;
 /// Antes se enviaba MAX_TOKENS tal cual y Gemini estaba roto por esto.
 pub const MAX_TOKENS_GOOGLE: u32 = 8192;
 
-/// Modelos gratuitos de OpenCode que NO terminan en "-free" pero sí lo son.
-pub const MODELOS_FREE_EXTRA: &[&str] = &["big-pickle"];
-
-/// Orden de fallback cuando un modelo free de OpenCode satura (429): se cambia
-/// automáticamente al siguiente de la lista hasta agotarlos.
-/// Verificado contra GET /zen/v1/models el 2026-09-15: solo estos free hablan
-/// `/chat/completions`. `muse-spark-*-contributor-free` existe pero usa
-/// `/responses` (otro endpoint) y NO va aquí.
-/// NOTA 2026-09-19: deepseek-v4-flash-free se retiró aguas arriba (400 "Model
-/// is unavailable") y salió de la lista. Además TODO free responde 403
-/// FreeTierError a apps terceras: el relevo solo revive si Zen reabre.
-pub const ORDEN_FALLBACK_FREE: &[&str] = &[
-    "nemotron-3-ultra-free",
-    "nemotron-3.5-lightning-free",
-    "mimo-v2.5-free",
-    "ling-3.0-flash-fin-free",
-    "big-pickle",
-];
-
-/// Máximo de modelos a probar en un solo mensaje (incluye el pedido). Si todos
-/// fallan, se cae al modelo local. Evita que el relevo tarde una eternidad.
-pub const MAX_MODELOS_A_PROBAR: usize = 3;
-
-/// Segundos a esperar ante un 429 entre modelo y modelo (rango corto para no
-/// frenar el chat: si está saturado, mejor pasar al siguiente rápido o caer al local).
+/// Segundos a esperar ante un 429 entre reintentos (rango corto para no
+/// frenar el chat: si está saturado, mejor reintentar rápido o caer al local).
 pub const ESPERA_429_MIN_SECS: u64 = 2;
 pub const ESPERA_429_MAX_SECS: u64 = 4;
 
@@ -101,18 +74,8 @@ mod tests {
     }
 
     #[test]
-    fn opencode_arranca_en_nemotron_ultra_free() {
-        let oc = PROVIDERS.iter().find(|p| p.key == "opencode").unwrap();
-        assert_eq!(oc.default_model, "nemotron-3-ultra-free");
-    }
-
-    #[test]
-    fn modelos_free_extra_no_estan_en_orden_fallback() {
-        for extra in MODELOS_FREE_EXTRA {
-            assert!(
-                ORDEN_FALLBACK_FREE.contains(extra),
-                "{extra} debe estar en el relevo"
-            );
-        }
+    fn google_arranca_en_flash_lite_verificado() {
+        let g = PROVIDERS.iter().find(|p| p.key == "google").unwrap();
+        assert_eq!(g.default_model, "gemini-3.5-flash-lite");
     }
 }

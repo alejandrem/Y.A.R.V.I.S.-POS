@@ -39,29 +39,6 @@ impl ErrorCloud {
 /// Traduce errores HTTP del proveedor a mensajes claros en español.
 /// Si el servidor mandó detalle en el cuerpo, se anexa (recortado).
 fn error_amigable(status: u16, display: &str, body: Option<&str>) -> String {
-    // Bloqueo de free tier de Zen a apps de terceros. Dos variantes vistas
-    // en campo: 400 MissingSessionID ("can only be used in OpenCode") y
-    // 403 ("can only be used from within OpenCode", a veces sin el tipo
-    // MissingSessionID en el cuerpo). El tipo del servidor es críptico y
-    // —peor— el genérico de abajo diría "API key inválida" cuando la key
-    // SÍ sirve: traducirlo a acción.
-    if display == "OpenCode"
-        && body
-            .map(|b| b.contains("MissingSessionID") || b.contains("free tier can only be used"))
-            .unwrap_or(false)
-    {
-        return "Zen bloqueó el free tier: solo funciona dentro de OpenCode (tu key sí sirve). Cambia al proveedor Gemini con tu clave de Google, o usa el modelo local Qwen.".to_string();
-    }
-    // Key válida pero sin fondos: Zen responde 401 CreditsError "No payment
-    // method" (verificado en campo 2026-09-19). No es key inválida: es
-    // cartera vacía. No confundir con un 401 de auth real.
-    if display == "OpenCode"
-        && body
-            .map(|b| b.contains("CreditsError") || b.contains("No payment method"))
-            .unwrap_or(false)
-    {
-        return "Tu key de Zen sí sirve pero no tiene fondos: agrega método de pago en opencode.ai, o cambia al proveedor Gemini (gratis) o al Qwen local.".to_string();
-    }
     let base = match status {
         429 => {
             "Error 429: muchas preguntas al mismo tiempo. Espera 1 minuto y reintenta.".to_string()
@@ -154,37 +131,6 @@ mod tests {
     }
 
     #[test]
-    fn bloqueo_free_tier_zen_se_traduce_a_accion() {
-        let err = ErrorCloud::Http {
-            status: 400,
-            retry_after: None,
-            body: Some(
-                r#"{"type":"error","error":{"type":"MissingSessionID","message":"Error from provider (Console): OpenCode's free tier can only be used in OpenCode"}}"#.to_string(),
-            ),
-        };
-        assert_eq!(
-            err.amigable("OpenCode"),
-            "Zen bloqueó el free tier: solo funciona dentro de OpenCode (tu key sí sirve). Cambia al proveedor Gemini con tu clave de Google, o usa el modelo local Qwen."
-        );
-    }
-
-    #[test]
-    fn bloqueo_free_tier_zen_403_within_tambien_es_bloqueo_no_key_invalida() {
-        // Variante vista en campo (2026-09-19): 403 sin MissingSessionID.
-        // Antes caía al genérico "API key inválida" con key válida.
-        let err = ErrorCloud::Http {
-            status: 403,
-            retry_after: None,
-            body: Some(
-                r#"{"error":"Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"}"#.to_string(),
-            ),
-        };
-        let msg = err.amigable("OpenCode");
-        assert!(msg.contains("tu key sí sirve"), "no debe culpar a la key: {msg}");
-        assert!(!msg.contains("inválida"), "cero mención a key inválida: {msg}");
-    }
-
-    #[test]
     fn error_403_de_otro_proveedor_sigue_siendo_key_invalida() {
         let err = ErrorCloud::Http {
             status: 403,
@@ -196,29 +142,13 @@ mod tests {
     }
 
     #[test]
-    fn error_401_sin_fondos_zen_no_es_key_invalida() {
-        // Verificado en campo 2026-09-19 con key gratuita real: 401
-        // CreditsError "No payment method" (free bloqueado + sin fondos).
-        let err = ErrorCloud::Http {
-            status: 401,
-            retry_after: None,
-            body: Some(
-                r#"{"type":"error","error":{"type":"CreditsError","message":"No payment method. Add a payment method here: https://opencode.ai/billing"}}"#.to_string(),
-            ),
-        };
-        let msg = err.amigable("OpenCode");
-        assert!(msg.contains("no tiene fondos"), "{msg}");
-        assert!(!msg.contains("inválida"), "cero mención a key inválida: {msg}");
-    }
-
-    #[test]
     fn error_401_auth_real_sigue_siendo_key_invalida() {
         let err = ErrorCloud::Http {
             status: 401,
             retry_after: None,
             body: Some(r#"{"error":{"message":"incorrect api key"}}"#.to_string()),
         };
-        let msg = err.amigable("OpenCode");
+        let msg = err.amigable("Google");
         assert!(msg.contains("API key inválida (error 401)"), "{msg}");
     }
 }

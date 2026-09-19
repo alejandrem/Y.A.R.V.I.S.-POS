@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn admin_reemplaza_total_incluso_borrando() {
         let previas = mapa(&[("google", "CLAVE-VIEJA")]);
-        let entrantes = mapa(&[("opencode", "NUEVA")]);
+        let entrantes = mapa(&[("nube", "NUEVA")]);
         let r = fusionar_claves_por_rol(&previas, &entrantes, Role::Admin).unwrap();
         assert_eq!(r, entrantes, "el admin escribe tal cual");
         // Borrado total también es válido para el admin.
@@ -173,10 +173,10 @@ mod tests {
     fn empleado_agrega_proveedor_nuevo() {
         let previas = mapa(&[("google", "CLAVE-ADMIN")]);
         // Flujo normal del frontend: reenvía previas + la nueva.
-        let entrantes = mapa(&[("google", "CLAVE-ADMIN"), ("opencode", "MIA")]);
+        let entrantes = mapa(&[("google", "CLAVE-ADMIN"), ("nube", "MIA")]);
         let r = fusionar_claves_por_rol(&previas, &entrantes, Role::Employee).unwrap();
         assert_eq!(r.get("google").unwrap(), "CLAVE-ADMIN");
-        assert_eq!(r.get("opencode").unwrap(), "MIA");
+        assert_eq!(r.get("nube").unwrap(), "MIA");
     }
 
     #[test]
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn empleado_no_puede_borrar_claves_del_admin() {
-        let previas = mapa(&[("google", "CLAVE-ADMIN"), ("opencode", "OTRA")]);
+        let previas = mapa(&[("google", "CLAVE-ADMIN"), ("nube", "OTRA")]);
         // Ataque del issue #4: mapa vacío para wipear todo.
         let r = fusionar_claves_por_rol(&previas, &HashMap::new(), Role::Employee);
         assert!(r.is_err(), "borrado total debe rechazarse");
@@ -204,7 +204,7 @@ mod tests {
         let r = fusionar_claves_por_rol(&previas, &mapa(&[("google", "CLAVE-ADMIN")]), Role::Employee);
         assert!(r.is_err(), "borrado parcial debe rechazarse");
         // Vaciar el valor es borrar con otro nombre.
-        let r = fusionar_claves_por_rol(&previas, &mapa(&[("google", ""), ("opencode", "OTRA")]), Role::Employee);
+        let r = fusionar_claves_por_rol(&previas, &mapa(&[("google", ""), ("nube", "OTRA")]), Role::Employee);
         assert!(r.is_err(), "vaciar debe rechazarse");
     }
 
@@ -216,3 +216,4 @@ mod tests {
         assert_eq!(r.get("google").unwrap(), "PRIMERA");
     }
 }
+

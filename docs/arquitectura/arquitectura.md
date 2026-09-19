@@ -140,14 +140,14 @@ Y.A.R.V.I.S.-POS/
 |                                                   |             |
 |                    +-------------------------------+-----------+ |
 |                    | local: llama.cpp (Qwen GGUF) |           | |
-|                    | cloud: HTTP + SSE (Opencode/Gemini) <-> Internet |
+|                    | cloud: HTTP + SSE (Gemini) <-> Internet |
 |                    | predicciones: Holt-Winters (sin red)     | |
 +---------------------------------------------------------------------+
 ```
 
 - Frontend <-> Rust: IPC nativo de Tauri (invoke). Sin HTTP local, sin puertos.
 - Rust <-> SQLite: sqlx en modo asincrono (pool), WAL activado, unico escritor.
-- Rust <-> IA: crate local src-ia (mismo proceso). Chat cloud (OpenCode Zen / Gemini via reqwest + SSE) con fallback a local (Qwen GGUF con llama-cpp-4). Parseo de tickets 100% reglas + estadística (detector/), sin LLM. Predicciones usan Holt-Winters puro sin red.
+- Rust <-> IA: crate local src-ia (mismo proceso). Chat cloud (Gemini via reqwest + SSE) con fallback a local (Qwen GGUF con llama-cpp-4). Parseo de tickets 100% reglas + estadística (detector/), sin LLM. Predicciones usan Holt-Winters puro sin red.
 
 ## Comandos registrados
 

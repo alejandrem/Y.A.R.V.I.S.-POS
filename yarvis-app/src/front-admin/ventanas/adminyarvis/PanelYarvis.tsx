@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // Panel de Y.A.R.V.I.S. compartido por ADMIN y EMPLEADO.
-// Selector de modelo (local GGUF o cloud OpenCode/Gemini), botón "Limpiar chat"
+// Selector de modelo (local GGUF o cloud Gemini), botón "Limpiar chat"
 // y "Configurar modelos". Orquesta el ChatWidget con su configuración vigente.
 //
 // Diferencias por rol:
@@ -36,10 +36,9 @@ import {
 
 type Rol = "admin" | "empleado";
 
-type ProviderId = "google" | "opencode";
+type ProviderId = "google";
 
 const API_PROVIDERS: { id: ProviderId; name: string; description: string; placeholder: string }[] = [
-  { id: "opencode", name: "OpenCode", description: "Modelos gratuitos compatibles con OpenAI", placeholder: "sk-…" },
   { id: "google", name: "Gemini", description: "Modelos de Google AI Studio", placeholder: "AIza…" },
 ];
 
@@ -66,7 +65,7 @@ interface PanelYarvisProps {
 
 const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const [showConfig, setShowConfig] = useState(false);
-  const [configSection, setConfigSection] = useState<"opencode" | "google" | "local">("opencode");
+  const [configSection, setConfigSection] = useState<"google" | "local">("google");
   const [showModelMenu, setShowModelMenu] = useState(false);
   // Las API keys viven en disco vía backend (api_keys.json con permisos
   // 0600) — NUNCA en localStorage, que queda en texto plano y es legible
@@ -76,7 +75,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const [localModelName, setLocalModelName] = useState("Modelo local");
   const [selectedProvider, setSelectedProvider] = useState<"" | ProviderId>(() => {
     const stored = localStorage.getItem("yarvis_active_provider");
-    return stored === "google" || stored === "opencode" ? stored : "";
+    return stored === "google" ? stored : "";
   });
   const [selectedCloudModels, setSelectedCloudModels] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem("yarvis_cloud_models_selected") || "{}"); } catch { return {}; }
@@ -197,7 +196,7 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
 
   const currentSelection: ChatModelSelection = useMemo(() => {
     if (selectedProvider) {
-      const providerName = selectedProvider === "google" ? "Gemini" : "OpenCode";
+      const providerName = "Gemini";
       const model = selectedCloudModels[selectedProvider] || CLOUD_PROVIDERS.find((provider) => provider.id === selectedProvider)?.defaultModel || "";
       return {
         provider: selectedProvider,
@@ -418,9 +417,9 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
       {showConfig && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
         <div className="yarvis-shell yarvis-panel yarvis-border yarvis-shadow max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border">
           <div className="yarvis-border flex items-center justify-between border-b px-6 py-5 sm:px-8"><div><h3 className="yarvis-text text-lg font-black uppercase tracking-tight">Fuentes de inteligencia</h3><p className="yarvis-muted mt-1 text-[10px] font-bold uppercase tracking-widest">Configura API cloud o tu modelo local</p></div><button onClick={() => setShowConfig(false)} className="yarvis-panel-soft yarvis-muted flex h-9 w-9 items-center justify-center rounded-xl text-xl">×</button></div>
-          <div className="flex gap-2 overflow-x-auto px-6 pt-5 sm:px-8">{[{ id: "opencode", label: "OpenCode" }, { id: "google", label: "Gemini" }, { id: "local", label: "Modelo local" }].map((item) => <button key={item.id} onClick={() => setConfigSection(item.id as typeof configSection)} className={`flex-shrink-0 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${configSection === item.id ? "yarvis-primary" : "yarvis-panel-soft yarvis-muted"}`}>{item.label}</button>)}</div>
+          <div className="flex gap-2 overflow-x-auto px-6 pt-5 sm:px-8">{[{ id: "google", label: "Gemini" }, { id: "local", label: "Modelo local" }].map((item) => <button key={item.id} onClick={() => setConfigSection(item.id as typeof configSection)} className={`flex-shrink-0 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${configSection === item.id ? "yarvis-primary" : "yarvis-panel-soft yarvis-muted"}`}>{item.label}</button>)}</div>
           <div className="custom-scrollbar max-h-[55vh] overflow-y-auto px-6 py-6 sm:px-8">
-            {configSection !== "local" ? <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">{configSection === "opencode" ? "OpenCode" : "Gemini"}</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">{API_PROVIDERS.find((provider) => provider.id === configSection)?.description}</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">API key</label><input type="password" value={apiKeys[configSection] || ""} onChange={(event) => setApiKeys({ ...apiKeys, [configSection]: event.target.value })} placeholder={API_PROVIDERS.find((provider) => provider.id === configSection)?.placeholder} readOnly={rol === "empleado" && !!apiKeys[configSection]} className={`yarvis-input mt-2 w-full rounded-xl border px-4 py-3 text-sm outline-none focus:border-sky-500 ${rol === "empleado" && apiKeys[configSection] ? "opacity-70 cursor-not-allowed" : ""}`} />{rol === "empleado" && apiKeys[configSection] && <p className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] font-bold text-emerald-600">🔒 Clave configurada por el administrador — protegida, no se puede quitar ni modificar.</p>}<div className="mt-5 flex items-center justify-between"><span className="yarvis-faint text-[10px] font-bold">{cloudModels[configSection]?.length || 0} modelos disponibles</span><button onClick={() => refreshCloudModels(configSection)} className="yarvis-muted text-[10px] font-black uppercase tracking-widest">{cloudModelsLoading[configSection] ? "Actualizando…" : "Actualizar modelos"}</button></div></div></div> : <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">Cualquier modelo GGUF</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">Selecciona Qwen 0.5B, 1.5B, 1.7B, 1.9B u otro modelo compatible con llama.cpp. El contexto local usa un valor seguro de 4096.</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">Ruta del archivo .gguf</label><div className="mt-2 flex gap-2"><input value={localModelPath} onChange={(event) => setLocalModelPath(event.target.value)} placeholder="/home/ale/Modelos/Qwen.gguf" className={`yarvis-input min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm outline-none ${rol === "empleado" ? "focus:border-emerald-600" : "focus:border-emerald-500"}`} /><button onClick={chooseLocalModel} className={rol === "empleado" ? "yarvis-panel-soft yarvis-border yarvis-text shrink-0 rounded-xl border px-4 text-xs font-black" : "yarvis-primary rounded-xl px-4 text-[10px] font-black uppercase tracking-widest"}>{rol === "empleado" ? "Examinar…" : "Buscar"}</button></div>{rol === "empleado" ? <button onClick={() => localModelPath && loadLocalModel()} disabled={!localModelPath || loadingModel === "local"} className="yarvis-primary mt-3 w-full rounded-xl py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-40">{loadingModel === "local" ? "Cargando…" : "Cargar modelo local"}</button> : localModelName && <p className="yarvis-muted mt-3 truncate text-[10px] font-bold">Actual: {localModelName}</p>}</div></div>}
+            {configSection !== "local" ? <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">Gemini</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">{API_PROVIDERS.find((provider) => provider.id === configSection)?.description}</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">API key</label><input type="password" value={apiKeys[configSection] || ""} onChange={(event) => setApiKeys({ ...apiKeys, [configSection]: event.target.value })} placeholder={API_PROVIDERS.find((provider) => provider.id === configSection)?.placeholder} readOnly={rol === "empleado" && !!apiKeys[configSection]} className={`yarvis-input mt-2 w-full rounded-xl border px-4 py-3 text-sm outline-none focus:border-sky-500 ${rol === "empleado" && apiKeys[configSection] ? "opacity-70 cursor-not-allowed" : ""}`} />{rol === "empleado" && apiKeys[configSection] && <p className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] font-bold text-emerald-600">🔒 Clave configurada por el administrador — protegida, no se puede quitar ni modificar.</p>}<div className="mt-5 flex items-center justify-between"><span className="yarvis-faint text-[10px] font-bold">{cloudModels[configSection]?.length || 0} modelos disponibles</span><button onClick={() => refreshCloudModels(configSection)} className="yarvis-muted text-[10px] font-black uppercase tracking-widest">{cloudModelsLoading[configSection] ? "Actualizando…" : "Actualizar modelos"}</button></div></div></div> : <div className="space-y-5"><div className="yarvis-panel-soft yarvis-border rounded-2xl border p-5"><p className="yarvis-text text-sm font-black">Cualquier modelo GGUF</p><p className="yarvis-muted mt-1 text-xs leading-relaxed">Selecciona Qwen 0.5B, 1.5B, 1.7B, 1.9B u otro modelo compatible con llama.cpp. El contexto local usa un valor seguro de 4096.</p><label className="yarvis-muted mt-5 block text-[10px] font-black uppercase tracking-widest">Ruta del archivo .gguf</label><div className="mt-2 flex gap-2"><input value={localModelPath} onChange={(event) => setLocalModelPath(event.target.value)} placeholder="/home/ale/Modelos/Qwen.gguf" className={`yarvis-input min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm outline-none ${rol === "empleado" ? "focus:border-emerald-600" : "focus:border-emerald-500"}`} /><button onClick={chooseLocalModel} className={rol === "empleado" ? "yarvis-panel-soft yarvis-border yarvis-text shrink-0 rounded-xl border px-4 text-xs font-black" : "yarvis-primary rounded-xl px-4 text-[10px] font-black uppercase tracking-widest"}>{rol === "empleado" ? "Examinar…" : "Buscar"}</button></div>{rol === "empleado" ? <button onClick={() => localModelPath && loadLocalModel()} disabled={!localModelPath || loadingModel === "local"} className="yarvis-primary mt-3 w-full rounded-xl py-3 text-[10px] font-black uppercase tracking-widest disabled:opacity-40">{loadingModel === "local" ? "Cargando…" : "Cargar modelo local"}</button> : localModelName && <p className="yarvis-muted mt-3 truncate text-[10px] font-bold">Actual: {localModelName}</p>}</div></div>}
             {configMessage && <p className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-xs font-bold text-sky-500">{configMessage}</p>}
           </div>
           <div className="yarvis-border flex gap-3 border-t px-6 py-5 sm:px-8"><button onClick={() => setShowConfig(false)} className="yarvis-panel-soft yarvis-muted flex-1 rounded-xl py-3 text-[10px] font-black uppercase tracking-widest">Cerrar</button><button onClick={saveApiConfig} className="yarvis-primary flex-1 rounded-xl py-3 text-[10px] font-black uppercase tracking-widest">Guardar configuración</button></div>

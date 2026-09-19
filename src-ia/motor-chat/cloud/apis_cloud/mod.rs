@@ -1,11 +1,12 @@
-//! apis_cloud — Respuestas por API de proveedores de IA (Gemini y OpenCode Zen).
+//! apis_cloud — Respuestas por API de proveedores de IA (Gemini +
+//! transporte OpenAI-compatible para futuros proveedores).
 //!
 //! Port de `yarvis-IA/chatbot/motor_chat/modelos_API/apis_cloud.py`.
 //!
 //! Dividido por TAREA (archivos planos, espejo de `parseador_de_tickets/cerebro`):
 //!   errores.rs    → clasificación de errores (HTTP vs red) + esperas 429
 //!   tipos.rs      → eventos del stream, uso de tokens y modelos disponibles
-//!   helpers.rs    → nombre amigable, modelos free, cola de relevo 429, normalización
+//!   helpers.rs    → nombre amigable y normalización de mensajes
 //!   sse.rs        → lectura del cuerpo SSE (líneas `data: ...`)
 //!   proveedores.rs→ streams específicos por proveedor (OpenAI-compatible + Google)
 //!   generacion.rs → API pública: `generar_stream` / `generar_completo` (con relevo)
@@ -27,3 +28,4 @@ pub use catalogo::listar_modelos;
 pub use generacion::{generar_completo, generar_stream};
 pub use helpers::nombre_proveedor;
 pub use tipos::{Evento, ModeloDisponible, Usage};
+

@@ -1,6 +1,6 @@
 // ============================================================
-// catalogo — Listado de modelos de los proveedores (Gemini lista
-// todos, OpenCode solo los gratuitos) con caché TTL de 60 s.
+// catalogo — Listado de modelos de los proveedores (Gemini + genérico
+// OpenAI-compatible para futuros proveedores) con caché TTL de 60 s.
 // Parte de apis_cloud.
 // ============================================================
 
@@ -9,7 +9,6 @@ use std::time::Instant;
 
 use super::super::variables::{MODELOS_CACHE_TTL_SECS, PROVIDERS};
 use super::generacion::cliente;
-use super::helpers::es_free;
 use super::tipos::ModeloDisponible;
 
 static _MODELOS_CACHE: OnceLock<Mutex<Vec<(String, Instant, Vec<ModeloDisponible>)>>> =
@@ -19,7 +18,7 @@ fn cache_modelos() -> &'static Mutex<Vec<(String, Instant, Vec<ModeloDisponible>
     _MODELOS_CACHE.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// Lista los modelos disponibles de un proveedor (solo gratuitos en OpenCode).
+/// Lista los modelos disponibles de un proveedor.
 /// Devuelve `[{'id', 'name'}]` con caché de 60 segundos.
 pub async fn listar_modelos(
     provider: &str,
@@ -119,12 +118,7 @@ pub async fn listar_modelos(
                     .and_then(|i| i.as_str())
                     .unwrap_or("")
                     .to_string();
-                if !es_free(&id) {
-                    return None;
-                }
-                // muse-spark-* usa /responses, no /chat/completions: no listar
-                // aquí porque el stream cloud fallaría con 500.
-                if id.starts_with("muse-spark") {
+                if id.is_empty() {
                     return None;
                 }
                 let name = m
