@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // ATAJOS · MODAL F8 — Rejilla de cuadritos gorditos con los atajos.
 // Cuadrito: chip de tecla + etiqueta; hover invierte a negro/blanco;
-// click ejecuta y cierra. Los no listos (F6) se ven apagados. Todo sale
+// click ejecuta y cierra. Los no listos se ven apagados. Todo sale
 // de TABLA_ATAJOS. Escape cierra.
 // ═══════════════════════════════════════════════════════════════════════════
 

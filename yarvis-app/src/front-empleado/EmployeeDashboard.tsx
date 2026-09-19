@@ -10,6 +10,8 @@ import {
   geometriaBarra, fmtHM, etiquetaEntrada, type MiTurno,
 } from "../components/turno-extra";
 import { invokeTauri, reportarError } from "../services/tauri";
+import { notificarExito } from "../components/notificaciones";
+import { abrirCajonPredeterminado } from "../services/impresora";
 import { obtenerMiTurno } from "../services/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
@@ -132,7 +134,15 @@ const EmployeeDashboard = ({
     setActiveTab("nueva_venta");
     solicitarAccion("buscar");
   }, [showModalCorte, showModalReimprimir]);
-  useAtajosEmpleados({ onCorte: abrirCorte, onCobrar: irACobrar, onPagar: irAPagar, onReimprimir: abrirReimprimir, onAyuda: abrirAyuda, onBuscar: irABuscar, deshabilitado: shellOcupado });
+  // F6: abre el cajón con la impresora predeterminada del spooler.
+  // Misma lógica que "Cobrar sin ticket": pulso sin imprimir nada.
+  const abrirCajonF6 = useCallback(() => {
+    if (shellOcupado) return;
+    abrirCajonPredeterminado()
+      .then((msg) => notificarExito(msg))
+      .catch((e) => reportarError("No se pudo abrir el cajón", e));
+  }, [shellOcupado]);
+  useAtajosEmpleados({ onCorte: abrirCorte, onCobrar: irACobrar, onPagar: irAPagar, onReimprimir: abrirReimprimir, onAyuda: abrirAyuda, onBuscar: irABuscar, onCajon: abrirCajonF6, deshabilitado: shellOcupado });
 
   // El menú F8 ejecuta y se cierra solo.
   const ejecutarAtajoMenu = useCallback((a: AccionAtajoMenu) => {
@@ -142,7 +152,8 @@ const EmployeeDashboard = ({
     else if (a === "pagar") irAPagar();
     else if (a === "reimprimir") abrirReimprimir();
     else if (a === "buscar") irABuscar();
-  }, [abrirCorte, irACobrar, irAPagar, abrirReimprimir, irABuscar]);
+    else if (a === "cajon") abrirCajonF6();
+  }, [abrirCorte, irACobrar, irAPagar, abrirReimprimir, irABuscar, abrirCajonF6]);
 
   useEffect(() => {
     obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar la información de tu turno", e));
@@ -241,6 +252,7 @@ const EmployeeDashboard = ({
                   else if (a.accion === "reimprimir") abrirReimprimir();
                   else if (a.accion === "buscar") irABuscar();
                   else if (a.accion === "menu") abrirAyuda();
+                  else if (a.accion === "cajon") abrirCajonF6();
                 }}
                 className="group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 bg-neutral-50 rounded-2xl border border-transparent hover:border-neutral-950 hover:bg-white hover:shadow-lg hover:shadow-neutral-200 transition-all duration-200 active:scale-95"
               >

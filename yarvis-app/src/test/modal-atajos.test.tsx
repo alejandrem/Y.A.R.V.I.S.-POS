@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST FUNCIONAL — Modal F8 (rejilla de cuadritos, issue #21).
-// Cubre: salen los 6 cuadritos de TABLA_ATAJOS (F6 apagado), click en un
-// cuadrito ejecuta su acción, F6 no hace nada, Escape cierra.
+// Cubre: salen los 6 cuadritos de TABLA_ATAJOS (F6 listo), click en un
+// cuadrito ejecuta su acción (incluido CAJÓN), Escape cierra.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { describe, it, expect, vi } from "vitest";
@@ -25,13 +25,13 @@ describe("modal-atajos · rejilla", () => {
     expect(onAccion).toHaveBeenCalledWith("corte");
   });
 
-  it("F6 (no listo) está apagado y no ejecuta", () => {
+  it("F6 (listo) está prendido y ejecuta cajon", () => {
     const onAccion = vi.fn();
     render(<ModalAtajos onClose={() => {}} onAccion={onAccion} />);
     const cajon = screen.getByText("CAJÓN").closest("button") as HTMLButtonElement;
-    expect(cajon.disabled).toBe(true);
+    expect(cajon.disabled).toBe(false);
     fireEvent.click(cajon);
-    expect(onAccion).not.toHaveBeenCalled();
+    expect(onAccion).toHaveBeenCalledWith("cajon");
   });
 
   it("Escape cierra", () => {

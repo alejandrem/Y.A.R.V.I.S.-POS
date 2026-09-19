@@ -3,8 +3,8 @@
 // Viven a nivel shell (EmployeeDashboard), así funcionan desde CUALQUIER
 // pestaña: nueva_venta, inventario, tickets, perfil, etc. Por algo son
 // atajos. Mapa actual: F3 → corte de caja (modal X/Z, #17), F5 → cobrar
-// (#19), F4 → pago directo al proveedor (#18). F2/F6/F8 (issues #16,
-// #20, #21) se cuelgan aquí mismo cuando existan.
+// (#19), F4 → pago directo al proveedor (#18), F6 → abrir el cajón con
+// la impresora predeterminada. F2/F8 (issues #16, #21) se cuelgan aquí.
 //
 // Dos mecanismos:
 //   · Bloqueo: una pestaña bloquea un atajo mientras su propio modal está
@@ -28,6 +28,8 @@ export const TECLA_REIMPRIMIR = "F2";
 export const TECLA_AYUDA = "F8";
 /** Tecla para ir al buscador de venta listo para escribir. */
 export const TECLA_BUSCAR = "F7";
+/** Tecla de apertura del cajón (impresora predeterminada). */
+export const TECLA_CAJON = "F6";
 
 const bloqueos = new Map<string, boolean>();
 

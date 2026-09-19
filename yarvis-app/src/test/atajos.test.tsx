@@ -2,22 +2,24 @@
 // TEST FUNCIONAL — Módulo ATAJOS (front-empleado, shell global).
 // Cubre: useAtajosEmpleados — F3/F5/F4 disparan su acción desde cualquier
 // lado, otras teclas se ignoran, el bloqueo (modal local abierto) y el flag
-// deshabilitado (modal de corte ya abierto) los suprimen. Y el registro:
-// solicitar/consumir con filtro (no roba acciones ajenas).
+// deshabilitado (modal de corte ya abierto) los suprimen. F6 abre el cajón
+// con la misma regla. Y el registro: solicitar/consumir con filtro
+// (no roba acciones ajenas).
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { useAtajosEmpleados } from "../front-empleado/atajos/useAtajos";
+import { TABLA_ATAJOS } from "../front-empleado/atajos/tabla-atajos";
 import {
-  TECLA_CORTE, TECLA_COBRAR, TECLA_PAGAR, TECLA_AYUDA,
+  TECLA_CORTE, TECLA_COBRAR, TECLA_PAGAR, TECLA_AYUDA, TECLA_CAJON,
   fijarBloqueoAtajo, solicitarAccion, consumirAccion,
 } from "../front-empleado/atajos/atajos";
 
-function Harness({ onCorte, onCobrar = () => {}, onPagar = () => {}, onReimprimir = () => {}, onAyuda = () => {}, onBuscar = () => {}, deshabilitado = false }: {
-  onCorte: () => void; onCobrar?: () => void; onPagar?: () => void; onReimprimir?: () => void; onAyuda?: () => void; onBuscar?: () => void; deshabilitado?: boolean;
+function Harness({ onCorte, onCobrar = () => {}, onPagar = () => {}, onReimprimir = () => {}, onAyuda = () => {}, onBuscar = () => {}, onCajon = () => {}, deshabilitado = false }: {
+  onCorte: () => void; onCobrar?: () => void; onPagar?: () => void; onReimprimir?: () => void; onAyuda?: () => void; onBuscar?: () => void; onCajon?: () => void; deshabilitado?: boolean;
 }) {
-  useAtajosEmpleados({ onCorte, onCobrar, onPagar, onReimprimir, onAyuda, onBuscar, deshabilitado });
+  useAtajosEmpleados({ onCorte, onCobrar, onPagar, onReimprimir, onAyuda, onBuscar, onCajon, deshabilitado });
   return null;
 }
 
@@ -144,6 +146,29 @@ describe("atajos · F7 buscar", () => {
     render(<Harness onCorte={() => {}} onBuscar={onBuscar} deshabilitado />);
     pulsar("F7");
     expect(onBuscar).not.toHaveBeenCalled();
+  });
+});
+
+describe("atajos · F6 cajón", () => {
+  it("F6 dispara onCajon y la tabla lo marca listo", () => {
+    const onCajon = vi.fn();
+    render(<Harness onCorte={() => {}} onCajon={onCajon} />);
+    pulsar("F6");
+    expect(onCajon).toHaveBeenCalledTimes(1);
+    const f6 = TABLA_ATAJOS.find((a) => a.tecla === "F6")!;
+    expect(f6.listo).toBe(true);
+    expect(f6.accion).toBe("cajon");
+  });
+
+  it("bloqueado o deshabilitado lo suprime", () => {
+    const onCajon = vi.fn();
+    render(<Harness onCorte={() => {}} onCajon={onCajon} />);
+    fijarBloqueoAtajo(TECLA_CAJON, true);
+    pulsar("F6");
+    expect(onCajon).not.toHaveBeenCalled();
+    fijarBloqueoAtajo(TECLA_CAJON, false);
+    pulsar("F6");
+    expect(onCajon).toHaveBeenCalledTimes(1);
   });
 });
 
