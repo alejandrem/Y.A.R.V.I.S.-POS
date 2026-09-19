@@ -28,14 +28,15 @@ export interface ChatSession {
 
 export type ModelKey = string;
 
-export const CLOUD_PROVIDERS: { id: "google"; display: string; defaultModel: string }[] = [
+export const CLOUD_PROVIDERS: { id: "google" | "nvidia"; display: string; defaultModel: string }[] = [
   { id: "google", display: "Gemini", defaultModel: "gemini-3.5-flash-lite" },
+  { id: "nvidia", display: "NVIDIA", defaultModel: "nvidia/llama-3.1-nemotron-nano-8b-v1" },
 ];
 
 export type { CloudModel } from "../../../services/yarvis";
 
 export interface ChatModelSelection {
-  provider: "" | "google";
+  provider: "" | "google" | "nvidia";
   apiKey: string;
   model: string;
   label: string;
@@ -79,7 +80,7 @@ export function getActiveCloud(): ActiveCloud {
 
   try {
     const keys = apiKeysCache;
-    const activeProvider = localStorage.getItem("yarvis_active_provider") as "google" | null;
+    const activeProvider = localStorage.getItem("yarvis_active_provider") as "google" | "nvidia" | null;
     const provider = activeProvider && (keys[activeProvider] || "").trim()
       ? activeProvider
       : CLOUD_PROVIDERS.find((p) => (keys[p.id] || "").trim())?.id;
@@ -92,7 +93,7 @@ export function getActiveCloud(): ActiveCloud {
       provider,
       apiKey: keys[provider].trim(),
       model,
-      label: `Gemini · ${model}`,
+      label: `${provider === "google" ? "Gemini" : "NVIDIA"} · ${model}`,
       contextWindow: 131072,
     };
   } catch {

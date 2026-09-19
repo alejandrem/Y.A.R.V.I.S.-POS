@@ -79,7 +79,7 @@ export const YarvisDer = () => (
         <div className="flex-1 min-w-0">
           <p className="font-mono text-[10px] font-black tracking-widest text-white">03 — OFFLINE</p>
           <p className="font-mono text-[9px] font-bold text-white/60 leading-relaxed mt-1">
-            Funciona sin nube. Si hay internet, usa Gemini como refuerzo.
+            Funciona sin nube. Si hay internet, usa Gemini o NVIDIA como refuerzo.
           </p>
         </div>
       </div>

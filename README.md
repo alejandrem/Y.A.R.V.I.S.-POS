@@ -44,7 +44,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Seguridad endurecida** — SQL de tools parametrizado, roles enforced en la ejecución de tools, API keys fuera del webview (archivo 0600), CSP activa, sin fallback de contraseñas en texto plano.
 
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Chat cloud (Gemini) con fallback local (Qwen2.5-Coder 1.5B)**.
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Chat cloud (Gemini/NVIDIA) con fallback local (Qwen2.5-Coder 1.5B)**.
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Python eliminado** — migración completa documentada en [`docs/`](docs/INDEX.md).
 
@@ -70,7 +70,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 **Backend** — <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Tauri 2.11 · sqlx 0.8 · Tokio · Serde · reqwest · Argon2 · chrono
 
-**IA** — <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg> `src-ia` (crate Rust): Qwen2.5-Coder 1.5B Instruct GGUF vía llama.cpp (local) · Gemini vía SSE (cloud) con reintento 429 · **19 tools de consulta** (ventas, inventario, navegación de catálogo, abasto y trazabilidad, solo lectura)
+**IA** — <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg> `src-ia` (crate Rust): Qwen2.5-Coder 1.5B Instruct GGUF vía llama.cpp (local) · Gemini/NVIDIA vía SSE (cloud) con reintento 429 · **19 tools de consulta** (ventas, inventario, navegación de catálogo, abasto y trazabilidad, solo lectura)
 
 **Datos** — <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg> SQLite (WAL) con un solo escritor (Rust) · `yarvis.db`
 

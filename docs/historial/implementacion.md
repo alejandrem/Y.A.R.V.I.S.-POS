@@ -24,7 +24,7 @@ La idea original era un sidecar Python con FastAPI. Se descarto y se migro todo 
 
 - Motor de IA en Rust: crate local src-ia (se enlaza por ruta desde yarvis-app/src-tauri/Cargo.toml con feature llm-local).
 - Arranque: binario unico. Sin python3 main.py, sin ai_service, sin externalBin.
-- Chat cloud: src-ia/motor-chat/cloud (Gemini via reqwest + SSE) con fallback a local y ciclo de tools con 10 herramientas.
+- Chat cloud: src-ia/motor-chat/cloud (Gemini/NVIDIA via reqwest + SSE) con fallback a local y ciclo de tools con 10 herramientas.
 - Chat local: Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado con llama-cpp-4 (src-ia/motor-chat/llm), carga bajo demanda (lazy), ventana 4096, recorte de historial conservador. Opera 100% offline con 19 tools SQL.
 
 ## Ola 3: El Parseador y la Ingesta Masiva — COMPLETADA (estadística sin IA)

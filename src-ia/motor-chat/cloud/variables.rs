@@ -14,10 +14,9 @@ pub struct Provider {
 }
 
 /// Proveedores de nube soportados (espejo de PROVIDERS de Python).
-/// Solo Gemini: OpenCode Zen se retiró 2026-09-19 (su free tier bloquea
-/// a terceros y no hay facturación; ver bitácora). El transporte
-/// OpenAI-compatible (`stream_openai_compatible`) se conserva genérico
-/// para el día que entre otro proveedor (p. ej. NVIDIA).
+/// Gemini + NVIDIA (OpenAI-compatible, sin candado de cliente: la key
+/// `nvapi-` jala donde sea). OpenCode Zen se retiró 2026-09-19 (su free
+/// tier bloquea a terceros y no hay facturación; ver bitácora).
 pub const PROVIDERS: &[Provider] = &[
     Provider {
         key: "google",
@@ -28,6 +27,14 @@ pub const PROVIDERS: &[Provider] = &[
         // gemini-3.5-flash-lite responde 200 + stream SSE correcto; es además
         // el más ligero/barato (ideal para caja). 3.6-flash también responde.
         default_model: "gemini-3.5-flash-lite",
+    },
+    Provider {
+        key: "nvidia",
+        name: "NVIDIA",
+        base_url: "https://integrate.api.nvidia.com/v1",
+        // NIM OpenAI-compatible (Bearer nvapi-…): nano 8b, ligero y rápido
+        // para caja. La lista completa sale de GET /models en la app.
+        default_model: "nvidia/llama-3.1-nemotron-nano-8b-v1",
     },
 ];
 
@@ -77,5 +84,12 @@ mod tests {
     fn google_arranca_en_flash_lite_verificado() {
         let g = PROVIDERS.iter().find(|p| p.key == "google").unwrap();
         assert_eq!(g.default_model, "gemini-3.5-flash-lite");
+    }
+
+    #[test]
+    fn nvidia_usa_transporte_openai_compatible() {
+        let n = PROVIDERS.iter().find(|p| p.key == "nvidia").unwrap();
+        assert_eq!(n.base_url, "https://integrate.api.nvidia.com/v1");
+        assert!(n.default_model.starts_with("nvidia/"));
     }
 }

@@ -29,7 +29,7 @@ Capacidades:
 - Cortes de caja X/Z, gastos recurrentes, alertas financieras, metricas y exportacion.
 - Empleados: metas/bonos, turnos, salario, resumen de ventas, asistencia y horas extra.
 - Parseo de tickets y catalogos (TXT/CSV/Excel) con reglas + LLM local para mapeo automatico y lotes con streaming.
-- Chat con IA: cloud (Gemini) con fallback a local (Qwen2.5-Coder 1.5B Instruct fine-tuneado (unico modelo local)) y 19 tools de consulta.
+- Chat con IA: cloud (Gemini/NVIDIA) con fallback a local (Qwen2.5-Coder 1.5B Instruct fine-tuneado (unico modelo local)) y 19 tools de consulta.
 - Predicciones de ventas con Holt-Winters e intervalos de confianza al 95% (src-ia/predicciones).
 
 Stack verificado:
@@ -146,7 +146,7 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, ventas
 
 ### 6.2 motor-chat/
 
-- cloud/: proveedores (Gemini + transporte OpenAI-compatible para futuros), generacion (completo/stream), catalogo de modelos, lector SSE, reintento 429, separador think/response, variables/API keys.
+- cloud/: proveedores (Gemini, NVIDIA), generacion (completo/stream), catalogo de modelos, lector SSE, reintento 429, separador think/response, variables/API keys.
 - llm/: Qwen2.5-Coder 1.5B Instruct via llama-cpp-4 (feature llm-local, CPU, ventana 4096, fine-tuneado, recortar_historial); tools/ con 10 herramientas y dataset tools_arreglado.jsonl.
 
 ### 6.3 predicciones/
@@ -164,7 +164,7 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, ventas
 
 ### 7.2 Cloud
 
-- Gemini — HTTP + SSE, con reintento ante 429, maxOutputTokens 8192, read_timeout de inactividad 90s. El thinking se separa del texto de respuesta.
+- Gemini/NVIDIA — HTTP + SSE, con reintento ante 429, maxOutputTokens 8192, read_timeout de inactividad 90s. El thinking se separa del texto de respuesta.
 
 ### 7.3 Embeddings / Busqueda semantica
 

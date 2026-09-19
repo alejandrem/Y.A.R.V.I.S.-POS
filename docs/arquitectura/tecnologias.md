@@ -36,7 +36,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 > Logging: tracing + tracing-subscriber (RUST_LOG, default info).
 > IA:
 >   - Local: llama-cpp-4 0.5 via crate src-ia, feature llm-local, modelo Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado (ruta configurable, resolucion en rutas/rutas_modelos_* incluyendo deteccion ~/.lmstudio/models). Planificado migrar a Qwen2.5-Coder 1.5B Instruct fine-tuneado para generar tools/SQL con mayor precision.
->   - Cloud: Gemini via HTTP + SSE con fallback a local (src-ia/motor-chat/cloud), separador de bloques think/response y ciclo de tools con MAX_RONDAS_TOOLS=3.
+>   - Cloud: Gemini/NVIDIA via HTTP + SSE con fallback a local (src-ia/motor-chat/cloud), separador de bloques think/response y ciclo de tools con MAX_RONDAS_TOOLS=3.
 >   - Parseo de tickets: 100% reglas + estadística, sin LLM (detector/ verifica cantidad×precio≈total; segmentador/ extrae folio/fecha/hora; clave de idempotencia folio/AUTO/SIN-FOLIO en src-ia/parseador_de_tickets).
 >   - Predicciones: Holt-Winters triple aditivo sin dependencias (src-ia/predicciones), operativo via get_predictions / get_predicciones_financieras.
 
@@ -58,7 +58,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 ## IA y Ciencia de Datos (estado real)
 
 > Chat local: Qwen2.5-Coder 1.5B Instruct GGUF via llama.cpp (src-ia/motor-chat/llm, CPU, ventana 4096, fine-tuneado con tools) tokens, recorte de historial conservador (src-ia/motor-chat/llm/mod.rs:42). Comandos send_chat_message, send_chat_stream, get_cloud_models, get_model_status, load_chat_model, unload_chat_model, stop_chat_stream (admintarvis/chat.rs).
-> Chat cloud: Gemini con reintento 429, streaming SSE, instrucciones de tools congeladas segun dataset tools_arreglado.jsonl (TOOLS_LINEA en src-ia/motor-chat/cloud/prompts.rs:28 y src-ia/motor-chat/llm/tools/).
+> Chat cloud: Gemini/NVIDIA con reintento 429, streaming SSE, instrucciones de tools congeladas segun dataset tools_arreglado.jsonl (TOOLS_LINEA en src-ia/motor-chat/cloud/prompts.rs:28 y src-ia/motor-chat/llm/tools/).
 > Tools: 19 tools de solo lectura, SQL parametrizado con escape_like, LIMIT parametrizado, ejecutor compartido cloud/local (src-ia/motor-chat/llm/tools/mod.rs). Roles enforced en herramientas_rol.rs (empleado no ve finanzas/nomina).
 > Parseador: 100% Rust sin LLM (detección estadística + folio/clave/orden cronológico). Comandos parser_* (adminparser/, parser_txt/ por tema) + get_tickets_total para el historial real.
 > Predicciones: implementadas con Holt-Winters aditivo (src-ia/predicciones/holt_winters.rs:70 predecir, ventana 7 dias, grid 343 combos alpha/beta/gamma, banda 95% z 1.96). Capa de datos lee ventas completadas, agrupa por dia, densifica huecos con 0 y devuelve fecha/prediccion/minimo/maximo (src-ia/predicciones/ventas.rs:37).
