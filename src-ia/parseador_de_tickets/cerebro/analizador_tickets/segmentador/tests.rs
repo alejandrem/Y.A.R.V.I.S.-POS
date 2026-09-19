@@ -141,6 +141,11 @@ fn extraer_folio_formatos_reales_de_tiendas() {
     // La muletilla "NO." no se captura como folio (antes daba "NO").
     assert_eq!(extraer_folio("TICKET NO. 1927").as_deref(), Some("1927"));
     assert_eq!(extraer_folio("Ticket #6650").as_deref(), Some("6650"));
+    // Minisuper El Trebol: "No. Venta: 000001" da folio real.
+    assert_eq!(extraer_folio("No. Venta: 000001").as_deref(), Some("000001"));
+    // ...pero una fecha tras VENTA no es folio.
+    assert_eq!(extraer_folio("VENTA 2026-03-09"), None);
+    assert_eq!(extraer_folio("VENTA MOSTRADOR"), None);
     assert_eq!(
         extraer_folio("TICKET: A-004471        10/03/2026").as_deref(),
         Some("A-004471")

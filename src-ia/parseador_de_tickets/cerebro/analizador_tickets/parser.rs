@@ -153,6 +153,13 @@ pub fn es_linea_util(linea: &str) -> bool {
 static RE_DOLAR_ESPACIO: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$\s+(\d)").expect("regex dolar espacio"));
 
+/// Puntos de relleno que PEGAN precio y total en un solo token:
+/// "$8.00..........$16.00" -> "$8.00 $16.00". Solo entre dos montos
+/// con `$` y centavos, asi que "..." de texto no se toca.
+static RE_PUNTOS_PEGADOS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(\$[\d,]+\.\d{2})\.+(\$[\d,]+\.\d{2})").expect("regex puntos pegados")
+});
+
 static RE_CANTIDAD_X: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^(\d+)x$").expect("regex cantidad Nx"));
 
@@ -163,7 +170,8 @@ pub(crate) fn preprocesar_linea(linea: &str) -> String {
     // OJO con la sintaxis de reemplazo: `$$` es un $ literal y `${1}` el
     // grupo 1. Antes era `"$$1"` → "$ 25.00" salía como "$15.00" (¡precio
     // corrupto!): `$$` + "1" literal.
-    let unida = RE_DOLAR_ESPACIO.replace_all(linea, "$$$1");
+    let separada = RE_PUNTOS_PEGADOS.replace_all(linea, "$1 $2");
+    let unida = RE_DOLAR_ESPACIO.replace_all(&separada, "$$$1");
     unida
         .split_whitespace()
         .map(|token| {

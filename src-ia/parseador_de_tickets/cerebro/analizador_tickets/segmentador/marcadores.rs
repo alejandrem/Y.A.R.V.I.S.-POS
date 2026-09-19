@@ -72,10 +72,11 @@ pub(crate) fn es_cierre(linea: &str) -> bool {
 /// Formatos reales soportados (verificados contra tickets mexicanos):
 /// "FOLIO: 004582", "FOLIO|55190", "FOLIO=88231", "FOLIO:2288",
 /// "Fol 3341", "FOL 00721", "TICKET #6650", "TICKET: A-004471",
-/// "TICKET NO. 1927", "NO. TICKET: 0002", "SERIE A-123", "NOTA 45".
+/// "TICKET NO. 1927", "NO. TICKET: 0002", "SERIE A-123", "NOTA 45",
+/// "No. Venta: 000001" (Minisuper El Trebol).
 ///
 /// Reglas:
-/// - Etiquetas: FOLIO, FOL, TICKET, SERIE, NOTA, RECIBO.
+/// - Etiquetas: FOLIO, FOL, TICKET, SERIE, NOTA, RECIBO, VENTA.
 /// - Separadores: `: . # | = -` y espacios (los tickets usan `|` y `=`
 ///   cuando vienen de sistemas con campos delimitados).
 /// - Muletillas entre etiqueta y valor ("TICKET NO. 1927", "NOTA DE
@@ -86,7 +87,12 @@ pub(crate) fn es_cierre(linea: &str) -> bool {
 /// - Una línea que solo trae fecha devuelve None (no hay folio).
 pub(crate) fn extraer_folio(linea: &str) -> Option<String> {
     static RE_ETIQUETA: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)\b(?:FOLIO|FOL|TICKET|SERIE|NOTA|RECIBO)\b").expect("regex etiqueta folio")
+        Regex::new(r"(?i)\b(?:FOLIO|FOL|TICKET|SERIE|NOTA|RECIBO|VENTA)\b").expect("regex etiqueta folio")
+    });
+    // Un "valor" con pura pinta de fecha ("VENTA 2026-03-09") NO es folio:
+    // sin este guard, agregar VENTA capturaria fechas como folios.
+    static RE_ES_FECHA: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}$").expect("regex valor fecha")
     });
     // Separadores + muletillas al inicio del resto ("NO.", "NUM", "#"...).
     // Sin `\b` global: `N°` termina en símbolo y el boundary fallaría.
@@ -104,5 +110,9 @@ pub(crate) fn extraer_folio(linea: &str) -> Option<String> {
     let resto = RE_RESTO.replace(linea[m.end()..].trim_start(), "");
     let valor = RE_VALOR.find(&resto).map(|v| v.as_str().to_string())?;
     // Sin dígito no es folio ("TICKET DE VENTA", "NOTA IMPORTANTE"...).
+    // Ni una fecha ("VENTA 2026-03-09").
+    if RE_ES_FECHA.is_match(&valor) {
+        return None;
+    }
     valor.chars().any(|c| c.is_ascii_digit()).then_some(valor)
 }

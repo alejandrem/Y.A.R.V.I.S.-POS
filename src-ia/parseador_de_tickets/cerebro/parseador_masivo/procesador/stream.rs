@@ -17,8 +17,8 @@ use super::super::archivos::{leer_archivo_tolerante, nombre_de_archivo, ordenar_
 use super::super::items::{a_centavos, resolver_totales_venta};
 use super::super::resumen::{ArchivoResultado, ProductoNuevo, ResumenVenta};
 use crate::cerebro::analizador_tickets::{
-    comparar_cronologico, detectar_mapeo, extraer_totales, parsear_linea, segmentar, Item,
-    MapeoColumnas,
+    comparar_cronologico, detectar_mapeo, extraer_totales, parsear_linea, segmentar,
+    unir_lineas_multirenglon, Item, MapeoColumnas,
 };
 use crate::embeddings::Embedder;
 
@@ -71,6 +71,9 @@ pub fn procesar_archivos(
                 continue;
             }
         };
+        // Familia multi-renglon: pega `N) Nombre` + `cant pza x $P..$T`
+        // antes de segmentar. Formatos viejos pasan intactos.
+        let texto = unir_lineas_multirenglon(&texto);
 
         if texto.trim().is_empty() {
             let mut res = ArchivoResultado::info(false, Some("archivo vacío".to_string()));

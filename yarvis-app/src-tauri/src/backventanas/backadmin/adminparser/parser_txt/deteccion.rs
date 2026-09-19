@@ -46,6 +46,9 @@ pub fn detectar_mapeo_estadistico(
         };
         archivos_muestra += 1;
         let texto = String::from_utf8_lossy(&bytes);
+        // Familia multi-renglon ("El Trebol"): si no se pegan antes,
+        // ningun renglon cuadra y la deteccion da 0%.
+        let texto = src_ia::cerebro::analizador_tickets::unir_lineas_multirenglon(&texto);
         lineas.extend(texto.lines().take(MAX_LINEAS_POR_ARCHIVO).map(str::to_string));
         if lineas.len() >= MAX_LINEAS_TOTAL || archivos_muestra >= MAX_ARCHIVOS_MUESTRA {
             break;

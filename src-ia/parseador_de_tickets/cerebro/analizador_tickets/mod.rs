@@ -6,6 +6,7 @@
 //   * pagos.rs       → método de pago
 //   * esquema.rs     → MapeoColumnas + Item (contrato frontend↔núcleo)
 //   * parser.rs      → parsear_linea (orquesta limpiador + mapeo)
+//   * unir.rs        → pega productos multi-renglon ("El Trebol")
 //   * encabezado.rs  → cajero y metadatos del encabezado
 //   * segmentador.rs → corte 1 archivo → N tickets (un ticket por bloque)
 //
@@ -21,8 +22,10 @@ mod pagos;
 mod parser;
 mod segmentador;
 mod totales;
+mod unir;
 
 pub use detector::{detectar_mapeo, diagnosticar_muestra, DeteccionMapeo, DiagnosticoMuestra};
+pub use unir::unir_lineas_multirenglon;
 pub use encabezado::extraer_cajero;
 pub use esquema::{resolver_indice, Item, MapeoColumnas};
 pub use fechas::{extraer_fecha_hora_regex, tiene_fecha};
@@ -237,6 +240,26 @@ mod tests {
         assert_eq!(item.producto, "HEINEKEN 473ML");
         assert_eq!(item.precio_unitario, 28.0);
         assert_eq!(item.total, 28.0);
+    }
+
+    // ---------- familia multi-renglon "El Trebol" ----------
+
+    #[test]
+    fn trebol_se_une_y_parsea_punta_a_punta() {
+        // Ticket verbatim (dos renglones por producto + puntos pegados).
+        let texto = "No. Venta: 000001\n17/10/2025          13:09 hrs\n1) Pelon Pelo Rico\n   2 pza x $8.00..........$16.00\n2) Sol 473ml\n   1 pza x $20.00.........$20.00\nTOTAL ...................$36.00\n";
+        let unido = unir_lineas_multirenglon(texto);
+        assert!(unido.contains("2 Pelon Pelo Rico $8.00..........$16.00"));
+        assert!(unido.contains("1 Sol 473ml $20.00.........$20.00"));
+
+        // Ya pegado y con puntos separados, es familia A normal.
+        let m = mapeo(0, 1, 2, -1);
+        let item = parsear_linea("2 Pelon Pelo Rico $8.00..........$16.00", &m, 5).unwrap();
+        assert_eq!(item.producto, "PELON PELO RICO");
+        assert_eq!(item.cantidad, 2.0);
+        assert_eq!(item.precio_unitario, 8.0);
+        assert_eq!(item.total, 16.0);
+        assert_eq!(item.descuento, None);
     }
 
     // ---------- extraer_fecha_hora_regex (verificado contra Python) ----------

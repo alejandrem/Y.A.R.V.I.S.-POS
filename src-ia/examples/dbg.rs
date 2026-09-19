@@ -42,6 +42,8 @@ fn main() {
     for a in archivos.iter().step_by(paso) {
         let Ok(bytes) = fs::read(a) else { continue };
         let texto = String::from_utf8_lossy(&bytes).into_owned();
+        // Igual que el backend: pega multi-renglon antes de segmentar.
+        let texto = src_ia::cerebro::analizador_tickets::unir_lineas_multirenglon(&texto);
         let segs = src_ia::cerebro::analizador_tickets::segmentar(&texto);
         println!("--- {}: {} segmento(s)", a.display(), segs.len());
         for s in &segs {
