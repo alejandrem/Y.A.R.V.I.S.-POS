@@ -110,7 +110,7 @@ Tipos: `ImpresoraInfo`, `FilaConciliacionPrint`, `DestinoPrint`,
   oscuro con las impresoras reales del spooler (default preseleccionada),
   manda la tabla visible ya filtrada/ordenada. Sin impresoras: mensaje que
   pide instalar la termica 80mm.
-- `modalticket.tsx` (venta → bloque de impresion): pestañas **Local/Red**;
+- `ventana-cobro/seccion-destino.tsx` (venta → impresión): pestañas **Local/Red**;
   en Local un select del spooler, en Red inputs IP/puerto + boton **Probar**
   (no gasta papel). Imprime carrito + pagos + QR `YARVIS-{folio}`.
 
@@ -144,3 +144,11 @@ Tipos: `ImpresoraInfo`, `FilaConciliacionPrint`, `DestinoPrint`,
   estetica, cada ticket usa el suyo.
 - Sin `imprimir_bytes_raw` como puente publico, la Fase 2 no podria
   reutilizar la Fase 1: el comando existe para eso.
+- Impresoras virtuales bloqueadas (2026-09): mandar RAW a "Microsoft
+  Print to PDF" / XPS / OneNote / Fax solo genera `.pdf` vacíos de
+  0 bytes con nombre de job "YARVIS Lista" (el `pDocName` del spooler,
+  no un archivo del POS). `esImpresoraVirtual` + `exigirImpresoraFisica`
+  en `services/impresora.ts` frenan en seco todos los caminos (ticket,
+  listas, factura, cajón, F6); F6 y la preselección del cobro saltan
+  las virtuales y eligen la primera física. Los tickets viven en
+  SQLite (`ventas`/`detalle_ventas`), jamás como archivos.
