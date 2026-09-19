@@ -55,6 +55,16 @@ export async function listarPendientes(estado?: string, limite = 200): Promise<P
   return invoke<PendienteCodigo[]>("rojo_listar_pendientes", { estado, limite });
 }
 
+/** Guarda un pitazo sin match en la cola del semáforo (rojo).
+ * Idempotente en backend: si ya existe, solo sube `veces_visto`.
+ * `ean` null = solo nombre crudo (códigos no numéricos). */
+export async function registrarPendiente(
+  ean: string | null,
+  nombreCrudo: string,
+): Promise<number> {
+  return invoke<number>("rojo_registrar_pendiente", { ean, nombreCrudo });
+}
+
 export async function sugerirAmarillo(
   nombreCrudo: string,
   marca?: string,

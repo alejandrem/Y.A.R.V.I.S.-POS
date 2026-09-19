@@ -238,6 +238,19 @@ export default function ModalCorte({ onClose, cajero }: ModalCorteProps) {
                 </select>
               </div>
 
+              {/* Sin térmica: el corte YA quedó guardado (X foto / Z cierre).
+                  La impresión es opcional y se puede hacer después. */}
+              {impresoras.length === 0 && (
+                <div className="bg-amber-50 rounded-3xl p-5 border border-amber-100">
+                  <p className="text-[11px] font-black text-amber-700 text-center uppercase tracking-widest">
+                    Corte #{tipo === "X" ? reporteX?.corte_id : reporteZ?.corte_id} guardado sin impresora
+                  </p>
+                  <p className="text-[11px] font-bold text-amber-600 text-center mt-1 leading-relaxed">
+                    No hay térmica conectada. El corte ya quedó registrado — podrás imprimirlo después.
+                  </p>
+                </div>
+              )}
+
               {msgImpresion && (
                 <p className="text-[11px] font-black text-emerald-600 text-center uppercase tracking-widest bg-emerald-50 rounded-2xl py-3 px-4">
                   {msgImpresion}
@@ -254,16 +267,17 @@ export default function ModalCorte({ onClose, cajero }: ModalCorteProps) {
                 <button
                   onClick={handleImprimir}
                   disabled={imprimiendo || !impresoraSel}
+                  title={impresoras.length === 0 ? "Conecta una térmica para imprimir" : "Manda el corte a la térmica"}
                   className="w-full py-5 rounded-3xl bg-neutral-950 text-white text-sm font-black uppercase tracking-[0.2em] hover:bg-neutral-800 transition-all shadow-xl shadow-neutral-300 active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                 >
                   <MorphIcon icon={ICONO_IMPRESORA} size={18} strokeWidth={2.5} spring="snappy" reducedMotion="user" />
-                  {imprimiendo ? "Imprimiendo..." : "Imprimir en térmica"}
+                  {imprimiendo ? "Imprimiendo..." : "Imprimir en térmica (opcional)"}
                 </button>
                 <button
                   onClick={onClose}
                   className="w-full py-3.5 text-[10px] font-black text-neutral-400 uppercase tracking-widest hover:text-neutral-950 transition-colors"
                 >
-                  Cerrar
+                  Terminar sin imprimir
                 </button>
               </div>
             </>

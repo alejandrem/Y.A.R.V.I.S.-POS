@@ -277,6 +277,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
           <thead className="sticky top-0 z-10">
             <tr className="bg-neutral-50/95 backdrop-blur-sm border-b border-neutral-100">
               <th className="px-8 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Producto</th>
+              <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Código</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-center">Stock</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest text-center">Vendido</th>
               <th className="px-6 py-5 text-[10px] font-black text-neutral-400 uppercase tracking-widest">Costo</th>
@@ -304,6 +305,21 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                       />
                     ) : (
                       <span className="text-xs font-bold text-neutral-900 uppercase">{item.nombre}</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {isEditing ? (
+                      <input
+                        className="bg-white border border-neutral-200 px-3 py-1.5 rounded-lg text-xs font-bold w-36 focus:outline-none focus:border-neutral-900 font-mono"
+                        value={item.codigo_barras ?? ""}
+                        onChange={(e) => updateField(item, "codigo_barras", e.target.value)}
+                        placeholder="Pítalo aquí o vacío"
+                        title="Código de barras (vacío = sin código)"
+                      />
+                    ) : (
+                      <span className="text-[11px] font-bold text-neutral-400 font-mono">
+                        {item.codigo_barras || <span className="text-neutral-300">—</span>}
+                      </span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-center">

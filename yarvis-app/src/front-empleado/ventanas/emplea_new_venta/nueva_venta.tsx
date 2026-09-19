@@ -10,6 +10,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { obtenerInventario, type InventoryItem } from "../../../services/inventario";
 import { reportarError } from "../../../services/tauri";
+import { notificarExito } from "../../../components/notificaciones";
+import { registrarPendiente } from "../../../services/semaforo";
 import { buscarProductoSimilar } from "../../../services/venta";
 import ModalVenta from "./modalventa";
 import ModalTicket from "./modalticket";
@@ -199,16 +201,41 @@ export default function NuevaVenta({ activeTab, onAbrirCorte }: NuevaVentaProps)
 
   const handleCerrarTicket = () => { setShowModalTicket(false); limpiarCarrito(); };
 
+  /** Pitazo sin match + Enter: se guarda en la cola del semáforo (rojo)
+   * para vincularlo después en Códigos. El backend es idempotente
+   * (repite = veces_visto+1, no duplica). Dígitos 8+ van como ean;
+   * el resto como solo-nombre. */
+  const registrarCodigoDesconocido = async (texto: string) => {
+    const crudo = texto.trim();
+    if (crudo.length < 3) return;
+    const digitos = crudo.replace(/[\s-]/g, "");
+    const esCodigo = /^\d+$/.test(digitos) && digitos.length >= 8;
+    if (!esCodigo && crudo.length <= 3) return;
+    try {
+      await registrarPendiente(esCodigo ? digitos : null, crudo);
+      notificarExito(
+        esCodigo
+          ? `Código ${digitos} guardado en cola de códigos`
+          : `“${crudo}” guardado en cola de códigos`
+      );
+      setSearchQuery(""); setShowDropdown(false);
+    } catch (error) {
+      reportarError("No se pudo guardar el código en la cola", error);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showDropdown || searchResults.length === 0) return;
-    if (e.key === "ArrowDown") {
+    if (e.key === "Escape") { setShowDropdown(false); return; }
+    if (!showDropdown) return;
+    if (e.key === "ArrowDown" && searchResults.length > 0) {
       e.preventDefault(); setSelectedIndex((prev) => (prev < searchResults.length - 1 ? prev + 1 : 0));
-    } else if (e.key === "ArrowUp") {
+    } else if (e.key === "ArrowUp" && searchResults.length > 0) {
       e.preventDefault(); setSelectedIndex((prev) => (prev > 0 ? prev - 1 : searchResults.length - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (selectedIndex >= 0 && selectedIndex < searchResults.length) seleccionarProducto(searchResults[selectedIndex]);
-    } else if (e.key === "Escape") { setShowDropdown(false); }
+      else if (searchResults.length === 0 && searchQuery.trim()) registrarCodigoDesconocido(searchQuery);
+    }
   };
 
   // ── RENDER ──────────────────────────────────────────────────────────────
