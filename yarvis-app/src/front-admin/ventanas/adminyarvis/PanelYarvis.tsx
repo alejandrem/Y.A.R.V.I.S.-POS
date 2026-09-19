@@ -304,6 +304,19 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
         setSelectedProvider("");
         localStorage.removeItem("yarvis_active_provider");
       }
+      // Al pegar key de Gemini sin modelo elegido: se preselecciona el
+      // default verificado automáticamente (no más menú vacío).
+      if (apiKeys.google?.trim() && !selectedCloudModels.google) {
+        const def = CLOUD_PROVIDERS.find((p) => p.id === "google")?.defaultModel;
+        if (def) {
+          const next = { ...selectedCloudModels, google: def };
+          setSelectedCloudModels(next);
+          localStorage.setItem("yarvis_cloud_models_selected", JSON.stringify(next));
+          localStorage.setItem("yarvis_cloud_model_google", def);
+          setSelectedProvider("google");
+          localStorage.setItem("yarvis_active_provider", "google");
+        }
+      }
       if (localModelPath) await saveLocalPath(localModelPath);
       (Object.keys(apiKeys) as ProviderId[]).filter((provider) => apiKeys[provider]).forEach((provider) => refreshCloudModels(provider));
       setShowConfig(false);
