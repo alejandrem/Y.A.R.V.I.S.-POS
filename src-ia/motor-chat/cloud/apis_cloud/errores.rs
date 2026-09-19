@@ -39,14 +39,18 @@ impl ErrorCloud {
 /// Traduce errores HTTP del proveedor a mensajes claros en español.
 /// Si el servidor mandó detalle en el cuerpo, se anexa (recortado).
 fn error_amigable(status: u16, display: &str, body: Option<&str>) -> String {
-    // Bloqueo de free tier de Zen a apps de terceros (verificado 2026-09-13
-    // con sondas directas: TODO modelo free responde 400 MissingSessionID
-    // "free tier can only be used in OpenCode", sin importar max_tokens ni
-    // stream_options). El tipo del servidor es críptico: traducirlo a acción.
+    // Bloqueo de free tier de Zen a apps de terceros. Dos variantes vistas
+    // en campo: 400 MissingSessionID ("can only be used in OpenCode") y
+    // 403 ("can only be used from within OpenCode", a veces sin el tipo
+    // MissingSessionID en el cuerpo). El tipo del servidor es críptico y
+    // —peor— el genérico de abajo diría "API key inválida" cuando la key
+    // SÍ sirve: traducirlo a acción.
     if display == "OpenCode"
-        && body.map(|b| b.contains("MissingSessionID")).unwrap_or(false)
+        && body
+            .map(|b| b.contains("MissingSessionID") || b.contains("free tier can only be used"))
+            .unwrap_or(false)
     {
-        return "Zen bloqueó el free tier: solo funciona dentro de OpenCode. Usa Gemini o el modelo local Qwen.".to_string();
+        return "Zen bloqueó el free tier: solo funciona dentro de OpenCode (tu key sí sirve). Cambia al proveedor Gemini con tu clave de Google, o usa el modelo local Qwen.".to_string();
     }
     let base = match status {
         429 => {
@@ -150,7 +154,34 @@ mod tests {
         };
         assert_eq!(
             err.amigable("OpenCode"),
-            "Zen bloqueó el free tier: solo funciona dentro de OpenCode. Usa Gemini o el modelo local Qwen."
+            "Zen bloqueó el free tier: solo funciona dentro de OpenCode (tu key sí sirve). Cambia al proveedor Gemini con tu clave de Google, o usa el modelo local Qwen."
         );
+    }
+
+    #[test]
+    fn bloqueo_free_tier_zen_403_within_tambien_es_bloqueo_no_key_invalida() {
+        // Variante vista en campo (2026-09-19): 403 sin MissingSessionID.
+        // Antes caía al genérico "API key inválida" con key válida.
+        let err = ErrorCloud::Http {
+            status: 403,
+            retry_after: None,
+            body: Some(
+                r#"{"error":"Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"}"#.to_string(),
+            ),
+        };
+        let msg = err.amigable("OpenCode");
+        assert!(msg.contains("tu key sí sirve"), "no debe culpar a la key: {msg}");
+        assert!(!msg.contains("inválida"), "cero mención a key inválida: {msg}");
+    }
+
+    #[test]
+    fn error_403_de_otro_proveedor_sigue_siendo_key_invalida() {
+        let err = ErrorCloud::Http {
+            status: 403,
+            retry_after: None,
+            body: Some(r#"{"error":{"message":"invalid api key"}}"#.to_string()),
+        };
+        let msg = err.amigable("Google");
+        assert!(msg.contains("API key inválida (error 403)"), "{msg}");
     }
 }
