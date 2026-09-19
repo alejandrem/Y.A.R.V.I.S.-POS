@@ -42,8 +42,6 @@ Especificaciones de los subsistemas del POS, soporte para periféricos y reglas 
   Integración con lectores de código de barras HID en modo emulación de teclado, normalización de lecturas, índice único 0011 y búsqueda optimizada.
 - 💰 [**Lógica de Proceso y Transacciones**](modulos/logica-proceso.md):
   Reglas del dominio: manejo de dinero en centavos (`INTEGER`), flujo de ventas, cortes de caja X y Z, arqueos e integridad contable.
-- 🔑 [**Cuenta OpenCode vinculada**](modulos/cuenta-zen.md):
-  OAuth loopback con la cuenta del dueño para que el free tier de Zen responda (la `sk-` sola recibe 403); sesión 0600 con refresh, sustitución en backend.
 
 ---
 

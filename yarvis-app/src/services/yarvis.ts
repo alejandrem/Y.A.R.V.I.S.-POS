@@ -38,20 +38,3 @@ export const obtenerModelStatus = () =>
 
 export const obtenerCloudModels = (provider: string, apiKey: string) =>
   invokeTauri<{ models: CloudModel[] }>("get_cloud_models", { provider, apiKey });
-
-export interface EstadoZen {
-  vinculado: boolean;
-  email: string;
-}
-
-/** ¿La cuenta OpenCode del dueño está vinculada? (sin secretos). */
-export const obtenerEstadoZen = () =>
-  invokeTauri<EstadoZen>("zen_estado");
-
-/** Abre el navegador para vincular la cuenta (solo admin). Devuelve el email. */
-export const vincularCuentaZen = () =>
-  invokeTauri<string>("zen_login");
-
-/** Borra la sesión vinculada (solo admin). */
-export const desvincularCuentaZen = () =>
-  invokeTauri("zen_salir");
