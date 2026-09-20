@@ -118,8 +118,8 @@ pub async fn get_admin_data(
     auth: tauri::State<'_, AuthState>,
 ) -> Result<Option<AdminProfile>, String> {
     auth.require_admin()?;
-    let result = sqlx::query_as::<_, (String, String, Option<String>, Option<String>, Option<String>, Option<String>)>(
-        "SELECT nombre, tienda, ubicacion, cp, google_email, google_client_id FROM usuarios WHERE rol = 'admin' LIMIT 1",
+    let result = sqlx::query_as::<_, (String, String, Option<String>, Option<String>)>(
+        "SELECT nombre, tienda, ubicacion, cp FROM usuarios WHERE rol = 'admin' LIMIT 1",
     )
     .fetch_optional(&*state)
     .await
@@ -131,8 +131,6 @@ pub async fn get_admin_data(
             tienda: row.1,
             ubicacion: row.2,
             cp: row.3,
-            google_email: row.4,
-            google_client_id: row.5,
         }))
     } else {
         Ok(None)
@@ -340,117 +338,4 @@ pub async fn validar_login_empleado(
 pub async fn cerrar_sesion(auth: tauri::State<'_, AuthState>) -> Result<(), String> {
     auth.logout();
     Ok(())
-}
-
-// ============================================================
-// LOGIN DEL ADMIN CON SU CUENTA DE GOOGLE (OAuth PKCE loopback)
-// ============================================================
-//
-// El correo del dueño amarrado vive en la fila del admin
-// (`google_email`); el Client ID en `google_client_id` (o la variable
-// de entorno como respaldo). La contraseña local SE CONSERVA: sin
-// internet se entra con clave como siempre (offline-first intacto).
-
-/// Comparación de correos: minúsculas + sin espacios. Vacío nunca coincide.
-pub fn emails_coinciden(a: &str, b: &str) -> bool {
-    let normalizar = |s: &str| s.trim().to_lowercase();
-    let (x, y) = (normalizar(a), normalizar(b));
-    !x.is_empty() && x == y
-}
-
-/// Lee (email, client_id) de Google del admin. Vacío si no vinculado.
-pub async fn leer_google_config_impl(pool: &SqlitePool) -> Result<(String, String), String> {
-    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT google_email, google_client_id FROM usuarios WHERE rol = 'admin' LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-    match row {
-        Some((email, cid)) => Ok((
-            email.unwrap_or_default().trim().to_string(),
-            cid.unwrap_or_default().trim().to_string(),
-        )),
-        None => Ok((String::new(), String::new())),
-    }
-}
-
-/// Guarda el amarre Google del dueño (SOLO admin). El email se valida
-/// mínimo (formato) y se guarda en minúsculas; el client_id puede
-/// vaciarse para volver a la variable de entorno.
-pub async fn guardar_google_config_impl(
-    pool: &SqlitePool,
-    email: String,
-    client_id: String,
-) -> Result<String, String> {
-    let email = email.trim().to_lowercase();
-    if email.is_empty() {
-        return Err("Escribe el correo Google del dueño para vincularlo".to_string());
-    }
-    if !email.contains('@') || !email.split('@').nth(1).unwrap_or("").contains('.') {
-        return Err(format!("'{email}' no parece un correo válido"));
-    }
-    sqlx::query("UPDATE usuarios SET google_email = ?, google_client_id = ? WHERE rol = 'admin'")
-        .bind(&email)
-        .bind(client_id.trim())
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok("Cuenta Google vinculada correctamente".into())
-}
-
-#[tauri::command]
-pub async fn guardar_google_config(
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-    email: String,
-    client_id: String,
-) -> Result<String, String> {
-    auth.require_admin()?;
-    guardar_google_config_impl(&*state, email, client_id).await
-}
-
-/// Login del admin con su cuenta de Google: abre el navegador, compara
-/// el email de userinfo contra el amarrado y, si coincide, abre sesión
-/// de admin. Con rate limit igual que la clave. Si no coincide (o no
-/// hay amarre), Ok(false): cualquier cuenta random no entra.
-#[tauri::command]
-pub async fn validar_login_google(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, SqlitePool>,
-    auth: tauri::State<'_, AuthState>,
-) -> Result<bool, String> {
-    auth.logout();
-    auth.rate_limiter.verificar().map_err(|segundos| {
-        format!("Demasiados intentos fallidos. Espera {segundos} segundos antes de reintentar.")
-    })?;
-    let (amarrado, cid) = leer_google_config_impl(&*state).await?;
-    if amarrado.is_empty() {
-        return Err("Vincula primero tu correo Google en Configuración → Seguridad".to_string());
-    }
-    let cid_opt = if cid.is_empty() { None } else { Some(cid) };
-    let perfil = super::google::login_con_google(app, cid_opt).await?;
-    if perfil.simulado {
-        return Err("Modo demo: configura el Client ID para el login real con Google".to_string());
-    }
-    if !emails_coinciden(&perfil.email, &amarrado) {
-        auth.rate_limiter.registrar_fallo();
-        return Ok(false);
-    }
-    let row: Option<(i64, String)> =
-        sqlx::query_as("SELECT id, nombre FROM usuarios WHERE rol = 'admin' LIMIT 1")
-            .fetch_optional(&*state)
-            .await
-            .map_err(|e| e.to_string())?;
-    match row {
-        Some((id, nombre)) => {
-            auth.rate_limiter.registrar_exito();
-            auth.login(id, Role::Admin, nombre);
-            Ok(true)
-        }
-        None => {
-            auth.rate_limiter.registrar_fallo();
-            Ok(false)
-        }
-    }
 }

@@ -11,8 +11,7 @@ mod common;
 use common::{db, seed_empleado};
 use sqlx::Row;
 use yarvis_app_lib::backventanas::backadmin::adminconfig::auth::{
-    emails_coinciden, guardar_empleado_impl, guardar_google_config_impl, hash_password,
-    leer_google_config_impl, verify_password, BloqueHorario,
+    guardar_empleado_impl, hash_password, verify_password, BloqueHorario,
 };
 
 #[test]
@@ -143,60 +142,4 @@ async fn toctou_dos_guardar_admin_concurrentes_crean_un_solo_admin() {
             .await
             .unwrap();
     assert_eq!(admins, 1, "TOCTOU roto: hay más de un admin");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Amarre Google del dueño (migración 0019): email + client id en la fila
-// del admin, comparación insensible a mayúsculas/espacios.
-// ═══════════════════════════════════════════════════════════════════════════
-
-async fn seed_admin(pool: &sqlx::SqlitePool) {
-    let hash =
-        yarvis_app_lib::backventanas::backadmin::adminconfig::auth::hash_password("admin123");
-    sqlx::query("INSERT INTO usuarios (nombre, tienda, password, rol) VALUES ('Jefe', 'Tienda', ?, 'admin')")
-        .bind(hash)
-        .execute(pool)
-        .await
-        .unwrap();
-}
-
-#[test]
-fn emails_coinciden_ignora_mayusculas_y_espacios() {
-    assert!(emails_coinciden("Jefe@Gmail.com", " jefe@gmail.com "));
-    assert!(!emails_coinciden("a@x.com", "b@x.com"));
-    assert!(!emails_coinciden("", ""), "vacío nunca coincide");
-    assert!(!emails_coinciden("a@x.com", ""));
-}
-
-#[tokio::test]
-async fn google_config_roundtrip_y_validacion() {
-    let pool = db().await;
-    seed_admin(&pool).await;
-
-    // Sin amarre: vacío.
-    let (email, cid) = leer_google_config_impl(&pool).await.unwrap();
-    assert_eq!(email, "");
-    assert_eq!(cid, "");
-
-    // Email inválido se rechaza, válido se guarda normalizado.
-    assert!(guardar_google_config_impl(&pool, "no-es-correo".into(), "".into())
-        .await
-        .is_err());
-    assert!(guardar_google_config_impl(&pool, "   ".into(), "".into())
-        .await
-        .is_err());
-    guardar_google_config_impl(&pool, "Jefe@Gmail.COM ".into(), " mi-client-id ".into())
-        .await
-        .unwrap();
-    let (email, cid) = leer_google_config_impl(&pool).await.unwrap();
-    assert_eq!(email, "jefe@gmail.com");
-    assert_eq!(cid, "mi-client-id");
-
-    // Vaciar el client id vuelve al fallback de entorno.
-    guardar_google_config_impl(&pool, "jefe@gmail.com".into(), "".into())
-        .await
-        .unwrap();
-    let (email, cid) = leer_google_config_impl(&pool).await.unwrap();
-    assert_eq!(email, "jefe@gmail.com");
-    assert_eq!(cid, "");
 }

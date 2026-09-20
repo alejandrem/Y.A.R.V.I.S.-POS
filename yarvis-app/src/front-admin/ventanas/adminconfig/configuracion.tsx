@@ -7,7 +7,6 @@ import { useDatosAdmin } from "./hooks/useDatosAdmin";
 import EncabezadoConfiguracion from "./components/EncabezadoConfiguracion";
 import FormularioIdentidad from "./components/FormularioIdentidad";
 import FormularioSeguridad from "./components/FormularioSeguridad";
-import FormularioGoogle from "./components/FormularioGoogle";
 import FormularioApariencia from "./components/FormularioApariencia";
 
 // Libro de Datos Inutiles compartido (mismo patron lazy que empleaajustes/ajustes.tsx:
@@ -71,8 +70,6 @@ const Configuracion = ({
             setPasswordChanged={setPasswordChanged}
             onSave={handleUpdate}
           />
-
-          <FormularioGoogle />
 
           <FormularioApariencia />
         </div>
