@@ -10,6 +10,8 @@ export interface AdminProfile {
   tienda: string;
   ubicacion: string | null;
   cp: string | null;
+  google_email?: string | null;
+  google_client_id?: string | null;
 }
 
 export const verificarSetup = () =>
@@ -20,6 +22,12 @@ export const guardarAdmin = (name: string, store: string, pass: string) =>
 
 export const loginAdmin = (pass: string) =>
   invokeTauri<boolean>("validar_login_admin", { pass });
+
+export const loginAdminGoogle = () =>
+  invokeTauri<boolean>("validar_login_google");
+
+export const guardarGoogleConfig = (email: string, clientId: string) =>
+  invokeTauri<string>("guardar_google_config", { email, clientId });
 
 export const obtenerAdminData = () =>
   invokeTauri<AdminProfile>("get_admin_data");

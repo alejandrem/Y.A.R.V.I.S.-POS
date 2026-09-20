@@ -53,6 +53,12 @@ pub struct AdminProfile {
     pub tienda: String,
     pub ubicacion: Option<String>,
     pub cp: Option<String>,
+    /// Correo Google del dueño (login OAuth). Vacío = sin vincular.
+    #[serde(default)]
+    pub google_email: Option<String>,
+    /// Client ID OAuth (Desktop). Vacío = usa YARVIS_GOOGLE_CLIENT_ID.
+    #[serde(default)]
+    pub google_client_id: Option<String>,
 }
 
 // ============================================================

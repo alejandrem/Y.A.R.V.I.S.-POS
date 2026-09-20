@@ -31,7 +31,7 @@ pub struct PerfilGoogle {
     pub simulado: bool,
 }
 
-fn client_id() -> Option<String> {
+fn client_id_env() -> Option<String> {
     std::env::var("YARVIS_GOOGLE_CLIENT_ID")
         .ok()
         .filter(|s| !s.is_empty())
@@ -42,11 +42,20 @@ fn b64url(data: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(data)
 }
 
-/// Inicia sesión con Google. Sin CLIENT_ID configurado regresa un perfil
-/// simulado (`simulado: true`) para poder probar el flujo en la UI.
+/// Inicia sesión con Google. `client_id` explícito (guardado en BD)
+/// tiene prioridad; si viene vacío se usa YARVIS_GOOGLE_CLIENT_ID.
+/// Sin ninguno regresa un perfil simulado (`simulado: true`) para
+/// poder probar el flujo en la UI.
 #[tauri::command]
-pub async fn login_con_google(app: tauri::AppHandle) -> Result<PerfilGoogle, String> {
-    let Some(cid) = client_id() else {
+pub async fn login_con_google(
+    app: tauri::AppHandle,
+    client_id: Option<String>,
+) -> Result<PerfilGoogle, String> {
+    let cid = client_id
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(client_id_env);
+    let Some(cid) = cid else {
         return Ok(PerfilGoogle {
             nombre: String::new(),
             email: String::new(),

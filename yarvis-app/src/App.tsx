@@ -11,7 +11,7 @@ import { Toaster, notificarError } from "./components/notificaciones";
 import { reportarError, invokeTauri } from "./services/tauri";
 import {
   verificarSetup, guardarAdmin, loginAdmin, obtenerAdminData,
-  guardarEmpleadoInicial, loginEmpleado, cerrarSesion,
+  guardarEmpleadoInicial, loginEmpleado, cerrarSesion, loginAdminGoogle,
 } from "./services/auth";
 import type { HorarioEnvio } from "./services/empleados";
 import "./App.css";
@@ -100,6 +100,7 @@ function AppInner() {
   // Login Passwords
   const [loginPass, setLoginPass] = useState("");
   const [employeeLoginPass, setEmployeeLoginPass] = useState("");
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [showEmployeeLoginPass, setShowEmployeeLoginPass] = useState(false);
   const [hoverLoginCheck, setHoverLoginCheck] = useState(false);
@@ -232,6 +233,34 @@ function AppInner() {
       } catch (error) {
         reportarError("Error al guardar empleado en la base de datos", error);
       }
+    }
+  };
+
+  // Login del admin con su cuenta Google (previamente amarrada en
+  // Configuración). El backend compara el email y abre sesión de admin;
+  // cualquier otra cuenta se rechaza. La clave local sigue viva offline.
+  const handleLoginGoogleAdmin = async () => {
+    setLoadingGoogle(true);
+    try {
+      const ok = await loginAdminGoogle();
+      if (ok) {
+        const profile = await obtenerAdminData();
+        if (profile) {
+          setAdminName(profile.nombre);
+          setStoreName(profile.tienda);
+          setPassword("");
+          setAdminLocation(profile.ubicacion || "");
+          setAdminCp(profile.cp || "");
+          setCurrentOperator(profile.nombre);
+        }
+        setStep(2);
+      } else {
+        notificarError("Esa cuenta Google no es la del dueño.");
+      }
+    } catch (error) {
+      reportarError("No se pudo entrar con Google", error);
+    } finally {
+      setLoadingGoogle(false);
     }
   };
 
@@ -373,6 +402,14 @@ function AppInner() {
                       </div>
                       <button onClick={handleLoginAdmin} onMouseEnter={() => setHoverLoginCheck(true)} onMouseLeave={() => setHoverLoginCheck(false)} className="w-full py-3 rounded-xl bg-neutral-900 text-white text-[10px] font-black tracking-[0.2em] hover:bg-neutral-800 transition-all uppercase shadow-lg shadow-neutral-200 inline-flex items-center justify-center gap-2">ENTRAR AL POS
                         <MorphIcon icon={hoverLoginCheck ? ICONO_CHECK : ICONO_FLECHA} size={18} strokeWidth={2.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleLoginGoogleAdmin}
+                        disabled={loadingGoogle}
+                        className="w-full py-3 rounded-xl border border-neutral-200 bg-white text-[10px] font-black tracking-[0.2em] text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-all uppercase disabled:opacity-60"
+                      >
+                        {loadingGoogle ? "Abriendo Google…" : "Continuar con Google"}
                       </button>
                     </div>
                   )}

@@ -101,6 +101,8 @@ pub fn run() {
             backventanas::backadmin::adminconfig::auth::update_admin_data,
             backventanas::backadmin::adminconfig::auth::guardar_empleado,
             backventanas::backadmin::adminconfig::auth::validar_login_empleado,
+            backventanas::backadmin::adminconfig::auth::validar_login_google,
+            backventanas::backadmin::adminconfig::auth::guardar_google_config,
             backventanas::backadmin::adminconfig::auth::cerrar_sesion,
             backventanas::backadmin::adminconfig::google::login_con_google,
             // Inventario
