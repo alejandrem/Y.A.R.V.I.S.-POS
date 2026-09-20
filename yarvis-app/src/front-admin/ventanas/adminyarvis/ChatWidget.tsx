@@ -30,7 +30,7 @@ export type ModelKey = string;
 
 export const CLOUD_PROVIDERS: { id: "google" | "nvidia"; display: string; defaultModel: string }[] = [
   { id: "google", display: "Gemini", defaultModel: "gemini-3.5-flash-lite" },
-  { id: "nvidia", display: "NVIDIA", defaultModel: "nvidia/llama-3.1-nemotron-nano-8b-v1" },
+  { id: "nvidia", display: "NVIDIA", defaultModel: "nvidia/nemotron-3.5-lightning-30b-a3b" },
 ];
 
 export type { CloudModel } from "../../../services/yarvis";

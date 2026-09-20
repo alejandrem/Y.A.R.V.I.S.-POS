@@ -32,9 +32,11 @@ pub const PROVIDERS: &[Provider] = &[
         key: "nvidia",
         name: "NVIDIA",
         base_url: "https://integrate.api.nvidia.com/v1",
-        // NIM OpenAI-compatible (Bearer nvapi-…): nano 8b, ligero y rápido
-        // para caja. La lista completa sale de GET /models en la app.
-        default_model: "nvidia/llama-3.1-nemotron-nano-8b-v1",
+        // NIM OpenAI-compatible (Bearer nvapi-… de build.nvidia.com). OJO:
+        // la lista /models es PUBLICA (200 sin key); el chat exige key
+        // válida (401 si no). Default: lightning 30b, rápido y barato para
+        // caja. (nano-8b-v1 murió 410 el 2026-08-26: no usar.)
+        default_model: "nvidia/nemotron-3.5-lightning-30b-a3b",
     },
 ];
 
@@ -90,6 +92,6 @@ mod tests {
     fn nvidia_usa_transporte_openai_compatible() {
         let n = PROVIDERS.iter().find(|p| p.key == "nvidia").unwrap();
         assert_eq!(n.base_url, "https://integrate.api.nvidia.com/v1");
-        assert!(n.default_model.starts_with("nvidia/"));
+        assert_eq!(n.default_model, "nvidia/nemotron-3.5-lightning-30b-a3b");
     }
 }
