@@ -29,6 +29,10 @@ export const DIAS = [
 
 export const bloqueVacio = (): Bloque => ({ dias: [0, 1, 2, 3, 4], inicio: "09:00", fin: "17:00" });
 
+/** Bloque nuevo de verdad vacío: "Agregar otro horario" no debe heredar L-V
+ *  (eso duplicaba días entre bloques y rompía "un día = un bloque"). */
+export const bloqueNuevo = (): Bloque => ({ dias: [], inicio: "09:00", fin: "17:00" });
+
 export const detectTurno = (inicio: string) => {
   if (!inicio) return "";
   const h = parseInt(inicio.split(":")[0], 10);

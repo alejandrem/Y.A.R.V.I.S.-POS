@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
-import { bloqueVacio, calcularHorasTotales, type Bloque } from "./horario-empleado";
+import { bloqueNuevo, bloqueVacio, calcularHorasTotales, type Bloque } from "./horario-empleado";
 import type { HorarioEnvio } from "../../../../services/empleados";
 
 export const useBloquesHorario = (inicial?: Bloque[]) => {
@@ -20,21 +20,24 @@ export const useBloquesHorario = (inicial?: Bloque[]) => {
     new Set(bloques.filter((_, i) => i !== idxBloque).flatMap((b) => b.dias));
 
   const toggleDia = (idxBloque: number, dia: number) =>
-    setBloques((prev) =>
-      prev.map((b, i) => {
+    setBloques((prev) => {
+      // Ocupados calculados del `prev` del updater, no del closure: con
+      // clicks rápidos seguidos el closure queda stale y metía duplicados.
+      const ocupados = new Set(prev.filter((_, i) => i !== idxBloque).flatMap((b) => b.dias));
+      return prev.map((b, i) => {
         if (i !== idxBloque) return b;
         return b.dias.includes(dia)
           ? { ...b, dias: b.dias.filter((d) => d !== dia) }
-          : diasOcupadosEn(idxBloque).has(dia)
+          : ocupados.has(dia)
             ? b // el día ya pertenece a otro bloque: ignorar
             : { ...b, dias: [...b.dias, dia].sort() };
-      }),
-    );
+      });
+    });
 
   const setBloque = (idxBloque: number, patch: Partial<Bloque>) =>
     setBloques((prev) => prev.map((b, i) => (i === idxBloque ? { ...b, ...patch } : b)));
 
-  const agregarBloque = () => setBloques((prev) => [...prev, bloqueVacio()]);
+  const agregarBloque = () => setBloques((prev) => [...prev, bloqueNuevo()]);
 
   const eliminarBloque = (idx: number) =>
     setBloques((prev) => prev.filter((_, i) => i !== idx));

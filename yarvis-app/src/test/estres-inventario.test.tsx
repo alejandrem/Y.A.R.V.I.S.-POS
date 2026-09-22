@@ -27,11 +27,15 @@ beforeEach(() => {
 });
 
 describe("estres inventario · catálogo masivo", () => {
-  it("carga y renderiza 2,000 productos sin crash en tiempo razonable", async () => {
+  it("pagina 2,000 productos de 100 en 100 sin crash", async () => {
     const t0 = performance.now();
     const { container } = render(<Inventario activeTab="inventario" />);
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_inventory"));
-    expect(await screen.findByText("Producto 1999")).toBeInTheDocument();
+    // Primera página: solo 100 filas en el DOM, no 2000.
+    expect(await screen.findByText("Producto 0000")).toBeInTheDocument();
+    expect(container.querySelectorAll("tbody tr").length).toBeLessThanOrEqual(200);
+    // El paginador anuncia el total real (2000 productos = 20 páginas).
+    expect(screen.getByText(/20 páginas|2000 productos/i)).toBeInTheDocument();
     const ms = performance.now() - t0;
     expect(container).toBeTruthy();
     // jsdom es lento; 15s holgado para detectar regresiones O(n²)

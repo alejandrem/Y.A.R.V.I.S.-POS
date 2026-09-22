@@ -27,9 +27,12 @@ beforeEach(() => {
 });
 
 describe("estres tickets · historial masivo", () => {
-  it("renderiza 3,000 tickets y sobrevive cambios de rango repetidos", async () => {
+  it("muestra 100 tickets con botón Ver más y sobrevive cambios de rango", async () => {
     render(<Tickets active={true} />);
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("get_tickets", expect.anything()));
+
+    // Ventana visible acotada: 100 nodos + botón progresivo, no 3000.
+    expect(await screen.findByText(/restantes/i)).toBeInTheDocument();
 
     for (let i = 0; i < 20; i++) {
       fireEvent.click(await screen.findByText(/7 DÍAS/i));

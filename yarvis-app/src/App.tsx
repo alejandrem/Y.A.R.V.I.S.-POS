@@ -1,12 +1,17 @@
 // Punto de entrada de la app: asistente de primer inicio y login por rol.
 // Los iconos morpheables compartidos viven en src/icons.ts.
-import { useState, useEffect } from "react";
+//
+// Code-splitting: los 3 paneles (admin/empleado/primer-inicio) arrastran
+// recharts + react-markdown (~1MB). Con lazy() el chunk inicial es solo el
+// login y cada panel se descarga al entrar. En laptop vieja eso es la
+// diferencia entre abrir en 2s o en 8s.
+import { useState, useEffect, lazy, Suspense } from "react";
 import { MorphIcon } from "morphicons/react";
 import type { IconInput } from "morphicons/react";
 import { ICONO_CHECK, ICONO_FLECHA, ICONO_OJO, ICONO_OJO_OCULTO } from "./icons";
-import AdminDashboard from "./front-admin/AdminDashboard";
-import PrimerInicio from "./front-admin/PrimerInicio";
-import EmployeeDashboard from "./front-empleado/EmployeeDashboard";
+const AdminDashboard = lazy(() => import("./front-admin/AdminDashboard"));
+const PrimerInicio = lazy(() => import("./front-admin/PrimerInicio"));
+const EmployeeDashboard = lazy(() => import("./front-empleado/EmployeeDashboard"));
 import { Toaster, notificarError } from "./components/notificaciones";
 import { reportarError, invokeTauri } from "./services/tauri";
 import {
@@ -62,6 +67,17 @@ function LogoMorphing() {
   }, [paso]);
 
   return <MorphIcon icon={ICONOS_LOGO[idx]} size={32} strokeWidth={1.8} className="text-neutral-400" />;
+}
+
+/** Fallback mientras baja el chunk del panel (solo se ve 1 vez por panel). */
+function CargandoPanel() {
+  return (
+    <div className="h-screen w-full flex items-center justify-center bg-white dark:bg-black">
+      <p className="text-[11px] font-black text-neutral-400 uppercase tracking-[0.3em] animate-pulse">
+        Cargando panel…
+      </p>
+    </div>
+  );
 }
 
 function App() {
@@ -275,27 +291,31 @@ function AppInner() {
 
   if (step === 2) {
     return (
-      <AdminDashboard
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onLogout={handleLogout}
-        adminName={adminName}
-        storeName={storeName}
-        adminPass={password}
-        initialLocation={adminLocation}
-        initialCp={adminCp}
-      />
+      <Suspense fallback={<CargandoPanel />}>
+        <AdminDashboard
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onLogout={handleLogout}
+          adminName={adminName}
+          storeName={storeName}
+          adminPass={password}
+          initialLocation={adminLocation}
+          initialCp={adminCp}
+        />
+      </Suspense>
     );
   }
 
   if (step === 3) {
     return (
-      <EmployeeDashboard
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onLogout={handleLogout}
-        operatorName={currentOperator}
-      />
+      <Suspense fallback={<CargandoPanel />}>
+        <EmployeeDashboard
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onLogout={handleLogout}
+          operatorName={currentOperator}
+        />
+      </Suspense>
     );
   }
 
@@ -322,21 +342,23 @@ function AppInner() {
       <section className="w-1/2 flex items-center justify-center p-12 bg-white relative">
         <div className="w-full max-w-sm">
           {step === 0 ? (
-            <PrimerInicio
-              adminName={adminName} setAdminName={setAdminName}
-              storeName={storeName} setStoreName={setStoreName}
-              password={password} setPassword={setPassword}
-              confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
-              showPassword={showPassword} setShowPassword={setShowPassword}
-              handleSaveEmployee={handleSaveEmployee}
-              handleSaveAdmin={handleSaveAdmin}
-              showAddEmployeeForm={showAddEmployeeForm}
-              setShowAddEmployeeForm={setShowAddEmployeeForm}
-              newEmployeeName={newEmployeeName} setNewEmployeeName={setNewEmployeeName}
-              newEmployeePass={newEmployeePass} setNewEmployeePass={setNewEmployeePass}
-              newEmployeeConfirmPass={newEmployeeConfirmPass} setNewEmployeeConfirmPass={setNewEmployeeConfirmPass}
-              showNewEmpPass={showNewEmpPass} setShowNewEmpPass={setShowNewEmpPass}
-            />
+            <Suspense fallback={<CargandoPanel />}>
+              <PrimerInicio
+                adminName={adminName} setAdminName={setAdminName}
+                storeName={storeName} setStoreName={setStoreName}
+                password={password} setPassword={setPassword}
+                confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
+                showPassword={showPassword} setShowPassword={setShowPassword}
+                handleSaveEmployee={handleSaveEmployee}
+                handleSaveAdmin={handleSaveAdmin}
+                showAddEmployeeForm={showAddEmployeeForm}
+                setShowAddEmployeeForm={setShowAddEmployeeForm}
+                newEmployeeName={newEmployeeName} setNewEmployeeName={setNewEmployeeName}
+                newEmployeePass={newEmployeePass} setNewEmployeePass={setNewEmployeePass}
+                newEmployeeConfirmPass={newEmployeeConfirmPass} setNewEmployeeConfirmPass={setNewEmployeeConfirmPass}
+                showNewEmpPass={showNewEmpPass} setShowNewEmpPass={setShowNewEmpPass}
+              />
+            </Suspense>
           ) : (
             /* PASO 1: LOGIN */
             <div className="animate-in fade-in slide-in-from-right-4 duration-500">

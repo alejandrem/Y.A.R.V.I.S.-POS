@@ -23,13 +23,15 @@ const metricas = Array.from({ length: 5000 }, (_, i) => ({
 }));
 
 describe("estres finanzas · tabla de métricas masiva", () => {
-  it("renderiza 5,000 filas sin crash en tiempo razonable", () => {
+  it("pagina 5,000 filas de 100 en 100 con gráfica acotada", () => {
     const t0 = performance.now();
     const { container } = render(
       <SeccionMetricas metricas={metricas} rango={{ inicio: "2026-01-01", fin: "2026-12-31" }} onRango={() => {}} />,
     );
     const ms = performance.now() - t0;
-    expect(container.querySelectorAll("tbody tr").length).toBe(5000);
+    // Solo la página visible en el DOM, no las 5000 filas.
+    expect(container.querySelectorAll("tbody tr").length).toBe(100);
+    expect(container.textContent).toMatch(/50 páginas|5000 días/i);
     // jsdom es lento: 15s es holgado para CI; si se dispara, algo está O(n²)
     expect(ms).toBeLessThan(15000);
   });

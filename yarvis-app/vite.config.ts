@@ -29,4 +29,22 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  // 4. code-splitting: el bundle monolítico de 1.25MB tarda en abrir en
+  //    laptops viejas. Se separan los vendors pesados (recharts, markdown)
+  //    para que el navegador cachee y el chunk inicial quede liviano.
+  //    Los paneles ya van con React.lazy desde App.tsx.
+  build: {
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // OJO: no se separa "react": quedaría un chunk vacío porque el
+          // entry inicial lo necesita sí o sí. Solo vendors bajo demanda.
+          "vendor-charts": ["recharts"],
+          "vendor-markdown": ["react-markdown", "remark-gfm"],
+        },
+      },
+    },
+  },
 }));

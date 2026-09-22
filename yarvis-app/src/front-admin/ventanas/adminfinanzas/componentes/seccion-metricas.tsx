@@ -5,6 +5,7 @@
 // detallada (ventas, COGS, utilidad bruta, gastos, utilidad neta, margen).
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { useState } from "react";
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ICONO_TRENDING } from "../../../../components/ui";
 import type { MetricasUtilidad } from "../../../types";
@@ -21,6 +22,15 @@ interface Props {
 const tooltipCls = { backgroundColor: "#0a0a0a", border: "1px solid #262626", borderRadius: "16px", color: "#fff", fontSize: 11 };
 
 export default function SeccionMetricas({ metricas, rango, onRango }: Props) {
+  // La tabla real nunca pasa de 365 filas (un año día por día), pero el test
+  // de estrés mete 5000. Paginar a 100 mantiene el DOM acotado en ambos casos.
+  const [pagina, setPagina] = useState(1);
+  const PAGE_SIZE = 100;
+  const totalPaginas = Math.max(1, Math.ceil(metricas.length / PAGE_SIZE));
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const filasPagina = metricas.slice((paginaSegura - 1) * PAGE_SIZE, paginaSegura * PAGE_SIZE);
+  // La gráfica con miles de puntos también se satura: se dibujan máx 365.
+  const datosGrafica = metricas.length > 365 ? metricas.slice(-365) : metricas;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -36,7 +46,7 @@ export default function SeccionMetricas({ metricas, rango, onRango }: Props) {
         <>
           <SeccionGrafica titulo="Utilidad Neta Diaria" subtitulo="Tendencia del periodo">
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={metricas}>
+              <AreaChart data={datosGrafica}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
                 <XAxis dataKey="fecha" tick={{ fontSize: 10, fontWeight: 700 }} tickFormatter={(v) => v.slice(5)} />
                 <YAxis tick={{ fontSize: 10, fontWeight: 700 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
@@ -62,7 +72,7 @@ export default function SeccionMetricas({ metricas, rango, onRango }: Props) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-50">
-                  {metricas.map((m) => (
+                  {filasPagina.map((m) => (
                     <tr key={m.fecha} className="group hover:bg-neutral-50/50 transition-all">
                       <td className="px-8 py-4 text-xs font-bold text-neutral-900">{m.fecha}</td>
                       <td className="px-6 py-4 text-xs font-black text-neutral-950">{moneda(m.ventas_totales)}</td>
@@ -84,6 +94,29 @@ export default function SeccionMetricas({ metricas, rango, onRango }: Props) {
                 </tbody>
               </table>
             </div>
+            {totalPaginas > 1 && (
+              <div className="flex items-center justify-between px-6 py-4 bg-neutral-50/50 border-t border-neutral-100">
+                <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">
+                  Pág. {paginaSegura}/{totalPaginas} · {metricas.length} días
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                    disabled={paginaSegura <= 1}
+                    className="px-3 py-1.5 text-[10px] font-black uppercase rounded-lg bg-white border border-neutral-200 disabled:opacity-30"
+                  >
+                    ← Ant
+                  </button>
+                  <button
+                    onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                    disabled={paginaSegura >= totalPaginas}
+                    className="px-3 py-1.5 text-[10px] font-black uppercase rounded-lg bg-white border border-neutral-200 disabled:opacity-30"
+                  >
+                    Sig →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       ) : (

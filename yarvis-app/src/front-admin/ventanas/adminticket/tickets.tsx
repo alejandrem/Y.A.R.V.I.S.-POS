@@ -22,6 +22,10 @@ const Tickets = ({ active = true }: TicketsProps) => {
 
   const [histStartDate, setHistStartDate] = useState("");
   const [histEndDate, setHistEndDate] = useState("");
+  // Ventana visible del historial: el backend ya pagina (limit 500), pero
+  // pintar 500 nodos de golpe traba laptops viejas. 100 iniciales + botón.
+  const [visibles, setVisibles] = useState(100);
+  const PAGE_HIST = 100;
 
   const fetchData = async () => {
     try {
@@ -37,9 +41,13 @@ const Tickets = ({ active = true }: TicketsProps) => {
   // Se monta una vez (KeepAlive) y recarga datos al volver a la pestaña,
   // manteniendo el rango seleccionado. No depende de fetchData para evitar loops.
   useEffect(() => {
-    if (active) fetchData();
+    if (active) { fetchData(); setVisibles(100); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  // Cambiar de rango reinicia la ventana visible (si no, "TODOS" con 500
+  // tickets seguiría mostrando el scroll profundo del rango anterior).
+  useEffect(() => { setVisibles(100); }, [selectedRange, histStartDate, histEndDate]);
 
   // Filtrado real por rango de fechas
   const filteredTickets = useMemo(() => {
@@ -159,7 +167,7 @@ const Tickets = ({ active = true }: TicketsProps) => {
           <div className="h-48 sm:h-64 flex flex-col items-center justify-center border-2 border-dashed border-neutral-100 rounded-2xl sm:rounded-3xl bg-neutral-50/50">
             {filteredTickets.length > 0 ? (
               <div className="w-full px-4 space-y-2 overflow-y-auto">
-                {filteredTickets.map((t) => (
+                {filteredTickets.slice(0, visibles).map((t) => (
                   <div key={t.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-neutral-100 shadow-sm">
                     <div className="text-left">
                       <p className="text-[10px] font-black text-neutral-900 uppercase">TICKET {t.folio_ticket || `#${t.id}`}</p>
@@ -168,6 +176,14 @@ const Tickets = ({ active = true }: TicketsProps) => {
                     <p className="text-xs font-black text-neutral-900">${t.total.toFixed(2)}</p>
                   </div>
                 ))}
+                {filteredTickets.length > visibles && (
+                  <button
+                    onClick={() => setVisibles((v) => v + PAGE_HIST)}
+                    className="w-full py-2.5 text-[9px] font-black uppercase tracking-widest text-neutral-500 hover:text-neutral-900 border border-dashed border-neutral-200 rounded-xl transition-colors"
+                  >
+                    Ver más ({filteredTickets.length - visibles} restantes)
+                  </button>
+                )}
               </div>
             ) : (
               <>
@@ -186,7 +202,7 @@ const Tickets = ({ active = true }: TicketsProps) => {
           <div className="h-48 sm:h-64 flex flex-col items-center justify-center border-2 border-dashed border-neutral-100 rounded-2xl sm:rounded-3xl bg-neutral-50/50">
             {filteredCortes.length > 0 ? (
               <div className="w-full px-4 space-y-2 overflow-y-auto">
-                {filteredCortes.map((c) => (
+                {filteredCortes.slice(0, visibles).map((c) => (
                   <div key={c.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-neutral-100 shadow-sm">
                     <div className="text-left">
                       <p className="text-[10px] font-black text-neutral-900 uppercase">CORTE #{c.id}</p>
@@ -195,6 +211,14 @@ const Tickets = ({ active = true }: TicketsProps) => {
                     <p className="text-xs font-black text-neutral-900">${c.total_ventas.toFixed(2)}</p>
                   </div>
                 ))}
+                {filteredCortes.length > visibles && (
+                  <button
+                    onClick={() => setVisibles((v) => v + PAGE_HIST)}
+                    className="w-full py-2.5 text-[9px] font-black uppercase tracking-widest text-neutral-500 hover:text-neutral-900 border border-dashed border-neutral-200 rounded-xl transition-colors"
+                  >
+                    Ver más ({filteredCortes.length - visibles} restantes)
+                  </button>
+                )}
               </div>
             ) : (
               <>

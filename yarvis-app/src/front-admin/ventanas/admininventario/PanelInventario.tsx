@@ -37,6 +37,10 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [inventoryFilter, setInventoryFilter] = useState("A-Z");
   const [searchQuery, setSearchQuery] = useState("");
+  // Paginación: renderizar 2000 filas de golpe congela laptops viejas y
+  // revienta los tests de estrés en jsdom. 100 por página es el estándar POS.
+  const [pagina, setPagina] = useState(1);
+  const PAGE_SIZE = 100;
   const [conciliacion, setConciliacion] = useState<Record<number, { fisico: number; sistema: number }>>({});
   const [showPrint, setShowPrint] = useState(false);
   // Qué lista imprime el modal: la conciliación completa o solo críticos.
@@ -55,6 +59,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
     if (activeTab === "inventario") {
       loadInventory();
       loadConteosSemaforo();
+      setPagina(1);
     }
   }, [activeTab]);
 
@@ -87,6 +92,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
     try {
       const items = await obtenerInventario();
       setInventory(items);
+      setPagina(1);
     } catch (error) {
       reportarError("No se pudo cargar el inventario", error);
     }
@@ -115,6 +121,11 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
     }
     return sorted;
   }, [inventory, inventoryFilter, searchQuery]);
+
+  // Ventana visible: solo 100 filas en el DOM. El resto vive en memoria.
+  const totalPaginas = Math.max(1, Math.ceil(sortedInventory.length / PAGE_SIZE));
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const itemsPagina = sortedInventory.slice((paginaSegura - 1) * PAGE_SIZE, paginaSegura * PAGE_SIZE);
 
   const stockBajo = inventory.filter(i => i.stock <= i.stock_minimo);
 
@@ -239,7 +250,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
               type="text"
               placeholder="Buscar producto..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setPagina(1); }}
               className="pl-10 pr-4 py-2.5 bg-neutral-50 border border-neutral-100 rounded-xl text-xs font-bold focus:outline-none focus:ring-4 focus:ring-neutral-900/5 focus:border-neutral-900 transition-all w-64"
             />
             <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-300 group-focus-within:text-neutral-900 transition-colors">
@@ -249,7 +260,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
 
           <select
             value={inventoryFilter}
-            onChange={(e) => setInventoryFilter(e.target.value)}
+            onChange={(e) => { setInventoryFilter(e.target.value); setPagina(1); }}
             className="px-4 py-2.5 bg-neutral-50 border border-neutral-100 rounded-xl text-[10px] font-black uppercase tracking-widest focus:outline-none focus:ring-4 focus:ring-neutral-900/5 appearance-none cursor-pointer pr-10 relative"
           >
             <option value="A-Z">A-Z</option>
@@ -289,7 +300,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-50">
-            {sortedInventory.map((item, idx) => {
+            {itemsPagina.map((item, idx) => {
               const isEditing = esAdmin && editingId === item.id;
               const margin = item.precio_venta > 0 ? ((item.precio_venta - (item.precio_costo || 0)) / item.precio_venta * 100).toFixed(1) : "0.0";
 
@@ -408,6 +419,29 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
           </tbody>
         </table>
         </div>
+        {totalPaginas > 1 && (
+          <div className="flex items-center justify-between px-6 py-4 bg-neutral-50/50 border-t border-neutral-100">
+            <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">
+              Pág. {paginaSegura}/{totalPaginas} · {sortedInventory.length} productos
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                disabled={paginaSegura <= 1}
+                className="px-3 py-1.5 text-[10px] font-black uppercase rounded-lg bg-white border border-neutral-200 disabled:opacity-30 hover:border-neutral-900 transition-all"
+              >
+                ← Ant
+              </button>
+              <button
+                onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                disabled={paginaSegura >= totalPaginas}
+                className="px-3 py-1.5 text-[10px] font-black uppercase rounded-lg bg-white border border-neutral-200 disabled:opacity-30 hover:border-neutral-900 transition-all"
+              >
+                Sig →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Semáforo compacto: 4 tiles + botón que abre el modal ── */}
@@ -575,7 +609,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-50">
-                  {sortedInventory.map((item) => {
+                  {itemsPagina.map((item) => {
                     if (item.id == null) return null;
                     const c = conciliacion[item.id];
                     if (!c) return null;
@@ -664,7 +698,7 @@ const PanelInventario = ({ rol, activeTab }: PanelInventarioProps) => {
                       </td>
                     </tr>
                   ) : (
-                    sortedInventory.map((item) => {
+                    itemsPagina.map((item) => {
                       if (item.id == null) return null;
                       const c = conciliacion[item.id];
                       if (!c) return null;
