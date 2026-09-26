@@ -15,3 +15,7 @@
 *.toml text eol=lf
 *.sh text eol=lf
 *.bat text eol=crlf
+# Los datasets se copian tal cual (cp) de dataset/ a src-tauri/datasets/
+# en el build: si difieren en finales de línea, git los marca modificados
+# aunque el contenido sea idéntico. LF en ambos lados y se acabó.
+*.csv text eol=lf
