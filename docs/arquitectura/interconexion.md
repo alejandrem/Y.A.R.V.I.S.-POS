@@ -34,7 +34,7 @@ No hay HTTP local. No hay puertos libres. No hay ai_service. No hay externalBin 
 
 1. El usuario ejecuta yarvis-app (el binario unico).
 2. lib.rs abre el pool SQLite (db/db.rs): crea el archivo yarvis.db si no existe, activa WAL, aplica migraciones (dos fases para foreign_keys), crea tablas.
-3. Se registran 144 comandos Tauri en el invoke_handler y se inicia el job de alertas cada hora.
+3. Se registran 145 comandos Tauri en el invoke_handler y se inicia el job de alertas cada hora.
 4. main.tsx monta React: el orquestador App.tsx decide la pantalla segun check_setup_done (comando real):
    - Paso 0 PrimerInicio: primer registro de administrador + tienda + empleado (solo se muestra una vez).
    - Paso 1 Login con seleccion de rol y contrasena.
@@ -87,6 +87,20 @@ En la era Python existia knowledge_base con sqlite-vec. En Rust se implementó m
 - backfill_embeddings (importacion) — OPERATIVO (construye todo antes de borrar)
 
 Interino aún: similitud TF-IDF + fuzzy en vinculador_inventario para vincular tickets. Las predicciones con Holt-Winters ya estan operativas.
+
+## Registro de comandos por dominio (145 en lib.rs)
+
+El `invoke_handler` es UNO solo por restricción de Tauri: `generate_handler!`
+solo acepta rutas literales y el `Invoke` se mueve al wrapper que acierta
+(detalle en `yarvis-app/src-tauri/src/backventanas/handlers.rs`). Dominios en
+orden: sistema | auth | inventario | parser | tickets | empleados | operacion |
+finanzas | chat.
+
+Alta nueva (4 pasos): 1) `#[tauri::command]` en su dominio,
+2) 1 línea en su sección de `lib.rs`, 3) `invokeTauri("nombre")` en
+`src/services/`, 4) `npm run verificar:comandos` en verde. El test
+`handlers::tests::handler_sin_duplicados_y_sin_borrados` impide duplicados y
+borrados accidentales en Rust; el script revisa la paridad con el frontend.
 
 ## Relaciones por rol
 

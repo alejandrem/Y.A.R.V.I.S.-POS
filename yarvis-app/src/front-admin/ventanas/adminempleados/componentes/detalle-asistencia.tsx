@@ -1,15 +1,17 @@
 // Bloque "Asistencia de hoy" del detalle: barra con preExtra/trabajo/
 // postExtra y markers de login, entrada oficial y salida.
-import { geometriaBarra, fmtHM, type MiTurno } from "../../../../components/turno-extra";
+import { geometriaBarra, fmtHM, AvisoReloj, type MiTurno } from "../../../../components/turno-extra";
+import type { EstadoHora } from "../../../../services/turno";
 import { MorphIcon } from "morphicons/react";
 import { ICONO_RELOJ } from "../../../../components/ui";
 
 interface DetalleAsistenciaProps {
   asistenciaDetalle: MiTurno | null;
   ahora: Date;
+  hora?: EstadoHora | null;
 }
 
-export const DetalleAsistencia = ({ asistenciaDetalle, ahora }: DetalleAsistenciaProps) => {
+export const DetalleAsistencia = ({ asistenciaDetalle, ahora, hora = null }: DetalleAsistenciaProps) => {
   const barraDetalle = geometriaBarra(asistenciaDetalle, ahora);
   return (
     <div className="bg-white rounded-[2.5rem] border border-neutral-200 p-6 sm:p-8 shadow-sm">
@@ -112,6 +114,8 @@ export const DetalleAsistencia = ({ asistenciaDetalle, ahora }: DetalleAsistenci
               <p className={`text-[9px] font-black uppercase tracking-widest mt-1 ${barraDetalle.enExtra ? "text-emerald-500" : "text-neutral-400"}`}>Salida</p>
             </div>
           </div>
+
+          <AvisoReloj hora={hora} compacto />
         </>
       )}
     </div>

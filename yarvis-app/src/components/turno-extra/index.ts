@@ -9,3 +9,4 @@ export { MiniBarraDia, geometriaMiniBarra, ESCALA_NOCTURNA_MIN } from "./MiniBar
 export type { GeometriaMini } from "./MiniBarraDia";
 export { BarraTurnoNormal } from "./BarraTurnoNormal";
 export { BarraExtra } from "./BarraExtra";
+export { default as AvisoReloj } from "./AvisoReloj";

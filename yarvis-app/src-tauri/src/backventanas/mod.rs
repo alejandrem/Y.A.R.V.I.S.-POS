@@ -4,3 +4,5 @@ pub mod backcortes;
 pub mod backempleado;
 pub mod codigos_barras;
 pub mod db;
+pub mod handlers;
+pub mod hora;

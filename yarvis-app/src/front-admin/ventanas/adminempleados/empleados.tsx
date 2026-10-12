@@ -6,6 +6,7 @@ import { invokeTauri, reportarError } from "../../../services/tauri";
 import { MorphIcon } from "morphicons/react";
 import type { EmpleadoProfile } from "../../../services/empleado";
 import type { MiTurno, DiaExtra } from "../../../components/turno-extra";
+import type { EstadoHora } from "../../../services/turno";
 import ModalEmpleados from "./modalEmpleados";
 import ModalMetas from "./modalMetas";
 import {
@@ -52,6 +53,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   const [cortes, setCortes] = useState<CorteEmpleado[]>([]);
   const [asistenciaDetalle, setAsistenciaDetalle] = useState<MiTurno | null>(null);
   const [extrasDetalle, setExtrasDetalle] = useState<DiaExtra[] | null>(null);
+  const [horaSistema, setHoraSistema] = useState<EstadoHora | null>(null);
   const [expandidasAdmin, setExpandidasAdmin] = useState<Set<string>>(new Set());
   const [ahora, setAhora] = useState(() => new Date());
 
@@ -68,6 +70,12 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
 
   useEffect(() => {
     if (activeTab === "empleados") loadData();
+    // Hora del sistema una vez por entrada a la pestaña (best-effort).
+    if (activeTab === "empleados") {
+      invokeTauri<EstadoHora>("verificar_hora_sistema")
+        .then(setHoraSistema)
+        .catch(() => setHoraSistema(null));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -223,7 +231,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
           </div>
 
           {/* ASISTENCIA DE HOY — misma barra que ve el empleado */}
-          <DetalleAsistencia asistenciaDetalle={asistenciaDetalle} ahora={ahora} />
+          <DetalleAsistencia asistenciaDetalle={asistenciaDetalle} ahora={ahora} hora={horaSistema} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
             {/* VENTAS */}

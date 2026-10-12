@@ -56,6 +56,7 @@ En tu lista de días con extra, si el día de hoy todavía no tiene corte Z, en 
 
 * **Sin login no hay avance.** Si no has entrado hoy, la barra va en 0%. El reloj solo no es trabajo.
 * **La hora la pone tu computadora.** El POS cree lo que diga el reloj de Windows. Si la computadora está mal de hora, todo sale mal. Por eso la computadora de la tienda debe tener la hora automática activada.
+* **El POS ahora te avisa.** Al abrir tu perfil o el detalle de empleados, el sistema compara tu reloj con la hora de internet (si hay) y con tu último ticket guardado. Si vas más de 5 minutos desfasado o tu reloj está atrás del último movimiento, sale un letrero amarillo/rojo que dice cuánto y cómo arreglarlo (Configuración → Hora e idioma → hora automática). Sin internet no bloquea la caja, solo te pide revisarla a mano.
 
 ---
 

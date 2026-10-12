@@ -5,7 +5,7 @@
 // ══════════════════════════════════════════════════════════════════
 import { useState, useEffect } from "react";
 import { invokeTauri, reportarError } from "../../../services/tauri";
-import { obtenerMiTurno, obtenerMisHorasExtra } from "../../../services/turno";
+import { obtenerMiTurno, obtenerMisHorasExtra, obtenerHoraSistema, type EstadoHora } from "../../../services/turno";
 import {
   geometriaBarra,
   type MiTurno, type DiaExtra,
@@ -36,6 +36,7 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
   const [data, setData] = useState<EmployeeProfileFull | null>(null);
   const [turno, setTurno] = useState<MiTurno | null>(null);
   const [extras, setExtras] = useState<DiaExtra[] | null>(null);
+  const [hora, setHora] = useState<EstadoHora | null>(null);
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
   const [ahora, setAhora] = useState(() => new Date());
 
@@ -55,6 +56,8 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
     if (activeTab === "perfil") {
       obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar tu turno", e));
       obtenerMisHorasExtra().then(setExtras).catch((e) => reportarError("No se pudieron cargar tus horas extra", e));
+      // Reloj: best-effort, si falla no rompe el perfil (offline-first).
+      obtenerHoraSistema().then(setHora).catch(() => setHora(null));
     }
   }, [activeTab]);
 
@@ -108,7 +111,7 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
       </div>
 
       {/* TURNO - BARRA DE ASISTENCIA CON PUNTOS Y EXTRAS */}
-      <TarjetaTurno profile={profile} turno={turno} barra={barra} />
+      <TarjetaTurno profile={profile} turno={turno} barra={barra} hora={hora} />
 
       {/* SALARIO - CUADROS GRANDES */}
       <TarjetasSalario profile={profile} />

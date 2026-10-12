@@ -49,7 +49,7 @@ if %errorlevel% neq 0 (
 )
 where rustc >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [ERROR] 'rustc' no esta instalado (rustup incompleto). Reinstala: https://rustup.rs
+    echo [ERROR] 'rustc' no esta instalado -rustup incompleto-. Reinstala: https://rustup.rs
     set "MISSING_DEPS=1"
 )
 
@@ -79,27 +79,29 @@ if %errorlevel% neq 0 (
 )
 
 REM Linker de MSVC (cl.exe) o al menos vswhere (detector de VS Build Tools)
+REM NOTA batch: estructura plana con goto, SIN bloques if anidados: los
+REM parentesis dentro de un bloque rompen el parseo del .bat.
 where cl >nul 2>nul
-if %errorlevel% neq 0 (
-    if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
-        "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -products * -requires Microsoft.VisualStudio.Component.VC.Tools -property installationPath >nul 2>nul
-        if !errorlevel! neq 0 (
-            echo [ERROR] Tienes Visual Studio pero SIN la carga "Desktop C++" (VC.Tools).
-            echo   Abre Visual Studio Installer ^> Modificar ^> marca "Desarrollo para el escritorio con C++".
-            pause
-            exit /b 1
-        )
-    ) else (
-        echo [ERROR] No se encontro el compilador C++ de Microsoft (cl.exe ni vswhere).
-        echo   Instala "Build Tools para Visual Studio 2022" con la carga
-        echo   "Desarrollo para el escritorio con C++":
-        echo   https://visualstudio.microsoft.com/es/downloads/#build-tools-for-visual-studio-2022
-        pause
-        exit /b 1
-    )
-) else (
-    echo [OK] MSVC (cl.exe) detectado.
+if %errorlevel% equ 0 (
+    echo [OK] MSVC -cl.exe- detectado.
+    goto BUILD_MSVC_OK
 )
+set "VSWHERE_EXE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%VSWHERE_EXE%" goto BUILD_MSVC_FALTA
+"%VSWHERE_EXE%" -products * -requires Microsoft.VisualStudio.Component.VC.Tools -property installationPath >nul 2>nul
+if %errorlevel% equ 0 goto BUILD_MSVC_OK
+echo [ERROR] Tienes Visual Studio pero SIN la carga "Desktop C++" -VC.Tools-.
+echo   Abre Visual Studio Installer, dale Modificar y marca "Desarrollo para el escritorio con C++".
+pause
+exit /b 1
+:BUILD_MSVC_FALTA
+echo [ERROR] No se encontro el compilador C++ de Microsoft -cl.exe ni vswhere-.
+echo   Instala "Build Tools para Visual Studio 2022" con la carga
+echo   "Desarrollo para el escritorio con C++":
+echo   https://visualstudio.microsoft.com/es/downloads/#build-tools-for-visual-studio-2022
+pause
+exit /b 1
+:BUILD_MSVC_OK
 
 REM ============================================================
 REM 3. Preflight: instaladores (solo lo que se va a usar)
@@ -109,7 +111,7 @@ if "%NEED_NSIS%"=="1" (
     if !errorlevel! neq 0 (
         echo [ERROR] Pediste bundle NSIS pero 'makensis' no esta en el PATH.
         echo   Instala NSIS 3.x: https://nsis.sourceforge.io/Download
-        echo   (marca "Add to PATH" en el instalador) o corre solo portable con:
+        echo   -marca "Add to PATH" en el instalador- o corre solo portable con:
         echo   build.bat --bundles none
         pause
         exit /b 1
@@ -120,7 +122,7 @@ if "%NEED_NSIS%"=="1" (
 if "%NEED_MSI%"=="1" (
     where candle >nul 2>nul
     if !errorlevel! neq 0 (
-        echo [ERROR] Pediste bundle MSI pero WiX Toolset (candle.exe) no esta en el PATH.
+        echo [ERROR] Pediste bundle MSI pero WiX Toolset -candle.exe- no esta en el PATH.
         echo   Instala WiX 3.14: https://wixtoolset.org/releases/ ^(o quita 'msi' de los bundles^)
         pause
         exit /b 1
@@ -141,7 +143,7 @@ if "%TIENE_CLANG%"=="0" (
     echo [WARN] No se detecto Clang/libclang. Si 'cargo build' muere con
     echo   "libclang not found" o error de bindgen, instala LLVM y reintenta:
     echo   winget install -e --id LLVM.LLVM
-    echo   (luego cierra y reabre la terminal para refrescar el PATH)
+    echo   -luego cierra y reabre la terminal para refrescar el PATH-
 ) else (
     echo [OK] Clang/libclang detectado.
 )
@@ -217,7 +219,7 @@ for %%D in (llama.dll ggml.dll ggml-base.dll ggml-cpu.dll mtmd.dll) do (
     if not exist "src-tauri\target\release\%%D" (
         echo [ERROR] Falta src-tauri\target\release\%%D tras compilar.
         echo   Posible cambio de nombres en llama-cpp. Revisa target\release\*.dll
-        echo   y actualiza la lista en build.bat + tauri.conf.json (resources).
+        echo   y actualiza la lista en build.bat + tauri.conf.json -resources-.
         set "DLLS_OK=0"
     ) else (
         copy /y "src-tauri\target\release\%%D" "src-tauri\dlls\" >nul

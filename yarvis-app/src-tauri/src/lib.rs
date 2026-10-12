@@ -1,6 +1,12 @@
 // ============================================================
 // lib.rs — Setup principal de Tauri
 // Inicializa SQLite. Todo corre 100% nativo en Rust.
+//
+// Registro de comandos: UN solo `generate_handler!` (Tauri lo exige:
+// solo acepta rutas literales y consume el Invoke, ver
+// backventanas/handlers.rs). Dominios en orden: sistema | auth |
+// inventario | parser | tickets | empleados | operacion | finanzas
+// | chat. Alta nueva: ver backventanas/handlers.rs (4 pasos).
 // ============================================================
 
 pub mod api_config;
@@ -89,9 +95,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Ventanas (splash nativo -> principal)
+            // ── sistema (handlers.rs §sistema): splash -> principal ──
             principal_lista,
-            // Auth
+            // ── auth (handlers.rs §auth) ──
             api_config::guardar_api_keys,
             api_config::leer_api_keys,
             backventanas::backadmin::adminconfig::auth::check_setup_done,
@@ -103,7 +109,7 @@ pub fn run() {
             backventanas::backadmin::adminconfig::auth::validar_login_empleado,
             backventanas::backadmin::adminconfig::auth::cerrar_sesion,
             backventanas::backadmin::adminconfig::google::login_con_google,
-            // Inventario
+            // ── inventario (handlers.rs §inventario) ──
             backventanas::backadmin::admininventory::inventory::get_inventory,
             backventanas::backadmin::admininventory::inventory::add_inventory_item,
             backventanas::backadmin::admininventory::inventory::update_inventory_item,
@@ -128,7 +134,7 @@ pub fn run() {
             backventanas::backadmin::admininventory::inventory::backfill_embeddings,
             backventanas::backadmin::admininventory::inventory::get_catalogos_importados,
             backventanas::backadmin::admininventory::inventory::get_productos_por_catalogo,
-            // Parser
+            // ── parser (handlers.rs §parser) ──
             backventanas::backadmin::adminparser::leer_archivo_raw,
             backventanas::backadmin::adminparser::leer_archivo_bytes,
             backventanas::backadmin::adminparser::parsear_catalogo_csv,
@@ -147,7 +153,7 @@ pub fn run() {
             backventanas::backadmin::adminparser::cortes_import::historial::get_corte_importado_detalle,
             backventanas::backadmin::adminparser::parser_commands::descargar_modelos,
             backventanas::backadmin::adminparser::listar_archivos_carpeta,
-            // Tickets
+            // ── tickets (handlers.rs §tickets) ──
             backventanas::backadmin::admintickets::tickets::get_tickets,
             backventanas::backadmin::admintickets::tickets::get_tickets_total,
             backventanas::backadmin::admintickets::tickets::get_cortes,
@@ -157,26 +163,26 @@ pub fn run() {
             backventanas::backadmin::admintickets::tickets::get_kpis_ventas,
             backventanas::backadmin::admintickets::tickets::get_ventas_por_empleado_dia,
             backventanas::backadmin::admintickets::tickets::get_top_productos,
-            // Empleados - Dashboard
+            // ── empleados admin (handlers.rs §empleados): dashboard ──
             backventanas::backadmin::adminempleados::empleados::get_empleados,
             backventanas::backadmin::adminempleados::empleados::get_empleado_ventas,
             backventanas::backadmin::adminempleados::empleados::get_resumen_empleados,
             backventanas::backadmin::adminempleados::empleados::get_cortes_empleado,
-            // Empleados - Modal empleado
+            // ── empleados admin: modal empleado ──
             backventanas::backadmin::adminempleados::modalempleado::editar_empleado,
             backventanas::backadmin::adminempleados::modalempleado::set_estado_empleado,
             backventanas::backadmin::adminempleados::modalempleado::aviso_password_defecto,
-            // Empleados - Modal metas
+            // ── empleados admin: modal metas ──
             backventanas::backadmin::adminempleados::modalmetas::get_employee_goals,
             backventanas::backadmin::adminempleados::modalmetas::save_employee_goal,
             backventanas::backadmin::adminempleados::modalmetas::save_custom_goal,
             backventanas::backadmin::adminempleados::modalmetas::delete_employee_goal,
             backventanas::backadmin::adminempleados::modalmetas::check_employee_goals,
-            // Empleado - Nueva Venta
+            // ── operacion empleado (handlers.rs §operacion): nueva venta ──
             backventanas::backempleado::emplea_new_venta::new_venta::completar_venta,
             backventanas::backempleado::emplea_new_venta::new_venta::get_next_ticket_number,
             backventanas::backempleado::emplea_new_venta::new_venta::get_tienda_info,
-            // Empleado - Proveedores (operator-scoped; alta, sugerencia, compras, historial)
+            // ── operacion empleado: proveedores (operator-scoped) ──
             backventanas::backempleado::empleaproveedores::proveedores::guardar_proveedor,
             backventanas::backempleado::empleaproveedores::proveedores::crear_proveedor_generico,
             backventanas::backempleado::empleaproveedores::proveedores::listar_proveedores,
@@ -185,19 +191,21 @@ pub fn run() {
             backventanas::backempleado::empleaproveedores::compras::rectificar_compra,
             backventanas::backempleado::empleaproveedores::compras::historial_compras,
             backventanas::backempleado::empleaproveedores::compras::get_compra_detalle,
-            // Empleado - Perfil
+            // ── operacion empleado: perfil + hora del sistema ──
             backventanas::backempleado::empleaperfil::perfil::get_employee_profile,
             backventanas::backempleado::empleaperfil::asistencia::get_mi_turno,
             backventanas::backempleado::empleaperfil::asistencia::get_asistencia_empleado,
             backventanas::backempleado::empleaperfil::asistencia::get_mis_horas_extra,
             backventanas::backempleado::empleaperfil::asistencia::get_horas_extra_empleado,
-            // Empleado - Mis tickets (operator-scoped por session.user_id)
+            // Hora del sistema (reloj de Windows vs red, aviso de desfase)
+            backventanas::hora::verificar_hora_sistema,
+            // ── operacion empleado: mis tickets (operator-scoped) ──
             backventanas::backempleado::empleatickets::mis_tickets::get_mis_tickets,
             backventanas::backempleado::empleatickets::mis_tickets::get_mis_kpis,
             backventanas::backempleado::empleatickets::mis_tickets::get_mis_ventas_por_dia,
             backventanas::backempleado::empleatickets::mis_tickets::get_mi_ticket_detalle,
             backventanas::backempleado::empleatickets::mis_cortes::get_mis_cortes,
-            // Finanzas - Gastos
+            // ── finanzas (handlers.rs §finanzas): gastos ──
             backventanas::backadmin::adminfinanzas::gastos::get_gastos_recurrentes,
             backventanas::backadmin::adminfinanzas::gastos::crear_gasto,
             backventanas::backadmin::adminfinanzas::gastos::actualizar_gasto,
@@ -206,7 +214,7 @@ pub fn run() {
             backventanas::backadmin::adminfinanzas::gastos::get_pagos_gasto,
             backventanas::backadmin::adminfinanzas::gastos::get_proximos_vencimientos,
             backventanas::backadmin::adminfinanzas::gastos::actualizar_estados_gastos,
-            // Finanzas - Cortes X/Z
+            // ── finanzas: cortes X/Z ──
             backventanas::backadmin::adminfinanzas::cortes::get_cortes_caja,
             backventanas::backadmin::adminfinanzas::cortes::get_corte_detalle,
             backventanas::backadmin::adminfinanzas::cortes::crear_corte_x,
@@ -215,29 +223,29 @@ pub fn run() {
             backventanas::backadmin::adminfinanzas::cortes::agregar_movimiento_caja,
             backventanas::backadmin::adminfinanzas::cortes::get_movimientos_corte,
             backventanas::backadmin::adminfinanzas::cortes::get_cortes_por_cajero_fecha,
-            // Cortes X/Z diferenciados (backcortes compartido admin+empleado)
+            // ── finanzas: cortes X/Z diferenciados (backcortes admin+empleado) ──
             backventanas::backcortes::corte_x::corte_x_reporte,
             backventanas::backcortes::corte_z::corte_z_cierre,
             backventanas::backcortes::impresion::imprimir_corte,
-            // Finanzas - Métricas y Utilidades
+            // ── finanzas: métricas y utilidades ──
             backventanas::backadmin::adminfinanzas::metricas::get_metricas_diarias,
             backventanas::backadmin::adminfinanzas::metricas::get_resumen_periodo,
             backventanas::backadmin::adminfinanzas::metricas::recalcular_resumen_diario,
             backventanas::backadmin::adminfinanzas::metricas::get_punto_equilibrio,
-            // Finanzas - Gráficas
+            // ── finanzas: gráficas ──
             backventanas::backadmin::adminfinanzas::graficas::get_datos_grafica_pl,
             backventanas::backadmin::adminfinanzas::graficas::get_gastos_por_categoria,
             backventanas::backadmin::adminfinanzas::graficas::get_tendencia_cortes_z,
             backventanas::backadmin::adminfinanzas::graficas::get_ventas_vs_gastos_mensual,
             backventanas::backadmin::adminfinanzas::graficas::get_predicciones_financieras,
-            // Finanzas - Alertas
+            // ── finanzas: alertas ──
             backventanas::backadmin::adminfinanzas::alertas::get_alertas,
             backventanas::backadmin::adminfinanzas::alertas::marcar_alerta_leida,
             backventanas::backadmin::adminfinanzas::alertas::generar_alertas_automaticas,
-            // Finanzas - Export (TODO)
+            // ── finanzas: export ──
             backventanas::backadmin::adminfinanzas::export::exportar_balance_pdf,
             backventanas::backadmin::adminfinanzas::export::exportar_gastos_csv,
-            // Chat (local Qwen 1.7B + nube)
+            // ── chat (handlers.rs §chat): local Qwen + nube ──
             backventanas::backadmin::admintarvis::chat::send_chat_message,
             backventanas::backadmin::admintarvis::chat::send_chat_stream,
             backventanas::backadmin::admintarvis::chat::get_cloud_models,
@@ -246,12 +254,12 @@ pub fn run() {
             backventanas::backadmin::admintarvis::chat::set_local_model_path,
             backventanas::backadmin::admintarvis::chat::load_chat_model,
             backventanas::backadmin::admintarvis::chat::unload_chat_model,
-            // Impresora termica — Camino A Fase 1 (spooler Windows RAW)
+            // ── sistema: impresora térmica A (spooler Windows RAW) ──
             impresora::commands::listar_impresoras,
             impresora::commands::imprimir_bytes_raw,
             impresora::commands::imprimir_lista_conciliacion,
             impresora::commands::imprimir_lista_stock_bajo,
-            // Impresora termica — Camino C Fase 2 (ticket `escpos` + red)
+            // ── sistema: impresora térmica C (ticket `escpos` + red) ──
             impresora::commands::imprimir_ticket_venta,
             impresora::commands::probar_red,
             impresora::commands::abrir_cajon,

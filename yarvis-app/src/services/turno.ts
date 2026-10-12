@@ -18,5 +18,20 @@ export const obtenerMiTurno = () =>
 export const obtenerMisHorasExtra = () =>
   invokeTauri<DiaExtra[]>("get_mis_horas_extra");
 
+export interface EstadoHora {
+  hora_sistema: string;
+  zona: string;
+  red_disponible: boolean;
+  hora_red: string | null;
+  desfase_seg: number | null;
+  /** "ok" | "desfasado" | "reloj_atrasado" | "sin_red" */
+  estado: string;
+  mensaje: string;
+  ultimo_evento: string | null;
+}
+
+export const obtenerHoraSistema = () =>
+  invokeTauri<EstadoHora>("verificar_hora_sistema");
+
 export const obtenerTiendaInfo = () =>
   invokeTauri<TiendaInfo>("get_tienda_info");

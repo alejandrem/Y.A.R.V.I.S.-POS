@@ -6,6 +6,8 @@
 import { MorphIcon } from "morphicons/react";
 import { ICONO_RELOJ } from "../../../../components/ui";
 import { fmtHM } from "../../../../components/turno-extra";
+import { AvisoReloj } from "../../../../components/turno-extra";
+import type { EstadoHora } from "../../../../services/turno";
 import type { MiTurno, BarraTurno } from "../../../../components/turno-extra";
 import { BarraTurnoNormal } from "../../../../components/turno-extra/BarraTurnoNormal";
 import { BarraExtra } from "../../../../components/turno-extra/BarraExtra";
@@ -16,9 +18,10 @@ interface TarjetaTurnoProps {
   turno: MiTurno | null;
   // Resultado de geometriaBarra(turno, ahora)
   barra: BarraTurno | null;
+  hora?: EstadoHora | null;
 }
 
-const TarjetaTurno = ({ profile, turno, barra }: TarjetaTurnoProps) => {
+const TarjetaTurno = ({ profile, turno, barra, hora = null }: TarjetaTurnoProps) => {
   return (
     <div className="bg-white rounded-[2rem] border border-neutral-200 p-8 shadow-sm">
       <div className="flex items-center gap-3 mb-6">
@@ -77,6 +80,8 @@ const TarjetaTurno = ({ profile, turno, barra }: TarjetaTurnoProps) => {
               Aún no registras tu primer login de hoy — este marca tu hora de entrada real.
             </p>
           )}
+
+          <AvisoReloj hora={hora} />
         </>
       )}
 
