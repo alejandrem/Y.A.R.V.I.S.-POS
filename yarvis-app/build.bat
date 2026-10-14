@@ -258,6 +258,7 @@ if !errorlevel! neq 0 (
 )
 
 echo [INFO] Refrescando src-tauri\dlls\ con las DLLs recien compiladas...
+if not exist "src-tauri\dlls\" mkdir "src-tauri\dlls"
 set "DLLS_OK=1"
 for %%D in (llama.dll ggml.dll ggml-base.dll ggml-cpu.dll mtmd.dll) do (
     if not exist "src-tauri\target\release\%%D" (

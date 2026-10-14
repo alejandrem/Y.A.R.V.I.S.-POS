@@ -9,6 +9,10 @@ dist-ssr/
 # Rust / Tauri
 target/
 src-tauri/target/
+# Artefactos regenerados por build.bat/build.sh en cada build (no van a git):
+# las DLLs frescas salen de target/release y los CSV se copian de dataset/.
+yarvis-app/src-tauri/dlls/
+yarvis-app/src-tauri/datasets/
 
 # IDEs
 .vscode/
