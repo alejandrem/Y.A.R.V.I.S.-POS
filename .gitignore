@@ -13,6 +13,8 @@ src-tauri/target/
 # las DLLs frescas salen de target/release y los CSV se copian de dataset/.
 yarvis-app/src-tauri/dlls/
 yarvis-app/src-tauri/datasets/
+# Instalador VC Redist descargado por build.bat (8b), ~24 MB.
+yarvis-app/src-tauri/installer-deps/
 
 # IDEs
 .vscode/

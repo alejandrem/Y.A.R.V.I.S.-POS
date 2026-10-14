@@ -292,6 +292,28 @@ if !errorlevel! neq 0 (
 )
 
 REM ============================================================
+REM 8b. VC Redist x64 para el piloto (llama.dll lo exige al arrancar).
+REM     Se descarga una vez a src-tauri\installer-deps\ y se reutiliza.
+REM     No va dentro del instalador: viaja junto al Setup en la carpeta
+REM     de piloto. Estructura plana con goto, sin bloques anidados.
+REM ============================================================
+echo.
+if not exist "src-tauri\installer-deps\" mkdir "src-tauri\installer-deps"
+if exist "src-tauri\installer-deps\vc_redist.x64.exe" goto VCREDIST_LISTO
+echo [INFO] Descargando VC Redist x64 -una sola vez, unos 24 MB-...
+curl -L --fail -o "src-tauri\installer-deps\vc_redist.x64.exe" "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+if %errorlevel% neq 0 (
+    echo [WARN] No se pudo descargar el VC Redist. El piloto lo necesitara manual:
+    echo   https://aka.ms/vs/17/release/vc_redist.x64.exe
+) else (
+    echo [OK] VC Redist descargado.
+)
+goto VCREDIST_FIN
+:VCREDIST_LISTO
+echo [OK] VC Redist ya estaba descargado.
+:VCREDIST_FIN
+
+REM ============================================================
 REM 9. Fase 2/2: bundles.
 REM ============================================================
 echo.
