@@ -12,6 +12,7 @@ REM Uso:
 REM   build.bat              :: genera instalador NSIS (un solo .exe)
 REM   build.bat --bundles msi :: genera MSI en vez de NSIS
 REM   build.bat --bundles nsis msi :: genera ambos
+REM   build.bat --bundles none :: solo binario portable, sin instalador
 REM Artefactos en src-tauri\target\release\bundle\
 
 REM ============================================================
@@ -19,6 +20,9 @@ REM 0. Que bundles se piden (para exigir NSIS o WiX solo si toca)
 REM ============================================================
 set "BUNDLES=--bundles nsis"
 if not "%~1"=="" set "BUNDLES=%*"
+REM "none" = portable sin bundle (Tauri no acepta --bundles none: usa --no-bundle).
+echo %BUNDLES% | findstr /i "none" >nul
+if %errorlevel% equ 0 set "BUNDLES=--no-bundle"
 set "NEED_NSIS=0"
 set "NEED_MSI=0"
 echo %BUNDLES% | findstr /i "nsis" >nul && set "NEED_NSIS=1"
@@ -36,10 +40,13 @@ if %errorlevel% neq 0 (
     echo [ERROR] 'npm' no esta instalado. Instala Node.js LTS 20+: https://nodejs.org/
     set "MISSING_DEPS=1"
 ) else (
-    node --version 2>nul | findstr /r "^v\(1[89]\|2[0-9]\)" >nul
-    if !errorlevel! neq 0 (
-        echo [WARN] Node detectado pero no es v18+. Tauri 2 pide Node 18+; si falla el build actualiza Node.
-    )
+    set "NODE_OK=0"
+    node --version 2>nul | findstr /r "^v2[0-9]" >nul
+    if !errorlevel! equ 0 set "NODE_OK=1"
+    node --version 2>nul | findstr /r "^v1[89]" >nul
+    if !errorlevel! equ 0 set "NODE_OK=1"
+    if "!NODE_OK!"=="0" echo [WARN] Node detectado pero no es v18+. Tauri 2 pide Node 18+; si falla el build actualiza Node.
+    if "!NODE_OK!"=="1" echo [OK] Node detectado.
 )
 
 where cargo >nul 2>nul
@@ -107,6 +114,7 @@ REM ============================================================
 REM 3. Preflight: instaladores (solo lo que se va a usar)
 REM ============================================================
 if "%NEED_NSIS%"=="1" (
+    if exist "C:\Program Files (x86)\NSIS\makensis.exe" set "PATH=C:\Program Files (x86)\NSIS;%PATH%"
     where makensis >nul 2>nul
     if !errorlevel! neq 0 (
         echo [ERROR] Pediste bundle NSIS pero 'makensis' no esta en el PATH.
@@ -149,6 +157,42 @@ if "%TIENE_CLANG%"=="0" (
 )
 REM Compatibilidad bindgen / Clang para MSVC 2026 en Windows (igual que run.bat)
 set "BINDGEN_EXTRA_CLANG_ARGS=-D__clang_major__=20"
+
+REM 4b. Autodeteccion para esta sesion: LIBCLANG_PATH + CMake/Ninja en PATH.
+REM     Sin esto, cargo muere con "libclang not found", "program not found -
+REM     cmake" o MSB1001 por el -j12. Estructura plana con goto.
+if defined LIBCLANG_PATH goto LIBCLANG_BLISTO
+if not exist "C:\Program Files\LLVM\bin\libclang.dll" goto LIBCLANG_BAVISO
+set "LIBCLANG_PATH=C:\Program Files\LLVM\bin"
+echo [OK] libclang detectado en LLVM.
+goto LIBCLANG_BLISTO
+:LIBCLANG_BAVISO
+echo [WARN] Sin LIBCLANG_PATH -bindgen puede fallar con "libclang not found"-.
+goto LIBCLANG_BLISTO
+:LIBCLANG_BLISTO
+set "CMAKE_BIN=C:\Program Files\CMake\bin"
+if not exist "%CMAKE_BIN%\cmake.exe" goto CMAKE_BAVISO
+set "PATH=%CMAKE_BIN%;%PATH%"
+echo [OK] CMake detectado.
+goto CMAKE_BLISTO
+:CMAKE_BAVISO
+echo [WARN] Sin CMake en ruta tipica -llama-cpp-sys puede fallar con "program not found"-.
+goto CMAKE_BLISTO
+:CMAKE_BLISTO
+set "NINJA_VS=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja"
+if exist "%NINJA_VS%\ninja.exe" goto NINJA_BVS
+if exist "%LOCALAPPDATA%\Microsoft\WinGet\Links\ninja.exe" goto NINJA_BWINGET
+echo [WARN] Sin Ninja -llama-cpp-sys mete -j12 a MSBuild y falla con MSB1001-.
+goto NINJA_BLISTO
+:NINJA_BVS
+set "PATH=%NINJA_VS%;%PATH%"
+echo [OK] Ninja detectado -Visual Studio-.
+goto NINJA_BLISTO
+:NINJA_BWINGET
+set "PATH=%LOCALAPPDATA%\Microsoft\WinGet\Links;%PATH%"
+echo [OK] Ninja detectado -winget-.
+goto NINJA_BLISTO
+:NINJA_BLISTO
 
 REM ============================================================
 REM 5. Preflight: WebView2 (aviso, no aborta)

@@ -65,6 +65,10 @@ if [ -n "$ARGS" ]; then
   case "$ARGS" in *appimage*) QUIERE_APPIMAGE=1;; *) QUIERE_APPIMAGE=0;; esac
   case "$ARGS" in *none*) QUIERE_DEB=0; QUIERE_RPM=0; QUIERE_APPIMAGE=0;; esac
 fi
+# "none" = portable sin bundle (Tauri no acepta --bundles none: usa --no-bundle).
+if [ "$QUIERE_DEB" = 0 ] && [ "$QUIERE_RPM" = 0 ] && [ "$QUIERE_APPIMAGE" = 0 ]; then
+  ARGS="--no-bundle"
+fi
 if [ "$QUIERE_DEB" = 1 ] && ! command -v dpkg-deb >/dev/null 2>&1; then
   error "Falta 'dpkg-deb' para el .deb. Debian/Ubuntu: sudo apt install dpkg | o pasa --bundles rpm appimage"
 fi
