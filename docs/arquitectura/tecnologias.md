@@ -25,7 +25,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 
 ## Backend (Rust — verificado en Cargo.toml)
 
-> Comunicacion con Frontend: Tauri IPC (comandos #[tauri::command], 99 registrados) via invoke().
+> Comunicacion con Frontend: Tauri IPC (comandos #[tauri::command], 145 registrados) via invoke().
 > Framework: Tauri 2.11.
 > Runtime Asincrono: Tokio 1.38 full.
 > Serializacion: Serde / serde_json.
@@ -33,6 +33,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 > Seguridad: Argon2 0.5 (hash de contrasenas), sha2, rand.
 > HTTP: reqwest 0.12 + futures-util (SSE) para APIs cloud y OAuth. Google Sign-In (OAuth PKCE) en adminconfig/google.rs.
 > Tiempo: chrono 0.4.
+> Impresión térmica: WinAPI Spooler Windows RAW (OpenPrinterW, WritePrinter) para envío directo + crate `escpos` 0.20 para tickets de venta con QR y red TCP 9100.
 > Logging: tracing + tracing-subscriber (RUST_LOG, default info).
 > IA:
 >   - Local: llama-cpp-4 0.5 via crate src-ia, feature llm-local, modelo Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado (ruta configurable, resolucion en rutas/rutas_modelos_* incluyendo deteccion ~/.lmstudio/models). Planificado migrar a Qwen2.5-Coder 1.5B Instruct fine-tuneado para generar tools/SQL con mayor precision.
@@ -62,7 +63,7 @@ Python eliminado. No hay sidecar, no hay yarvis-IA/, no hay ai_service.
 > Tools: 19 tools de solo lectura, SQL parametrizado con escape_like, LIMIT parametrizado, ejecutor compartido cloud/local (src-ia/motor-chat/llm/tools/mod.rs). Roles enforced en herramientas_rol.rs (empleado no ve finanzas/nomina).
 > Parseador: 100% Rust sin LLM (detección estadística + folio/clave/orden cronológico). Comandos parser_* (adminparser/, parser_txt/ por tema) + get_tickets_total para el historial real.
 > Predicciones: implementadas con Holt-Winters aditivo (src-ia/predicciones/holt_winters.rs:70 predecir, ventana 7 dias, grid 343 combos alpha/beta/gamma, banda 95% z 1.96). Capa de datos lee ventas completadas, agrupa por dia, densifica huecos con 0 y devuelve fecha/prediccion/minimo/maximo (src-ia/predicciones/ventas.rs:37).
-> Embeddings / RAG: no hay RAG. Pendiente busqueda semantica con modelo de embeddings propio. El plan anterior de all-MiniLM-L6-v2 + ort/fastembed fue descartado.
+> Embeddings / RAG: no hay RAG. Búsqueda semántica OPERATIVA con modelo propio HashEmbedder 384d por trigramas + similitud coseno (src-ia/embeddings/). El plan anterior de all-MiniLM-L6-v2 + ort/fastembed fue descartado por peso y dependencias.
 > Fine-tuning: Qwen local con system prompt de testing (src-ia/motor-chat/llm/mod.rs:107 SYSTEM_PROMPT_TEST, 7 tools core). Dataset tools_arreglado.jsonl congelado. Siguiente paso: fine-tune de Qwen2.5-Coder 1.5B Instruct para mejorar generacion de SQL/tools (work in progress, aun no estable).
 
 ## Empaquetamiento y Produccion

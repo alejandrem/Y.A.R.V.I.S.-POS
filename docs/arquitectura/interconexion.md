@@ -92,9 +92,10 @@ Interino aún: similitud TF-IDF + fuzzy en vinculador_inventario para vincular t
 
 El `invoke_handler` es UNO solo por restricción de Tauri: `generate_handler!`
 solo acepta rutas literales y el `Invoke` se mueve al wrapper que acierta
-(detalle en `yarvis-app/src-tauri/src/backventanas/handlers.rs`). Dominios en
-orden: sistema | auth | inventario | parser | tickets | empleados | operacion |
-finanzas | chat.
+(detalle en `yarvis-app/src-tauri/src/backventanas/handlers.rs`). 10 dominios en
+orden: sistema (1) | auth (11) | inventario y semáforos (24) | parser y cortes import (18) |
+tickets (9) | empleados (12) | operación mostrador (22) | finanzas y cortes (33) | chat IA (8) |
+impresora térmica (7) = 145 comandos registrados.
 
 Alta nueva (4 pasos): 1) `#[tauri::command]` en su dominio,
 2) 1 línea en su sección de `lib.rs`, 3) `invokeTauri("nombre")` en

@@ -44,7 +44,7 @@ Stack verificado:
 ## 2. Arquitectura del Sistema
 
 ```
-  Frontend (React + Vite)  --invoke-->  Backend Rust (Tauri, 99 comandos)  -->  SQLite (WAL)
+  Frontend (React + Vite)  --invoke-->  Backend Rust (Tauri, 145 comandos)  -->  SQLite (WAL)
          |                                        |
          +---- respuesta IPC <--------------------+
    Motor IA (crate src-ia, en proceso): chat cloud (SSE) + chat local (llama.cpp) + parseador + predicciones.
@@ -115,7 +115,7 @@ Alta de administrador (nombre + contrasena con confirmacion), tienda (nombre/ide
 
 ### 5.1 lib.rs — Setup principal
 
-Inicializa DB, registra 99 comandos en el invoke_handler, plugins (opener, dialog), job de alertas cada hora, tracing con RUST_LOG.
+Inicializa DB, registra 145 comandos en el invoke_handler, plugins (opener, dialog), job de alertas cada hora, tracing con RUST_LOG.
 
 ### 5.2 db.rs — Inicializacion de SQLite
 
@@ -133,6 +133,10 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, ventas
 | backadmin/adminempleados | empleados + modales (metas, turnos) |
 | backadmin/admintarvis | chat (send_chat_message/stream, modelos, status, ciclo_tools, cancelacion, herramientas_rol, rutas) |
 | backempleado | venta nueva (completar_venta, get_next_ticket_number), perfil y asistencia, mis tickets (`get_mis_*` por sesión), proveedores (alta, proveedor genérico, sugerencia desde costo, compras todo-o-nada con egreso automático, rectificativas inmutables con reversa de stock) |
+| backcortes | cortes X/Z diferenciados (corte_x_reporte, corte_z_cierre, imprimir_corte) |
+| codigos_barras | semáforo de alta/búsqueda rápida (verde/rojo/amarillo: 15 comandos) |
+| hora | verificación de sincronización y desfase del reloj del sistema |
+| impresora | driver térmico ESC/POS (spooler RAW Windows y red TCP 9100: 7 comandos) |
 
 ---
 
@@ -147,7 +151,7 @@ Tablas principales: usuarios (Argon2), productos, ventas, detalle_ventas, ventas
 ### 6.2 motor-chat/
 
 - cloud/: proveedores (Gemini, NVIDIA), generacion (completo/stream), catalogo de modelos, lector SSE, reintento 429, separador think/response, variables/API keys.
-- llm/: Qwen2.5-Coder 1.5B Instruct via llama-cpp-4 (feature llm-local, CPU, ventana 4096, fine-tuneado, recortar_historial); tools/ con 10 herramientas y dataset tools_arreglado.jsonl.
+- llm/: Qwen2.5-Coder 1.5B Instruct via llama-cpp-4 (feature llm-local, CPU, ventana 4096, fine-tuneado, recortar_historial); tools/ con 19 herramientas de solo lectura y dataset tools_arreglado.jsonl.
 
 ### 6.3 predicciones/
 
@@ -184,34 +188,52 @@ SQLite, un archivo (yarvis.db), modo WAL, acceso asincrono con sqlx. Unico escri
 
 ## 9. Comandos Tauri (Rust)
 
-99 comandos #[tauri::command] en lib.rs. Resumen por modulo:
+145 comandos #[tauri::command] registrados en `lib.rs` (`tauri::generate_handler!`). Resumen por modulo:
 
-Auth / Setup (adminconfig/auth.rs, google.rs)
-check_setup_done, guardar_admin, validar_login_admin, get_admin_data, update_admin_data, guardar_empleado, validar_login_empleado, cerrar_sesion, login_con_google
+1. **Sistema (1)**
+   `principal_lista`
 
-Inventario (admininventory/inventory.rs)
-get_inventory, add_inventory_item, update_inventory_item, delete_inventory_item, importar_catalogo, get_catalogos_importados, get_productos_por_catalogo, buscar_producto_similar (stub), backfill_embeddings (stub)
+2. **Auth & API Keys (11)**
+   `guardar_api_keys`, `leer_api_keys`, `check_setup_done`, `guardar_admin`, `validar_login_admin`, `get_admin_data`, `update_admin_data`, `guardar_empleado`, `validar_login_empleado`, `cerrar_sesion`, `login_con_google`
 
-Parser (adminparser/*)
-listar_archivos_carpeta, leer_archivo_raw, leer_archivo_bytes, parsear_catalogo_visual, parsear_catalogo_csv, parsear_excel, analizar_ticket_llm, analizar_ticket_con_ia, analizar_muestras_carpeta, parsear_con_mapeo, parsear_carpeta, parsear_carpeta_stream, get_db_path, vincular_inventario, guardar_vinculacion, descargar_modelos
+3. **Inventario & Códigos de Barras (24)**
+   - CRUD: `get_inventory`, `add_inventory_item`, `update_inventory_item`, `delete_inventory_item`
+   - Escáner y semáforos: `get_product_by_barcode`, `verde_autoasignar`, `verde_importar_catalogo`, `cargar_catalogo_incluido`, `verde_contar_hoy`, `rojo_registrar_pendiente`, `rojo_listar_pendientes`, `rojo_contar_pendientes`, `rojo_resolver_con_alta`, `rojo_resolver_asignando`, `amarillo_sugerir`, `amarillo_confirmar`, `amarillo_rechazar`, `amarillo_ninguno`, `amarillo_stats_rechazos`
+   - Catálogo y embeddings: `importar_catalogo`, `buscar_producto_similar`, `backfill_embeddings`, `get_catalogos_importados`, `get_productos_por_catalogo`
 
-Tickets y cortes (admintickets/tickets.rs)
-get_tickets, get_cortes, guardar_ticket_parseado, get_predictions (operativo Holt-Winters)
+4. **Parser & Cortes Importados (18)**
+   - Ingesta y mapping: `leer_archivo_raw`, `leer_archivo_bytes`, `parsear_catalogo_csv`, `parsear_catalogo_visual`, `parsear_excel`, `detectar_mapeo_estadistico`, `parsear_con_mapeo`, `parsear_carpeta`, `parsear_carpeta_stream`, `listar_archivos_carpeta`
+   - Vinculación: `vincular_inventario`, `guardar_vinculacion`, `get_db_path`, `descargar_modelos`
+   - Historial de cortes: `previsualizar_corte`, `importar_carpeta_cortes`, `get_cortes_importados`, `get_corte_importado_detalle`
 
-Empleados (adminempleados/*)
-get_empleados, get_empleado_ventas, get_resumen_empleados, get_cortes_empleado, editar_empleado, set_estado_empleado, get_employee_goals, save_employee_goal, save_custom_goal, delete_employee_goal, check_employee_goals
+5. **Tickets Admin (9)**
+   `get_tickets`, `get_tickets_total`, `get_cortes`, `guardar_ticket_parseado`, `get_predictions` (Holt-Winters), `get_ventas_con_pronostico`, `get_kpis_ventas`, `get_ventas_por_empleado_dia`, `get_top_productos`
 
-Finanzas (adminfinanzas/*)
-Gastos: get_gastos_recurrentes, crear_gasto, actualizar_gasto, eliminar_gasto, registrar_pago_gasto, get_pagos_gasto, get_proximos_vencimientos, actualizar_estados_gastos; Cortes: get_cortes_caja, get_corte_detalle, crear_corte_x, crear_corte_z, cerrar_corte, agregar_movimiento_caja, get_movimientos_corte, get_cortes_por_cajero_fecha; Metricas, graficas (incluye get_predicciones_financieras operativo), alertas y export (stubs exportar_balance_pdf, exportar_gastos_csv).
+6. **Empleados Admin (12)**
+   - Dashboard: `get_empleados`, `get_empleado_ventas`, `get_resumen_empleados`, `get_cortes_empleado`
+   - Edición y credenciales: `editar_empleado`, `set_estado_empleado`, `aviso_password_defecto`
+   - Metas: `get_employee_goals`, `save_employee_goal`, `save_custom_goal`, `delete_employee_goal`, `check_employee_goals`
 
-Chat (admintarvis/chat.rs)
-send_chat_message, send_chat_stream, get_cloud_models, get_model_status, load_chat_model, unload_chat_model, stop_chat_stream, set_local_model_path
+7. **Operación Empleado (22)**
+   - Mostrador y venta: `completar_venta`, `get_next_ticket_number`, `get_tienda_info`
+   - Proveedores y compras: `guardar_proveedor`, `crear_proveedor_generico`, `listar_proveedores`, `sugerir_pago`, `registrar_compra`, `rectificar_compra`, `historial_compras`, `get_compra_detalle`
+   - Perfil, asistencia y hora: `get_employee_profile`, `get_mi_turno`, `get_asistencia_empleado`, `get_mis_horas_extra`, `get_horas_extra_empleado`, `verificar_hora_sistema`
+   - Mis tickets y cortes: `get_mis_tickets`, `get_mis_kpis`, `get_mis_ventas_por_dia`, `get_mi_ticket_detalle`, `get_mis_cortes`
 
-Empleado operativo (backempleado/*)
-completar_venta, get_next_ticket_number, get_tienda_info, get_employee_profile, get_mi_turno, get_asistencia_empleado, get_mis_horas_extra, get_horas_extra_empleado
+8. **Finanzas & Cortes (33)**
+   - Gastos recurrentes: `get_gastos_recurrentes`, `crear_gasto`, `actualizar_gasto`, `eliminar_gasto`, `registrar_pago_gasto`, `get_pagos_gasto`, `get_proximos_vencimientos`, `actualizar_estados_gastos`
+   - Cortes de caja: `get_cortes_caja`, `get_corte_detalle`, `crear_corte_x`, `crear_corte_z`, `cerrar_corte`, `agregar_movimiento_caja`, `get_movimientos_corte`, `get_cortes_por_cajero_fecha`
+   - Cortes diferenciados e impresión: `corte_x_reporte`, `corte_z_cierre`, `imprimir_corte`
+   - Métricas y balance: `get_metricas_diarias`, `get_resumen_periodo`, `recalcular_resumen_diario`, `get_punto_equilibrio`
+   - Gráficas y predicciones: `get_datos_grafica_pl`, `get_gastos_por_categoria`, `get_tendencia_cortes_z`, `get_ventas_vs_gastos_mensual`, `get_predicciones_financieras`
+   - Alertas: `get_alertas`, `marcar_alerta_leida`, `generar_alertas_automaticas`
+   - Exportación: `exportar_balance_pdf`, `exportar_gastos_csv`
 
-API keys (api_config.rs)
-guardar_api_keys, leer_api_keys
+9. **Chat e IA (8)**
+   `send_chat_message`, `send_chat_stream`, `get_cloud_models`, `stop_chat_stream`, `get_model_status`, `set_local_model_path`, `load_chat_model`, `unload_chat_model`
+
+10. **Impresora Térmica (7)**
+    `listar_impresoras`, `imprimir_bytes_raw`, `imprimir_lista_conciliacion`, `imprimir_lista_stock_bajo`, `imprimir_ticket_venta`, `probar_red`, `abrir_cajon`
 
 ---
 
@@ -221,10 +243,10 @@ guardar_api_keys, leer_api_keys
 |---|---|---|
 | buscar_producto_similar | Busqueda semantica en inventario / nueva venta | OPERATIVO — HashEmbedder propio 384d |
 | backfill_embeddings | Generar embeddings de la base | OPERATIVO — HashEmbedder propio 384d |
-| exportar_balance_pdf | Exportar balance a PDF | STUB |
-| exportar_gastos_csv | Exportar gastos a CSV | STUB |
+| exportar_balance_pdf | Exportar balance a PDF | STUB (devuelve error claro, no rompe la caja) |
+| exportar_gastos_csv | Exportar gastos a CSV | STUB (devuelve error claro, no rompe la caja) |
 
-Planes: fine-tuning de Qwen2.5-Coder 1.5B Instruct para tools/SQL. Predicciones ya operativas via Holt-Winters. Impresion termica ESC/POS y facturacion electronica: pendientes.
+Planes: facturacion electronica (XML/PAC), pruebas de campo con hardware fisico de impresion termica (driver y tickets ESC/POS ya implementados), y fine-tuning final de Qwen2.5-Coder 1.5B Instruct para tools/SQL. Predicciones ya operativas via Holt-Winters.
 
 ---
 

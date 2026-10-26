@@ -98,10 +98,11 @@ Y.A.R.V.I.S.-POS/
         ├── Cargo.toml                 # tauri 2.11, sqlx 0.8, tokio 1.38, serde, reqwest, argon2, chrono, src-ia.
         └── src/
             ├── main.rs                # Entry (windows_subsystem) -> yarvis_app_lib::run().
-            ├── lib.rs                 # Builder Tauri: setup DB, registra 99 comandos, plugins.
+            ├── lib.rs                 # Builder Tauri: setup DB, registra 145 comandos, plugins.
             ├── models.rs              # Structs serde compartidas.
             ├── dinero.rs              # a_centavos / a_pesos (conversion centavos).
             ├── api_config.rs          # guardar_api_keys / leer_api_keys (archivo 0600).
+            ├── impresora/             # Driver ESC/POS nativo (spooler RAW WinAPI + escpos red).
             └── backventanas/
                 ├── mod.rs
                 ├── db/db.rs           # initialize_db: pool SQLite (WAL) + ruta de yarvis.db.
@@ -110,12 +111,17 @@ Y.A.R.V.I.S.-POS/
                 │   ├── adminempleados/#   empleados.rs, modalempleado.rs, modalmetas.rs
                 │   ├── adminfinanzas/ #   alertas, cortes, export (stubs), finanzas, gastos, graficas, metricas
                 │   ├── admininventory/#   inventory/ (catalogo, crud, importar, semantica, historial)
-                │   ├── adminparser/   #   parser_commands.rs, parser_csv.rs, parser_excel.rs, parser_txt/ (archivos, catalogo, deteccion, lote), utils.rs
+                │   ├── adminparser/   #   parser_commands.rs, parser_csv.rs, parser_excel.rs, parser_txt/, cortes_import/
                 │   ├── admintarvis/   #   chat.rs + ciclo_tools, cancelacion, herramientas_rol, rutas
                 │   └── admintickets/  #   tickets.rs (get_predictions operativo)
-                └── backempleado/      # Comandos del empleado (venta nueva, perfil, asistencia).
-                    ├── emplea_new_venta/new_venta.rs
-                    └── empleaperfil/{perfil.rs, asistencia.rs}
+                ├── backempleado/      # Comandos del empleado (operación caja, proveedores, turnos).
+                │   ├── emplea_new_venta/new_venta.rs
+                │   ├── empleaproveedores/{proveedores, compras, sugerencia}.rs
+                │   ├── empleatickets/{mis_tickets, mis_cortes}.rs
+                │   └── empleaperfil/{perfil, asistencia}.rs
+                ├── backcortes/        # Cortes X/Z diferenciados e impresion de corte.
+                ├── codigos_barras/    # Semáforo verde/rojo/amarillo (15 comandos).
+                └── hora.rs            # Verificación de desfase horario.
 ```
 
 ---
@@ -129,29 +135,30 @@ Y.A.R.V.I.S.-POS/
 |  +------------------+         +----------------------------------+  |
 |  |   Frontend       | invoke  |   Backend Rust (Tauri)           |  |
 |  |  (React + Vite)  | ------> |   src-tauri/src/backventanas     |  |
-|  |                  | <------ |   (98 #[tauri::command])         |  |
+|  |                  | <------ |   (145 #[tauri::command])        |  |
 |  +------------------+  IPC    +-------+--------------+-----------+  |
 |                                   |              |             |
 |                      +------------v----+  +------v-----------+ |
 |                      |  SQLite (WAL)   |  |  Motor IA Rust   | |
 |                      |  yarvis.db      |  |  (crate src-ia)  | |
-|                      |  sqlx (pool)    |  |  EN PROCESO      | |
+|                      |  sqlx (pool)    |  |  OPERATIVO       | |
 |                      +-----------------+  +------+-----------+ |
 |                                                   |             |
 |                    +-------------------------------+-----------+ |
 |                    | local: llama.cpp (Qwen GGUF) |           | |
 |                    | cloud: HTTP + SSE (Gemini/NVIDIA) <-> Internet |
 |                    | predicciones: Holt-Winters (sin red)     | |
+|                    | tools: 19 herramientas de solo lectura    | |
 +---------------------------------------------------------------------+
 ```
 
 - Frontend <-> Rust: IPC nativo de Tauri (invoke). Sin HTTP local, sin puertos.
 - Rust <-> SQLite: sqlx en modo asincrono (pool), WAL activado, unico escritor.
-- Rust <-> IA: crate local src-ia (mismo proceso). Chat cloud (Gemini/NVIDIA via reqwest + SSE) con fallback a local (Qwen GGUF con llama-cpp-4). Parseo de tickets 100% reglas + estadística (detector/), sin LLM. Predicciones usan Holt-Winters puro sin red.
+- Rust <-> IA: crate local src-ia (mismo proceso). Chat cloud (Gemini/NVIDIA via reqwest + SSE) con fallback a local (Qwen GGUF con llama-cpp-4). Parseo de tickets 100% reglas + estadística (detector/), sin LLM. Predicciones usan Holt-Winters puro sin red. 19 tools de solo lectura compartidas.
 
 ## Comandos registrados
 
-99 comandos en lib.rs. Ver tecnologias.md para el conteo por dominio.
+145 comandos en lib.rs. Ver que-es-yarvis.md e interconexion.md para el conteo por dominio.
 
 ## Casos pendientes (stubs) — devuelven error claro, no rompen la caja
 
