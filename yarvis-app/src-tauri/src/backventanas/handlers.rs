@@ -38,7 +38,7 @@ pub const DOMINIOS: &[&str] = &[
 
 /// Mínimo de comandos esperados. Si agregas uno, este número SOLO
 /// puede subir (el test falla si baja: borrado accidental).
-pub const MIN_COMANDOS: usize = 145;
+pub const MIN_COMANDOS: usize = 151;
 
 #[cfg(test)]
 mod tests {

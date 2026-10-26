@@ -10,10 +10,13 @@
 // ============================================================
 
 pub mod api_config;
+pub mod arranque;
 pub mod backventanas;
 pub mod dinero;
 pub mod impresora;
+pub mod logs;
 pub mod models;
+pub mod respaldos;
 
 use tauri::Manager;
 
@@ -27,6 +30,14 @@ static PRINCIPAL_LISTA: std::sync::atomic::AtomicBool =
 /// splash nativo. Idempotente: llamadas de más no hacen nada.
 #[tauri::command]
 fn principal_lista(app: tauri::AppHandle) {
+    // Cinturón y tirantes: aunque el frontend avise, la ventana NUNCA
+    // se muestra si la DB no abrió. Antes el failsafe la mostraba vacía.
+    if !arranque::db_lista() {
+        tracing::warn!(
+            "[ARRANQUE] el frontend pidió la principal antes de que la base esté lista"
+        );
+        return;
+    }
     PRINCIPAL_LISTA.store(true, std::sync::atomic::Ordering::SeqCst);
     mostrar_principal(&app);
 }
@@ -53,44 +64,36 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
-            // Logging estructurado: respeta RUST_LOG, default "info"
-            tracing_subscriber::fmt()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::try_from_default_env()
-                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-                )
-                .init();
-
-            // El init pesado (backup + SQLite + migraciones + job de
-            // alertas) corre en un hilo aparte para no bloquear la
-            // pintura de la ventana splash. La ventana principal nace
-            // oculta (ver tauri.conf.json) y se muestra solo cuando el
-            // backend ya puede responder comandos.
-            // NOTA: hilo OS dedicado, NO tokio::spawn: initialize_db usa
-            // block_on por dentro y bloquear un worker del runtime es
-            // panic seguro.
+            // Log a archivo (además de consola): en el .exe de Windows no
+            // hay consola, y el diálogo de error necesita una ruta real.
             let handle = app.handle().clone();
+            let ruta_log = logs::iniciar(&handle);
+            tracing::info!("[ARRANQUE] log: {}", ruta_log.display());
+
+            // El init pesado (backup + SQLite + migraciones + jobs) corre
+            // en un hilo aparte para no bloquear la pintura del splash.
+            // Si la DB falla, arranque muestra un diálogo nativo con el
+            // log y la opción de restaurar; la principal NO se muestra.
+            arranque::iniciar(handle.clone());
+
+            // Failsafe: solo si el frontend murió antes de avisar que
+            // montó su primera pantalla. A diferencia del anterior, este
+            // JAMÁS muestra la principal con la DB caída.
+            let respaldo = handle.clone();
             std::thread::spawn(move || {
-                let (pool, db_path_str) = backventanas::db::db::initialize_db(&handle);
-
-                // Job de fondo de finanzas: cada hora genera alertas automáticas
-                // y actualiza el estado de vencimiento de los gastos recurrentes.
-                backventanas::backadmin::adminfinanzas::alertas::iniciar_job_alertas(pool.clone());
-
-                handle.manage(pool);
-                handle.manage(backventanas::db::db::DbPath(db_path_str.clone()));
-                handle.manage(backventanas::auth::AuthState::default());
-
-                // Failsafe: si el frontend muere antes de avisar que montó
-                // su primera pantalla, mostrar la principal de todos modos
-                // (mostrar_principal es idempotente si ya se hizo).
-                let respaldo = handle.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(20));
-                    if !PRINCIPAL_LISTA.load(std::sync::atomic::Ordering::SeqCst) {
-                        mostrar_principal(&respaldo);
+                for _ in 0..40 {
+                    if PRINCIPAL_LISTA.load(std::sync::atomic::Ordering::SeqCst) {
+                        return;
                     }
-                });
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+                if arranque::db_lista() {
+                    mostrar_principal(&respaldo);
+                } else if let Some(error) = arranque::ultimo_error() {
+                    tracing::error!(
+                        "[ARRANQUE] la ventana principal no se mostró: {error}"
+                    );
+                }
             });
             Ok(())
         })
@@ -254,6 +257,13 @@ pub fn run() {
             backventanas::backadmin::admintarvis::chat::set_local_model_path,
             backventanas::backadmin::admintarvis::chat::load_chat_model,
             backventanas::backadmin::admintarvis::chat::unload_chat_model,
+            // ── respaldos cifrados programados (respaldos/comandos.rs) ──
+            respaldos::comandos::respaldo_config_leer,
+            respaldos::comandos::respaldo_config_guardar,
+            respaldos::comandos::respaldo_crear_ahora,
+            respaldos::comandos::respaldo_listar,
+            respaldos::comandos::respaldo_probar,
+            respaldos::comandos::respaldo_restaurar,
             // ── sistema: impresora térmica A (spooler Windows RAW) ──
             impresora::commands::listar_impresoras,
             impresora::commands::imprimir_bytes_raw,
