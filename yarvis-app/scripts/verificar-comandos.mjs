@@ -29,11 +29,45 @@ const fin = src.indexOf("])", ini);
 const bloque = src.slice(ini, fin);
 
 const backend = [];
+const porDominio = new Map();
+let dominioActual = "general";
+
 for (const linea of bloque.split("\n").slice(1)) {
   const t = linea.trim();
-  if (!t || t.startsWith("//")) continue;
+  if (!t) continue;
+  if (t.startsWith("// ──")) {
+    if (t.includes("impresora")) {
+      dominioActual = "impresora térmica";
+    } else {
+      const dm = t.match(/\/\/ ──\s*([^:(]+?)(?:\s*\(|\s*:\s*|\s*──)/);
+      dominioActual = dm ? dm[1].trim() : t.replace(/^\/\/\s*──\s*/, "").replace(/\s*──.*$/, "").trim();
+    }
+    if (!porDominio.has(dominioActual)) porDominio.set(dominioActual, []);
+    continue;
+  }
+  if (t.startsWith("//")) continue;
   const m = t.replace(/,$/, "").match(/::([A-Za-z0-9_]+)$|^([a-z][a-z0-9_]*)$/);
-  if (m) backend.push(m[1] ?? m[2]);
+  if (m) {
+    const cmd = m[1] ?? m[2];
+    backend.push(cmd);
+    if (!porDominio.has(dominioActual)) porDominio.set(dominioActual, []);
+    porDominio.get(dominioActual).push(cmd);
+  }
+}
+
+// Fuente de verdad para tools de IA: src-ia/motor-chat/llm/tools/mod.rs
+const toolsRs = join(raiz, "..", "src-ia", "motor-chat", "llm", "tools", "mod.rs");
+let tools = [];
+try {
+  const toolsSrc = readFileSync(toolsRs, "utf8");
+  const matchBlock = toolsSrc.slice(toolsSrc.indexOf("match nombre {"), toolsSrc.indexOf("otro =>"));
+  const toolRe = /"([a-z0-9_]+)"\s*=>/g;
+  let tm;
+  while ((tm = toolRe.exec(matchBlock))) {
+    tools.push(tm[1]);
+  }
+} catch {
+  // src-ia opcional si se corre en entorno aislado
 }
 
 const dupes = backend.filter((n, i) => backend.indexOf(n) !== i);
@@ -76,9 +110,18 @@ if (fantasmas.length > 0) {
 }
 
 const sinUso = backend.filter((n) => !invoca.has(n) && !invocaTests.has(n));
-console.log(`[comandos] backend=${backend.length} frontend(src)=${invoca.size} tests_extra=${[...invocaTests].filter((n) => !invoca.has(n)).length}`);
+console.log(`\n=== FUENTE DE VERDAD (GENERADOR DE CONTEOS) ===`);
+console.log(`[comandos] Registrados en lib.rs: ${backend.length} comandos Tauri`);
+for (const [dom, cmds] of porDominio.entries()) {
+  console.log(`  - ${dom}: ${cmds.length} comandos`);
+}
+if (tools.length > 0) {
+  console.log(`[tools] Registradas en src-ia (mod.rs): ${tools.length} herramientas de solo lectura`);
+  console.log(`  Lista: ${tools.join(", ")}`);
+}
+console.log(`\n[paridad] backend=${backend.length} frontend(src)=${invoca.size} tests_extra=${[...invocaTests].filter((n) => !invoca.has(n)).length}`);
 if (sinUso.length > 0) {
   console.log(`[comandos] AVISO: sin invoke en src ni tests (revisar si muertos o dinámicos): ${sinUso.join(", ")}`);
 }
-console.log(fallos === 0 ? "[comandos] OK: paridad en verde." : "[comandos] FALLO: hay drift arriba.");
+console.log(fallos === 0 ? "[comandos] OK: paridad en verde.\n" : "[comandos] FALLO: hay drift arriba.\n");
 process.exit(fallos);
