@@ -51,7 +51,7 @@ Y.A.R.V.I.S.-POS/
 │   │   │   ├── apis_cloud/            #   proveedores, generacion, catalogo, sse, tipos, helpers, errores.
 │   │   │   ├── prompts.rs             #   construir_mensajes_api (TOOLS_LINEA fine-tuneada + TOOLS_EXTRAS).
 │   │   │   ├── think.rs               #   SeparadorThink (bloques think/response).
-│   │   │   └── variables.rs           #   API keys (archivo plano 0600 via backend).
+│   │   │   └── variables.rs           #   API keys (DPAPI en Windows / 0600 en Unix via backend).
 │   │   └── llm/
 │   │       ├── mod.rs                 # Chat LOCAL Qwen2.5-Coder 1.5B Instruct via llama-cpp-4 (feature llm-local) + recortar_historial.
 │   │       └── tools/                 # Ejecutor de 19 tools (ventas.rs, inventario.rs, compras.rs, operativa.rs, deteccion, helpers).
@@ -101,7 +101,7 @@ Y.A.R.V.I.S.-POS/
             ├── lib.rs                 # Builder Tauri: setup DB, registra 145 comandos, plugins.
             ├── models.rs              # Structs serde compartidas.
             ├── dinero.rs              # a_centavos / a_pesos (conversion centavos).
-            ├── api_config.rs          # guardar_api_keys / leer_api_keys (archivo 0600).
+            ├── api_config.rs          # guardar_api_keys / leer_api_keys (api_keys.bin, DPAPI/0600).
             ├── impresora/             # Driver ESC/POS nativo (spooler RAW WinAPI + escpos red).
             └── backventanas/
                 ├── mod.rs

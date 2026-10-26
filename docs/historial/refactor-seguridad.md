@@ -54,7 +54,7 @@ Leccion meta: las rutas de migracion deben probarse con datos reales; los fixtur
 ## 5. Seguridad (fase 4)
 
 1. SQL de tools parametrizado (tools/mod.rs): cero interpolacion; helper escape_like() + ESCAPE '\' para que %/_ del input del LLM no alteren patrones. LIMIT tambien parametrizado.
-2. API keys fuera de localStorage: nuevo modulo api_config.rs con comandos leer_api_keys / guardar_api_keys; JSON en app_data_dir/api_keys.json con permisos 0600. El frontend usa cache en memoria alimentada por el backend (ChatWidget.tsx: refrescarApiKeysCache / setApiKeysCache). Escalamiento futuro: OS keychain via crate keyring sin cambiar contratos.
+2. API keys fuera de localStorage: modulo api_config.rs con comandos leer_api_keys / guardar_api_keys; api_keys.bin en app_data_dir. En Windows se cifran con DPAPI (CryptProtectData, entropia fija de la app) y quedan atadas a la cuenta de Windows; en Linux/macOS se usa JSON con permisos 0600. Migracion automatica desde api_keys.json (se borra tras escribir el bin) y escritura atomica (temporal + rename). El frontend usa cache en memoria alimentada por el backend (ChatWidget.tsx: refrescarApiKeysCache / setApiKeysCache). Limite: DPAPI no aisla de procesos que ya corren con la misma cuenta de Windows; para eso, Credential Manager con UI via crate keyring (mismo contrato de comandos).
 3. CSP activa (tauri.conf.json): antes "csp": null renderizando output de LLMs; ahora politica restrictiva con nonces automaticos de Tauri v2.
 4. Roles enforced en ejecucion de tools (chat.rs + herramientas_rol.rs): TOOLS_SOLO_ADMIN = [query_sales, compare_periods, get_restock_analysis]; guard en el punto de ejecucion hilado por las 5 rutas (cloud msg/stream, local msg/stream). El prompt es sugerencia; esto es control de acceso real.
 5. Sin fallback plaintext en verify_password (auth.rs): un hash que no parsea como Argon2id deniega acceso siempre. Test de regresion incluido.
@@ -91,7 +91,7 @@ yarvis-app/build.sh reemplaza a npm run tauri build directo. Exporta LD_LIBRARY_
 2. Capa de servicios en frontend + eliminar duplicacion residual del chat.
 3. Errores visibles al usuario (41 console.error + 20 alert() dispersos).
 4. cerrar_corte sin cablear en la UI (backend ya recalcula server-side).
-5. OS keychain para API keys, rate limiting de login, TOCTOU en setup.
+5. API keys: DPAPI/0600 ya implementado; aislamiento contra procesos de la misma cuenta (Credential Manager con UI) queda como escalamiento. Rate limiting de login y TOCTOU en setup.
 6. Tests: permisos por rol e2e, race de stock mismo producto, red/SSE.
 7. Fine-tuning de Qwen2.5-Coder 1.5B Instruct para tools/SQL (work in progress) y despliegue del GGUF.
 8. Modelo de embeddings propio para busqueda semantica (TF-IDF interino en similitud.rs).

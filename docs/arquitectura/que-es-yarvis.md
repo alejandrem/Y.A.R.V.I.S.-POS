@@ -37,7 +37,7 @@ Stack verificado:
 - Backend: Rust, Tauri 2.11, sqlx 0.8 (SQLite), tokio, serde, argon2, reqwest.
 - IA: crate src-ia — chat local con llama-cpp-4 (Qwen GGUF), chat cloud con HTTP/SSE y ciclo de tools, parseador y predicciones.
 - Base de datos: SQLite (WAL) via sqlx, dinero en INTEGER centavos.
-- Seguridad: Argon2id, Google OAuth PKCE, CSP activa, API keys en archivo 0600.
+- Seguridad: Argon2id, Google OAuth PKCE, CSP activa, API keys cifradas con DPAPI en Windows (0600 en Unix).
 
 ---
 
@@ -255,6 +255,6 @@ Planes: facturacion electronica (XML/PAC), pruebas de campo con hardware fisico 
 - Migracion Python -> Rust completa: sidecar eliminado, binario unico.
 - Dinero en centavos: migracion 0005 y modulo dinero.rs eliminan errores de redondeo.
 - Parseo robusto: bugfixes A1/A3/A4/Bug8 conservados en el port + folio 10/10 formatos, clave de idempotencia (folio/AUTO/SIN-FOLIO), inserción cronológica y familia C con denominador correcto (1000 tickets reales al 100%).
-- Seguridad: SQL parametrizado, roles por tool, API keys 0600, CSP activa, sin fallback plaintext en passwords, atomicidad en ventas/importaciones/pagos.
+- Seguridad: SQL parametrizado, roles por tool, API keys con DPAPI en Windows (0600 en Unix), CSP activa, sin fallback plaintext en passwords, atomicidad en ventas/importaciones/pagos.
 - Modularizacion frontend: empleados.tsx, nueva_venta.tsx y perfil.tsx subdivididos bajo 650 lineas.
 - Predicciones locales sin red: Holt-Winters con banda 95% reemplaza a Prophet.

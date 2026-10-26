@@ -42,7 +42,7 @@ Un sistema de punto de venta de escritorio para tiendas medianas y pequeñas, co
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Dinero en centavos enteros** — toda columna monetaria es INTEGER (migración 0005); cero errores de redondeo flotante.
 
-<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Seguridad endurecida** — SQL de tools parametrizado, roles enforced en la ejecución de tools, API keys fuera del webview (archivo 0600), CSP activa, sin fallback de contraseñas en texto plano.
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Seguridad local** — SQL de tools parametrizado, roles enforced en la ejecución de tools, API keys fuera del webview (DPAPI en Windows / 0600 en Unix), CSP activa, sin fallback de contraseñas en texto plano.
 
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> **Chat cloud (Gemini/NVIDIA) con fallback local (Qwen2.5-Coder 1.5B)**.
 

@@ -51,3 +51,14 @@ Eso es real, aún no. Pero primero necesitamos el primer `.exe`. Sin instalador 
 Es **provisional a propósito** y solo para un caso: empleados **auto-detectados al importar tickets** (el sistema no puede adivinar su contraseña real). Esos reciben `NOMBRE123` como arranque y prenden el flag `password_defecto`. Las altas manuales (PrimerInicio y modal de Empleados) ya piden **contraseña real + horarios + pago semanal en un solo paso**, así que nunca pasan por `NOMBRE123`.
 
 Por eso no se "arregla" generando claves aleatorias: si el admin no puede saber la inicial, no puede entregársela al empleado nuevo. Lo que sí está prohibido es dejarlas así para siempre: el banner de "password por defecto" **ya no se puede ocultar** (EmployeeDashboard lo muestra en cada login) hasta que el admin la cambie en Empleados, momento en que `editar_empleado` apaga el flag.
+
+---
+
+### 7 CI — DIFERIDO A PROPÓSITO
+
+Prioridad actual: primer `.exe` estable y primer cliente piloto. CI no bloquea la venta; la disciplina de release sí. Mientras tanto:
+
+- Checklist manual antes de cada instalación: build limpio, tests, venta, corte X/Z, impresión, backup/restore, login/logout y modo offline.
+- Tag por cliente (`v0.1.0-piloto-1`) y changelog.
+- Arreglar la prueba vieja de `empleados` (espera 90 min de extra previo; el código da 75 por la cortesía de 15). No es bug de producto, pero `cargo test` debe quedar verde antes del primer cliente.
+- CI (GitHub Actions + instalador firmado + auto-update) cuando haya 3+ clientes o actualizaciones remotas.
