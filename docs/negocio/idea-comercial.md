@@ -1,6 +1,6 @@
 # Idea a Vender del Software
 
-> Estado 2026-08-26: venta rapida, inventario, clientes, reportes/cortes, tickets, parseador local, chat con tools y predicciones Holt-Winters ya implementados. Pendientes: busqueda semantica con modelo de embeddings propio, impresion termica y facturacion electronica, y fine-tuning final de Qwen2.5-Coder 1.5B Instruct. Ver [`../historial/implementacion.md`](../historial/implementacion.md).
+> Estado 2026-09: venta rápida, inventario, reportes/cortes, tickets, parseador local, búsqueda semántica (HashEmbedder propio 384d), impresión térmica ESC/POS (spooler RAW + red TCP 9100), chat con 19 tools y predicciones Holt-Winters ya implementados. Pendientes: facturación electrónica (XML/PAC), pruebas de campo con hardware físico de impresión térmica y fine-tuning final de Qwen2.5-Coder 1.5B Instruct. Ver [`../historial/implementacion.md`](../historial/implementacion.md).
 
 ## Venta Ultra-Rapida
 
@@ -18,9 +18,9 @@ Quien compra, cuanto compra, cuanto genera y cuando fue su ultima visita. Pedido
 
 Corte de caja X y Z, utilidad bruta, operativa, neta y marginal. Graficas por utilidad con impacto visual. Todo en centavos enteros para evitar errores de redondeo.
 
-## Tickets y Facturacion
+## Tickets, Impresión y Facturación
 
-Impresion termica via drivers del sistema (ESC/POS, pendiente) y facturacion electronica legal (XML/PAC, pendiente). Historial de tickets y cortes con promedios y graficas de rendimiento.
+Impresión térmica ESC/POS implementada (spooler Windows RAW y conexión de red TCP 9100 con códigos QR, corte de papel y apertura de cajón; pendiente verificación en campo con periféricos físicos) y facturación electrónica legal (XML/PAC, pendiente). Historial de tickets y cortes con promedios y gráficas de rendimiento.
 
 ## Prediccion de Ventas
 

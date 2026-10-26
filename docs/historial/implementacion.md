@@ -24,7 +24,7 @@ La idea original era un sidecar Python con FastAPI. Se descarto y se migro todo 
 
 - Motor de IA en Rust: crate local src-ia (se enlaza por ruta desde yarvis-app/src-tauri/Cargo.toml con feature llm-local).
 - Arranque: binario unico. Sin python3 main.py, sin ai_service, sin externalBin.
-- Chat cloud: src-ia/motor-chat/cloud (Gemini/NVIDIA via reqwest + SSE) con fallback a local y ciclo de tools con 10 herramientas.
+- Chat cloud: src-ia/motor-chat/cloud (Gemini/NVIDIA via reqwest + SSE) con fallback a local y ciclo de tools con 19 herramientas de solo lectura.
 - Chat local: Qwen2.5-Coder 1.5B Instruct GGUF fine-tuneado con llama-cpp-4 (src-ia/motor-chat/llm), carga bajo demanda (lazy), ventana 4096, recorte de historial conservador. Opera 100% offline con 19 tools SQL.
 
 ## Ola 3: El Parseador y la Ingesta Masiva — COMPLETADA (estadística sin IA)
@@ -42,7 +42,7 @@ La idea original era un sidecar Python con FastAPI. Se descarto y se migro todo 
 ## Ola 4: El Chatbot y su motor — COMPLETADA (cloud + local con tools)
 
 - Comandos nativos (admintarvis/chat.rs): send_chat_message, send_chat_stream, get_cloud_models, get_model_status, load_chat_model, unload_chat_model, stop_chat_stream, set_local_model_path.
-- Tools: 10 herramientas de solo lectura (src-ia/motor-chat/llm/tools/): query_sales, compare_periods, get_top_products, query_inventory, forecast_sales, get_product_info, get_restock_analysis, search_products, list_categories, get_products_by_category. Todas con SQL parametrizado y escape_like. Ejecutor compartido cloud/local, roles enforced en herramientas_rol.rs.
+- Tools: 19 herramientas de solo lectura (src-ia/motor-chat/llm/tools/): ventas (query_sales, compare_periods, get_top_products, forecast_sales), inventario y catálogo (query_inventory, get_product_info, get_restock_analysis, search_products, list_categories, get_products_by_category), abasto y compras (query_suppliers, query_purchases, get_purchase_detail, query_purchase_orders), trazabilidad y multisucursal (query_cost_history, query_expiring, list_branches, query_branch_stock) y SQL analítico (sql_readonly). Todas con SQL parametrizado y escape_like. Ejecutor compartido cloud/local, roles enforced en herramientas_rol.rs.
 - Dataset fine-tuning: tools_arreglado.jsonl con forma <tool_call>{"name":...,"arguments":...}</tool_call> congelada en TOOLS_LINEA (src-ia/motor-chat/cloud/prompts.rs:28 y src-ia/motor-chat/llm/mod.rs:107).
 - Separador de bloques think/response aislado (cloud/think.rs y llm/mod.rs:148).
 - Ciclo de tools con MAX_RONDAS_TOOLS=3 y re-inyeccion de resultado como mensaje role tool (ciclo_tools.rs).
@@ -62,7 +62,7 @@ Pendiente en IA: fine-tuning final de Qwen2.5-Coder 1.5B Instruct para que gener
 - Temas: ThemeProvider light/dark.
 
 Pendiente en produccion:
-- Impresion termica ESC/POS: IMPLEMENTADA 2026-09 (ver [`../modulos/impresora.md`](../modulos/impresora.md): Camino A spooler Windows RAW + Camino C ticket `escpos` con QR y red TCP 9100; 5 comandos; pendiente solo prueba de campo con termica real).
+- Impresion termica ESC/POS: IMPLEMENTADA 2026-09 (ver [`../modulos/impresora.md`](../modulos/impresora.md): Camino A spooler Windows RAW + Camino C ticket `escpos` con QR y red TCP 9100; 7 comandos en `impresora/` + `imprimir_corte`; pendiente solo prueba de campo con termica real conectada).
 - Escaner de codigos de barras: IMPLEMENTADO (ver [`../modulos/escaner.md`](../modulos/escaner.md): lector HID-teclado sin drivers, normalizacion Rust+SQL, indice unico parcial 0011, comando exacto + filtro local en venta).
 - Facturacion electronica (XML/PAC): sin implementar.
 - CI/CD, empaquetado .exe estable en Windows y bateria de pruebas finales (concurrencia, cortes, SSE, flujos completos).
