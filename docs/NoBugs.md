@@ -62,3 +62,28 @@ Prioridad actual: primer `.exe` estable y primer cliente piloto. CI no bloquea l
 - Tag por cliente (`v0.1.0-piloto-1`) y changelog.
 - Arreglar la prueba vieja de `empleados` (espera 90 min de extra previo; el código da 75 por la cortesía de 15). No es bug de producto, pero `cargo test` debe quedar verde antes del primer cliente.
 - CI (GitHub Actions + instalador firmado + auto-update) cuando haya 3+ clientes o actualizaciones remotas.
+
+---
+
+### 8. Login solo contraseña (empleados): diseño intencional, no descuido
+
+> "Empleados: SELECT * + iterar hashes Argon2. Único factor = contraseña. Colisión si dos comparten clave."
+
+**Diseño deliberado para flujo de caja rápido:**
+
+1. **El login es "solo contraseña" a propósito**: en una tienda con rotación alta y turnos cortos, el empleado llega, teclea su clave y vende. No hay tiempo para "usuario + contraseña" ni 2FA. El threat model es **físico** (la caja está en el mostrador, solo el cajero de turno la toca), no remoto.
+
+2. **Colisión imposible por construcción**: `guardar_empleado` (y `guardar_empleado_impl`) **rechaza la alta** si la contraseña elegida coincide con el hash de *cualquier* empleado activo (`verify_password` contra todos). Dos empleados **no pueden** compartir clave. El error lo ve el admin al dar de alta: "Ya existe un empleado con esa contraseña. Debe ser distinta para poder identificarlo en el login."
+
+3. **Rate-limiting mitiga fuerza bruta offline**: `LoginRateLimiter` (5 intentos / 5 min, ventana deslizante, en memoria, se reinicia en éxito). Un atacante con acceso físico a la caja ya tiene la llave del local; el límite ralentiza prueba-y-error pero no es el perímetro principal.
+
+4. **Sesión en Rust, no en React**: `AuthState` guarda `Session { user_id, role, name }` en `Mutex<Option<Session>>` dentro del proceso Tauri. El frontend **no** manda rol ni user_id en cada comando; el backend valida `require_operator()` / `require_admin()` contra esa sesión. Un XSS en el webview no escala privilegios.
+
+5. **Rastreabilidad por `cajero_id`**: cada venta persiste `cajero_id` (FK a `usuarios.id`), no solo el nombre. Si el admin renombra al empleado después, el histórico sigue íntegro.
+
+**Qué NO cubre (y por qué se acepta):**
+- Robo de contraseña por hombro (shoulder surfing) → mitigación: contraseñas alfanuméricas mínimas 6 chars, sin políticas de rotación forzada (fatiga = contraseñas peores).
+- Keylogger en la PC → mitigación: Windows Defender + PC dedicada a caja sin navegador.
+- Insider threat (admin malicioso) → mitigación: logs de auditoría (`ultimo_login`, `ventas.cajero_id`), respaldos cifrados inmutables.
+
+**Futuro (post v1.0)**: si un cliente pide 2FA o login con usuario+pass, se añade columna `username` UNIQUE y se cambia el flujo; el contrato Tauri (`validar_login_empleado`) admite parámetros extra sin breaking change.
