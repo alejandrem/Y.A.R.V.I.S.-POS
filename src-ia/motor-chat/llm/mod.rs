@@ -1,12 +1,12 @@
-//! llm — Chat LOCAL en Rust con el modelo Qwen 1.7B (fine-tune en curso).
+//! llm — Chat LOCAL en Rust con el modelo Qwen 1.5B (fine-tune en curso).
 //!
 //! Reemplaza a `yarvis-IA/chatbot/motor_chat/modelos_local/` en su función de
-//! conversación: se conecta directo al 1.7B con llama.cpp. SIN RAG, SIN
+//! conversación: se conecta directo al 1.5B con llama.cpp. SIN RAG, SIN
 //! consultas a la BD y SIN gestión de hardware: hay UN SOLO modelo local, el
-//! `1.7B`, compartido entre el parseo de tickets y la conversación.
+//! `1.5B`, compartido entre el parseo de tickets y la conversación.
 //!
 //! El system prompt marca que Y.A.R.V.I.S. está en fase de TESTING: es el
-//! prompt que verá el 1.7B durante su fine-tuning.
+//! prompt que verá el 1.5B durante su fine-tuning.
 //!
 //! Espejo ligero de `modelos_local/prompts.py` (construir_mensajes) y de
 //! `gestion_hardware.py` (ejecutar_chat), SIN toda la capa de RAG/caché.
@@ -102,7 +102,7 @@ pub fn nombre_modelo_local() -> String {
         .to_string()
 }
 
-/// System prompt del 1.7B local: marca que está en fase de TESTING (previa al
+/// System prompt del 1.5B local: marca que está en fase de TESTING (previa al
 /// fine-tuning). Sin contexto de BD: solo identidad + reglas de prueba.
 pub const SYSTEM_PROMPT_TEST: &str = r#"Eres un asistente de tienda con acceso a herramientas: [query_sales, compare_periods, get_top_products, query_inventory, forecast_sales, get_product_info, get_restock_analysis]
 Eres Y.A.R.V.I.S., el asistente inteligente de negocios. Respuesta con sinceridad: si no tienes informacion o no sabes hacer algo, dilo claro y explica por que.

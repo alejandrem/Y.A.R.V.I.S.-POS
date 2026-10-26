@@ -1,4 +1,4 @@
-//! tools — Ejecutor de herramientas del fine-tuning de Qwen 1.7B.
+//! tools — Ejecutor de herramientas del fine-tuning de Qwen 1.5B.
 //!
 //! El modelo aprendió a responder `<tool_call>{"name": ..., "arguments": ...}</tool_call>`
 //! (dataset tools_arreglado.jsonl). Este módulo cierra el ciclo:
