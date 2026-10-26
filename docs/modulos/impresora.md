@@ -35,7 +35,7 @@ impresora/
 │                       # parcial 1D 56 41 00). Tope 500 lineas, 512KB.
 ├── spooler_windows.rs  # Solo Windows: EnumPrintersW + OpenPrinterW/WritePrinter.
 ├── spooler_stub.rs     # Fuera de Windows: error claro ("solo Windows en Fase 1").
-└── commands.rs         # 5 comandos Tauri (ver §3). I/O en spawn_blocking.
+└── commands.rs         # 7 comandos Tauri (ver §3). I/O en spawn_blocking.
 ```
 
 Dependencias (`yarvis-app/src-tauri/Cargo.toml`):
@@ -72,9 +72,13 @@ sobrantes y perdida estimada (`|dif| x precio_venta`), doble salto + corte.
 |---|---|---|
 | `listar_impresoras` | — | Impresoras del spooler (`{nombre, predeterminada}`). |
 | `imprimir_bytes_raw` | `nombreImpresora`, `bytes` | Manda bytes ya armados (puente a Fase 2). |
-| `imprimir_lista_conciliacion` | `nombreImpresora`, `tienda?`, `filas[]` | Arma conciliacion en Rust y la manda RAW. |
+| `imprimir_lista_conciliacion` | `nombreImpresora`, `tienda?`, `filas[]`, `anchoMm?` | Arma conciliacion en Rust y la manda RAW. |
+| `imprimir_lista_stock_bajo` | `nombreImpresora`, `tienda?`, `filas[]`, `anchoMm?` | Arma reporte de stock bajo y lo manda RAW. |
 | `imprimir_ticket_venta` | `destino`, `ticket` | Render `escpos` → Spooler o Red (§4). |
 | `probar_red` | `ip`, `puerto` | Solo TCP connect + close. Sin gastar papel. |
+| `abrir_cajon` | `destino` | Pulso ESC/POS (`ESC p 0 25 250`) para abrir cajón de dinero. |
+
+*(Nota: el comando `imprimir_corte` se ubica en `backcortes/impresion.rs` y utiliza este mismo canal para emitir el comprobante físico del corte de caja).*
 
 Nota IPC: Tauri convierte `camelCase` (JS) → `snake_case` (Rust) en
 argumentos por defecto (verificado en `tauri-macros` `wrapper.rs`,
