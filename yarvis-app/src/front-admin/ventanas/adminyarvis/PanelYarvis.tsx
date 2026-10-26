@@ -68,9 +68,9 @@ const PanelYarvis = ({ rol, active = true }: PanelYarvisProps) => {
   const [showConfig, setShowConfig] = useState(false);
   const [configSection, setConfigSection] = useState<"google" | "nvidia" | "local">("google");
   const [showModelMenu, setShowModelMenu] = useState(false);
-  // Las API keys viven en disco vía backend (api_keys.json con permisos
-  // 0600) — NUNCA en localStorage, que queda en texto plano y es legible
-  // por cualquier XSS del webview.
+  // Las API keys viven en disco vía backend (api_keys.bin: DPAPI en
+  // Windows / 0600 en Unix) — NUNCA en localStorage, que queda en texto
+  // plano y es legible por cualquier XSS del webview.
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [localModelPath, setLocalModelPath] = useState(() => localStorage.getItem("yarvis_local_model_path") || "");
   const [localModelName, setLocalModelName] = useState("Modelo local");

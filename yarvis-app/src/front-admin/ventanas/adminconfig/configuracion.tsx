@@ -8,6 +8,7 @@ import EncabezadoConfiguracion from "./components/EncabezadoConfiguracion";
 import FormularioIdentidad from "./components/FormularioIdentidad";
 import FormularioSeguridad from "./components/FormularioSeguridad";
 import FormularioApariencia from "./components/FormularioApariencia";
+import FormularioRespaldos from "./components/FormularioRespaldos";
 
 // Libro de Datos Inutiles compartido (mismo patron lazy que empleaajustes/ajustes.tsx:
 // no infla el bundle inicial, solo carga al abrir Ajustes).
@@ -74,6 +75,8 @@ const Configuracion = ({
           <FormularioApariencia />
         </div>
       </div>
+
+      <FormularioRespaldos />
 
       {/* LIBRO - DATOS INUTILES (lazy: mismo manual que ve el empleado) */}
       <Suspense

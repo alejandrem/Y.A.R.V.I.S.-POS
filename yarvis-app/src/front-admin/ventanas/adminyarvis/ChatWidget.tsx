@@ -46,8 +46,9 @@ export interface ChatModelSelection {
 export interface ActiveCloud extends ChatModelSelection {}
 
 // Caché EN MEMORIA de las API keys, alimentada desde el backend
-// (api_keys.json con permisos 0600). Las keys NUNCA residen en
-// localStorage del webview: quedarían en texto plano y legibles por XSS.
+// (api_keys.bin: DPAPI en Windows / 0600 en Unix). Las keys NUNCA
+// residen en localStorage del webview: quedarían en texto plano y
+// legibles por XSS.
 let apiKeysCache: Record<string, string> = {};
 
 /** Refresca el caché desde el disco (vía backend). Llamar al montar el panel. */
