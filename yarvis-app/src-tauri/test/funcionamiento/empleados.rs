@@ -219,7 +219,7 @@ async fn historial_calcula_extras_pre_y_post_y_descarta_sin_extra() {
     let d = &hist[0];
     assert_eq!(d.fecha, "2026-01-05");
     assert_eq!(d.dia_label, "Lunes");
-    assert_eq!(d.extra_pre_min, 90);   // 06:30 → 08:00
+    assert_eq!(d.extra_pre_min, 75);   // 06:30 → 08:00 (90 min) menos 15 min de cortesía
     assert_eq!(d.extra_post_min, 90);  // 16:00 → 17:30
     assert_eq!(d.trabajo_min, 660);    // 06:30 → 17:30
     assert_eq!(d.entrada_oficial, "08:00");
