@@ -54,7 +54,7 @@ Por eso no se "arregla" generando claves aleatorias: si el admin no puede saber 
 
 ---
 
-### 7 CI — DIFERIDO A PROPÓSITO
+### 7 CI — DIFERIDO A PROPÓSITO LO ACTUALIZAREMOS CONFORME CREZCA EL PROYEXTO 
 
 Prioridad actual: primer `.exe` estable y primer cliente piloto. CI no bloquea la venta; la disciplina de release sí. Mientras tanto:
 
