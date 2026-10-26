@@ -3,8 +3,13 @@
 //
 // Por qué ya no localStorage: el webview guarda localStorage en
 // texto plano en disco y es legible por cualquier XSS del frontend.
-// Aquí viven en un JSON dentro del app_data_dir con permisos 0600
-// (solo el usuario dueño puede leerlo).
+// Aquí viven en api_keys.bin dentro del app_data_dir:
+//   - Windows: cifradas con DPAPI (CryptProtectData), atadas a la
+//     cuenta de Windows actual. Copiar el archivo a otra máquina no
+//     permite leerlas.
+//   - Linux/macOS: JSON con permisos 0600 (respaldo; no hay DPAPI).
+// El detalle de formato, migración desde api_keys.json y escritura
+// atómica vive en el submódulo `almacen`.
 //
 // AUTORIZACIÓN (enforcement en backend, nunca en React):
 // el ADMIN escribe tal cual (reemplazo total, puede borrar) y es el
@@ -17,34 +22,25 @@
 // frontend (PanelYarvis) es solo UX; la regla vive aquí.
 // Ver issue #4.
 //
-// Escalamiento futuro: OS keychain (libsecret/Windows Credential
-// Manager) vía crate `keyring`. El contrato de comandos no cambiaría.
+// Escalamiento futuro: si se necesita aislar también de procesos que
+// corren con la misma cuenta de Windows, migrar a Credential Manager
+// (crate `keyring`). El contrato de comandos no cambiaría.
 // ============================================================
 
-use serde_json::Value;
+pub(crate) mod almacen;
+
 use tauri::Manager;
 
 use crate::backventanas::auth::Role;
 
-/// Ruta del archivo de configuración de APIs.
-fn ruta_config(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+/// Directorio de datos de la app donde vive api_keys.bin.
+fn directorio_datos(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|_| "No se pudo resolver el directorio de datos".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("api_keys.json"))
-}
-
-fn escribir_con_permisos(ruta: &std::path::Path, contenido: &str) -> Result<(), String> {
-    std::fs::write(ruta, contenido).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(ruta, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    Ok(dir)
 }
 
 /// Fusiona las claves entrantes con las guardadas según el rol.
@@ -99,23 +95,28 @@ pub fn fusionar_claves_por_rol(
     Ok(fusionadas)
 }
 
-/// Lee el mapa de claves desde disco. Si el archivo no existe,
-/// devuelve mapa vacío (primera configuración).
-fn leer_mapa(ruta: &std::path::Path) -> Result<std::collections::HashMap<String, String>, String> {
-    let mut out = std::collections::HashMap::new();
-    if !ruta.exists() {
-        return Ok(out);
-    }
-    let contenido = std::fs::read_to_string(ruta).map_err(|e| e.to_string())?;
-    let parsed: Value = serde_json::from_str(&contenido).map_err(|e| e.to_string())?;
-    if let Value::Object(mapa) = parsed {
-        for (k, v) in mapa {
-            if let Some(s) = v.as_str() {
-                out.insert(k, s.to_string());
+/// Migra el antiguo api_keys.json en claro al almacén cifrado al
+/// arrancar, sin bloquear el splash ni tumbar la app si falla. Si la
+/// migración no se puede hacer, el panel la reintenta al leer/guardar.
+pub fn migrar_almacen(app: &tauri::AppHandle) {
+    let dir = match directorio_datos(app) {
+        Ok(dir) => dir,
+        Err(e) => {
+            tracing::warn!("[API KEYS] No se pudo resolver el directorio de datos: {e}");
+            return;
+        }
+    };
+    let habia_legacy = almacen::ruta_legacy(&dir).exists();
+    match almacen::leer_mapa(&dir) {
+        Ok(_) => {
+            if habia_legacy && !almacen::ruta_legacy(&dir).exists() {
+                tracing::info!("[API KEYS] api_keys.json migrado a api_keys.bin");
             }
         }
+        Err(e) => {
+            tracing::warn!("[API KEYS] No se pudo migrar/leer el almacén de claves: {e}");
+        }
     }
-    Ok(out)
 }
 
 #[tauri::command]
@@ -125,11 +126,10 @@ pub fn guardar_api_keys(
     keys: std::collections::HashMap<String, String>,
 ) -> Result<(), String> {
     let sesion = auth.require_operator()?;
-    let ruta = ruta_config(&app)?;
-    let previas = leer_mapa(&ruta)?;
+    let dir = directorio_datos(&app)?;
+    let previas = almacen::leer_mapa(&dir)?;
     let finales = fusionar_claves_por_rol(&previas, &keys, sesion.role)?;
-    let json = serde_json::to_string_pretty(&finales).map_err(|e| e.to_string())?;
-    escribir_con_permisos(&ruta, &json)
+    almacen::guardar_mapa(&dir, &finales)
 }
 
 #[tauri::command]
@@ -142,8 +142,8 @@ pub fn leer_api_keys(
     // El empleado configura las SUYAS a ciegas: guardar_api_keys le
     // permite agregar proveedores nuevos sin ver los existentes.
     auth.require_admin()?;
-    let ruta = ruta_config(&app)?;
-    leer_mapa(&ruta)
+    let dir = directorio_datos(&app)?;
+    almacen::leer_mapa(&dir)
 }
 
 #[cfg(test)]
@@ -201,10 +201,18 @@ mod tests {
         let r = fusionar_claves_por_rol(&previas, &HashMap::new(), Role::Employee);
         assert!(r.is_err(), "borrado total debe rechazarse");
         // Borrado parcial (omitir una) también.
-        let r = fusionar_claves_por_rol(&previas, &mapa(&[("google", "CLAVE-ADMIN")]), Role::Employee);
+        let r = fusionar_claves_por_rol(
+            &previas,
+            &mapa(&[("google", "CLAVE-ADMIN")]),
+            Role::Employee,
+        );
         assert!(r.is_err(), "borrado parcial debe rechazarse");
         // Vaciar el valor es borrar con otro nombre.
-        let r = fusionar_claves_por_rol(&previas, &mapa(&[("google", ""), ("nube", "OTRA")]), Role::Employee);
+        let r = fusionar_claves_por_rol(
+            &previas,
+            &mapa(&[("google", ""), ("nube", "OTRA")]),
+            Role::Employee,
+        );
         assert!(r.is_err(), "vaciar debe rechazarse");
     }
 
@@ -216,4 +224,3 @@ mod tests {
         assert_eq!(r.get("google").unwrap(), "PRIMERA");
     }
 }
-
