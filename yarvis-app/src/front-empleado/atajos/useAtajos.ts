@@ -9,7 +9,7 @@
 
 import { useEffect } from "react";
 import {
-  TECLA_CORTE, TECLA_COBRAR, TECLA_PAGAR, TECLA_REIMPRIMIR, TECLA_AYUDA, TECLA_BUSCAR, TECLA_CAJON,
+  TECLA_CORTE, TECLA_COBRAR, TECLA_PAGAR, TECLA_REIMPRIMIR, TECLA_AYUDA, TECLA_BUSCAR, TECLA_CAJON, TECLA_DEVOLUCION,
   atajoBloqueado,
 } from "./atajos";
 
@@ -21,14 +21,15 @@ interface AtajosEmpleadosOpts {
   onAyuda?: () => void;
   onBuscar?: () => void;
   onCajon?: () => void;
+  onDevolucion?: () => void;
   /** El shell lo pone en true mientras un modal de shell está abierto. */
   deshabilitado?: boolean;
 }
 
-export function useAtajosEmpleados({ onCorte, onCobrar, onPagar, onReimprimir, onAyuda, onBuscar, onCajon, deshabilitado = false }: AtajosEmpleadosOpts): void {
+export function useAtajosEmpleados({ onCorte, onCobrar, onPagar, onReimprimir, onAyuda, onBuscar, onCajon, onDevolucion, deshabilitado = false }: AtajosEmpleadosOpts): void {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key !== TECLA_CORTE && e.key !== TECLA_COBRAR && e.key !== TECLA_PAGAR && e.key !== TECLA_REIMPRIMIR && e.key !== TECLA_AYUDA && e.key !== TECLA_BUSCAR && e.key !== TECLA_CAJON) return;
+      if (e.key !== TECLA_CORTE && e.key !== TECLA_COBRAR && e.key !== TECLA_PAGAR && e.key !== TECLA_REIMPRIMIR && e.key !== TECLA_AYUDA && e.key !== TECLA_BUSCAR && e.key !== TECLA_CAJON && e.key !== TECLA_DEVOLUCION) return;
       e.preventDefault();
       if (deshabilitado) return;
       if (e.key === TECLA_CORTE) {
@@ -52,9 +53,12 @@ export function useAtajosEmpleados({ onCorte, onCobrar, onPagar, onReimprimir, o
       } else if (e.key === TECLA_CAJON) {
         if (atajoBloqueado(TECLA_CAJON)) return;
         onCajon?.();
+      } else if (e.key === TECLA_DEVOLUCION) {
+        if (atajoBloqueado(TECLA_DEVOLUCION)) return;
+        onDevolucion?.();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onCorte, onCobrar, onPagar, onReimprimir, onAyuda, onBuscar, onCajon, deshabilitado]);
+  }, [onCorte, onCobrar, onPagar, onReimprimir, onAyuda, onBuscar, onCajon, onDevolucion, deshabilitado]);
 }

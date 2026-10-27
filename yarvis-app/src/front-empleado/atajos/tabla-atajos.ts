@@ -10,7 +10,7 @@ import {
   ICONO_BILLETE, ICONO_CAJA, ICONO_BUSCAR, ICONO_AYUDA, ICONO_DOCUMENTO,
 } from "../../components/ui";
 
-export type AccionAtajoMenu = "reimprimir" | "corte" | "pagar" | "cobrar" | "buscar" | "menu" | "cajon";
+export type AccionAtajoMenu = "reimprimir" | "corte" | "pagar" | "cobrar" | "buscar" | "menu" | "cajon" | "devolucion";
 
 export interface EntradaAtajo {
   tecla: string;
@@ -34,4 +34,5 @@ export const TABLA_ATAJOS: EntradaAtajo[] = [
   { tecla: "F6", etiqueta: "CAJÓN", labelTopbar: "Caja", descripcion: "Abrir el cajón", icono: ICONO_CAJA, accion: "cajon", listo: true, enTopbar: true, enMenu: true },
   { tecla: "F7", etiqueta: "BUSCAR", labelTopbar: "Buscar", descripcion: "Ir al buscador de venta", icono: ICONO_BUSCAR, accion: "buscar", listo: true, enTopbar: true, enMenu: true },
   { tecla: "F8", etiqueta: "ATAJOS", labelTopbar: "Atajos", descripcion: "Este menú", icono: ICONO_AYUDA, accion: "menu", listo: true, enTopbar: true, enMenu: true },
+  { tecla: "F9", etiqueta: "DEVOLVER", labelTopbar: "Devolución", descripcion: "Devolver un ticket completo", icono: ICONO_DOCUMENTO, accion: "devolucion", listo: true, enTopbar: false, enMenu: true },
 ];

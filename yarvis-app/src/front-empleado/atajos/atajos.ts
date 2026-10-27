@@ -30,6 +30,8 @@ export const TECLA_AYUDA = "F8";
 export const TECLA_BUSCAR = "F7";
 /** Tecla de apertura del cajón (impresora predeterminada). */
 export const TECLA_CAJON = "F6";
+/** Abre el flujo de devolución del ticket completo. */
+export const TECLA_DEVOLUCION = "F9";
 
 const bloqueos = new Map<string, boolean>();
 
