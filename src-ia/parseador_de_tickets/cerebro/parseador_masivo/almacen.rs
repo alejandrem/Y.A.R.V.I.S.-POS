@@ -1,10 +1,11 @@
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 
-use super::items::{a_centavos, round2};
 use crate::cerebro::analizador_tickets::Item;
 use crate::cerebro::vinculador_inventario::normalizar;
 use crate::embeddings::{cosine_similarity, HashEmbedder, Embedder};
+
+mod venta_historica;
 
 /// Asegura la columna `folio_ticket` en `ventas`. Idempotente vía PRAGMA.
 ///
@@ -252,61 +253,8 @@ pub(super) fn insertar_venta(
     total: f64,
     productos_por_nombre: &HashMap<String, Option<i64>>,
 ) -> Result<i64, rusqlite::Error> {
-    conn.execute(
-        "INSERT INTO ventas (total, subtotal, iva, cajero, metodo_pago, estado, fecha, folio_ticket)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![
-            a_centavos(total),
-            a_centavos(subtotal),
-            a_centavos(iva),
-            cajero,
-            metodo_pago,
-            "completada",
-            // Ticket sin fecha → ahora (UTC), no NULL (se perdería del conteo).
-            fecha_iso.map(str::to_owned).unwrap_or_else(ahora_iso_utc),
-            folio
-        ],
-    )?;
-    let venta_id = conn.last_insert_rowid();
-
-    // Inventario para fuzzy (se carga una vez por venta, no por item, para no hacer N queries)
-    let inventario_cache: Vec<crate::cerebro::vinculador_inventario::ProductoInventario> =
-        crate::cerebro::vinculador_inventario::cargar_inventario_cache(conn);
-
-    for item in items {
-        let sub = round2(item.cantidad * item.precio_unitario - item.descuento.unwrap_or(0.0));
-
-        // Resolver producto_id: exacto normalizado -> fuzzy embedding -> None (sin vincular)
-        let producto_id = resolver_producto_id(&item.producto, productos_por_nombre, &inventario_cache);
-
-        conn.execute(
-            "INSERT INTO detalle_ventas (venta_id, producto_id, producto_nombre, cantidad, precio_unitario, descuento, subtotal)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                venta_id,
-                producto_id,
-                item.producto,
-                item.cantidad,
-                a_centavos(item.precio_unitario),
-                a_centavos(item.descuento.unwrap_or(0.0)),
-                a_centavos(sub)
-            ],
-        )?;
-
-        // Solo tocar stock si hay producto_id fiable. Si es None (truncado tipo "ACEITE" ambiguo
-        // o producto realmente nuevo), NO hacer UPDATE por LOWER — eso creaba fantasmas con costo $0
-        // y dejaba stock -158 sin freno. El stock se ajustará cuando el vinculador lo resuelva.
-        if let Some(pid) = producto_id {
-            conn.execute(
-                "UPDATE productos SET stock = stock - ?1 WHERE id = ?2",
-                params![item.cantidad, pid],
-            )?;
-            conn.execute(
-                "UPDATE productos SET vendido = vendido + ?1 WHERE id = ?2",
-                params![item.cantidad, pid],
-            )?;
-        }
-    }
-
-    Ok(venta_id)
+    venta_historica::insertar_venta_historica(
+        conn, items, cajero, fecha_iso, metodo_pago, folio,
+        subtotal, iva, total, productos_por_nombre,
+    )
 }
