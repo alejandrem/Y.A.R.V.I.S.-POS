@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // AVISO-RELOJ — Banner del estado del reloj del sistema.
-// Solo pinta cuando hay problema (desfasado / atrasado). En "ok" y
-// "sin_red" no estorba: "sin_red" es normal sin internet (offline-first).
+// Solo pinta cuando la hora local retrocede o cambia bruscamente.
 // ═══════════════════════════════════════════════════════════════════════════
 import type { EstadoHora } from "../../services/turno";
 
@@ -11,7 +10,7 @@ interface AvisoRelojProps {
 }
 
 const AvisoReloj = ({ hora, compacto = false }: AvisoRelojProps) => {
-  if (!hora || hora.estado === "ok" || hora.estado === "sin_red") return null;
+  if (!hora || hora.estado === "ok") return null;
 
   const esAtrasado = hora.estado === "reloj_atrasado";
   return (
@@ -29,11 +28,11 @@ const AvisoReloj = ({ hora, compacto = false }: AvisoRelojProps) => {
       <p>{hora.mensaje}</p>
       <p className="mt-1 text-[10px] opacity-80">
         Reloj: {hora.hora_sistema}
-        {hora.hora_red ? ` · Internet: ${hora.hora_red}` : ""}
+        {hora.zona ? ` · Zona: ${hora.zona}` : ""}
         {hora.ultimo_evento ? ` · Último movimiento: ${hora.ultimo_evento}` : ""}
       </p>
       <p className="mt-1 text-[10px] font-black uppercase tracking-wider opacity-70">
-        Configuración → Hora e idioma → activar hora automática
+        Configuración → Hora e idioma → Fecha y hora
       </p>
     </div>
   );

@@ -5,6 +5,7 @@
 
 import { invokeTauri } from "./tauri";
 import type { MiTurno, DiaExtra } from "../components/turno";
+import { notificarAviso } from "../components/notificaciones";
 
 export interface TiendaInfo {
   nombre: string | null;
@@ -21,17 +22,44 @@ export const obtenerMisHorasExtra = () =>
 export interface EstadoHora {
   hora_sistema: string;
   zona: string;
-  red_disponible: boolean;
-  hora_red: string | null;
-  desfase_seg: number | null;
-  /** "ok" | "desfasado" | "reloj_atrasado" | "sin_red" */
+  /** "ok" | "reloj_atrasado" | "cambio_brusco" */
   estado: string;
   mensaje: string;
   ultimo_evento: string | null;
+  evento_reloj_id: number | null;
+  evento_reloj_nuevo: boolean;
+}
+
+export interface EventoRelojEmpleado {
+  id: number;
+  tipo: string;
+  hora_sistema: string;
+  hora_referencia: string | null;
+  desfase_seg: number | null;
+  mensaje: string;
+  detectado_en: string;
+  ultima_observacion: string;
+  resuelto_en: string | null;
+}
+
+let ultimoEventoRelojNotificado: number | null = null;
+
+/** Evita repetir el toast en cada sondeo mientras el mismo aviso siga activo. */
+export function notificarEventoRelojSiNuevo(hora: EstadoHora) {
+  if (!hora.evento_reloj_id) {
+    ultimoEventoRelojNotificado = null;
+    return;
+  }
+  if (ultimoEventoRelojNotificado === hora.evento_reloj_id) return;
+  ultimoEventoRelojNotificado = hora.evento_reloj_id;
+  notificarAviso("Revisa el reloj de Windows", hora.mensaje);
 }
 
 export const obtenerHoraSistema = () =>
   invokeTauri<EstadoHora>("verificar_hora_sistema");
+
+export const obtenerEventosRelojEmpleado = (empleadoId: number) =>
+  invokeTauri<EventoRelojEmpleado[]>("get_eventos_reloj_empleado", { empleadoId });
 
 export const obtenerTiendaInfo = () =>
   invokeTauri<TiendaInfo>("get_tienda_info");

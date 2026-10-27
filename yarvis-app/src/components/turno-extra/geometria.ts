@@ -17,17 +17,22 @@ export const minsDe = (t: string): number => {
 export const fmtHM = (mins: number): string =>
   `${String(Math.floor(mins / 60) % 24).padStart(2, "0")}:${String(Math.round(mins % 60)).padStart(2, "0")}`;
 
-/** Minutos del corte Z si es DE HOY ("YYYY-MM-DD HH:MM:SS"); si es de
-    otro día o viene roto, null (= aún no cierra hoy). */
-function minutosDeCorteZ(ultimoZ: string | null, ahora: Date): number | null {
-  if (!ultimoZ || ultimoZ.length < 16) return null;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const hoyISO = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}`;
-  if (ultimoZ.slice(0, 10) !== hoyISO) return null;
-  const h = Number(ultimoZ.slice(11, 13));
-  const m = Number(ultimoZ.slice(14, 16));
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-  return h * 60 + m;
+const indiceDia = (fecha: string) => {
+  const [y, m, d] = fecha.slice(0, 10).split("-").map(Number);
+  return Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)
+    ? Math.floor(Date.UTC(y, m - 1, d) / 86400000)
+    : null;
+};
+
+/** Minutos relativos al día de inicio de sesión; soporta medianoche. */
+function minutosEnSesion(fechaHora: string | null, fechaSesion: string): number | null {
+  if (!fechaHora || fechaHora.length < 16) return null;
+  const diaEvento = indiceDia(fechaHora);
+  const diaInicio = indiceDia(fechaSesion);
+  const h = Number(fechaHora.slice(11, 13));
+  const m = Number(fechaHora.slice(14, 16));
+  if (diaEvento === null || diaInicio === null || diaEvento < diaInicio || !Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return (diaEvento - diaInicio) * 1440 + h * 60 + m;
 }
 
 /** Calcula toda la geometría de las barras para un momento dado. */
@@ -36,7 +41,10 @@ export function geometriaBarra(turno: MiTurno | null, ahora: Date): BarraTurno |
   const inicio = minsDe(turno.bloques_hoy[0].hora_inicio);
   let fin = minsDe(turno.bloques_hoy[turno.bloques_hoy.length - 1].hora_fin);
   if (fin <= inicio) fin += 24 * 60; // nocturno cruza medianoche
-  const ahoraMins = ahora.getHours() * 60 + ahora.getMinutes();
+  const fechaHoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
+  const fechaSesion = turno.fecha_sesion ?? fechaHoy;
+  const deltaDia = Math.max(0, (indiceDia(fechaHoy) ?? 0) - (indiceDia(fechaSesion) ?? 0));
+  const ahoraMins = deltaDia * 1440 + ahora.getHours() * 60 + ahora.getMinutes();
 
   // LLEGADA TEMPRANA: <15 min antes = solo felicitación; >=15 min cuenta
   // como tiempo extra (el patrón lo pidió expresamente).
@@ -45,12 +53,17 @@ export function geometriaBarra(turno: MiTurno | null, ahora: Date): BarraTurno |
   const minutosTemprano = llegoTemprano ? inicio - (loginRaw as number) : 0;
   const extraTemprana = llegoTemprano && minutosTemprano > UMBRAL_TEMPRANO;
 
-  const enTurnoActivo = loginRaw !== null && ahoraMins >= loginRaw;
+  const enTurnoActivo = turno.turno_activo ?? (loginRaw !== null && ahoraMins >= loginRaw);
 
   // Fin real de actividad: si ya hizo corte Z hoy, TODO congela ahí
   // (números y barras). Sin Z, el fin es el reloj.
-  const zMin = minutosDeCorteZ(turno.ultimo_corte_z, ahora);
-  const freezeMin = zMin === null ? ahoraMins : Math.min(ahoraMins, zMin);
+  const zMinRaw = minutosEnSesion(turno.ultimo_corte_z, fechaSesion);
+  const zMin = zMinRaw !== null && (loginRaw === null || zMinRaw >= loginRaw) ? zMinRaw : null;
+  const freezeMin = zMin !== null
+    ? Math.min(ahoraMins, zMin)
+    : turno.turno_activo === false && loginRaw !== null
+      ? loginRaw
+      : ahoraMins;
 
   // #23 REGLA B: el extra post existe si estaba trabajando cuando
   // terminó su horario (entrada <= fin); y si entró DE NOCHE tras el
@@ -81,7 +94,7 @@ export function geometriaBarra(turno: MiTurno | null, ahora: Date): BarraTurno |
   // el reloj solo no es trabajo).
   const hayLogin = loginRaw !== null;
   const baseTrabajo = hayLogin ? Math.max(inicio, loginRaw as number) : inicio;
-  const topeTrabajo = !hayLogin || fueraDeTurno ? inicio : Math.min(Math.max(ahoraMins, baseTrabajo), fin);
+  const topeTrabajo = !hayLogin || fueraDeTurno ? inicio : Math.min(Math.max(freezeMin, baseTrabajo), fin);
 
   // Barra 1 (turno): si llegó extra-temprano la ventana se extiende
   // a su llegada para que la bolita se recorra hacia atrás; si no,
@@ -138,7 +151,7 @@ export function geometriaBarra(turno: MiTurno | null, ahora: Date): BarraTurno |
     tLoginPct: loginRaw !== null ? pctT(loginRaw) : null,
     tIniPct: pctT(inicio),
     tTrabIniPct: pctT(!hayLogin || fueraDeTurno ? tIni : baseTrabajo),
-    tTrabFinPct: pctT(!hayLogin || fueraDeTurno ? tIni : Math.min(Math.max(ahoraMins, baseTrabajo), fin)),
+    tTrabFinPct: pctT(!hayLogin || fueraDeTurno ? tIni : Math.min(Math.max(freezeMin, baseTrabajo), fin)),
     xLoginPct: pctX(loginRaw ?? inicio),
     xIniPct: pctX(inicio),
     xFinPct: pctX(fin),

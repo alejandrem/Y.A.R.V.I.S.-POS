@@ -24,6 +24,9 @@ export interface MiTurno {
   /** Fecha_cierre del último corte Z propio ("YYYY-MM-DD HH:MM:SS").
       La barra de extra congela ahí: el turno termina con el Z. */
   ultimo_corte_z: string | null;
+  /** Fecha del login base y estado explícito de la sesión. */
+  fecha_sesion?: string;
+  turno_activo?: boolean;
 }
 
 export interface BarraTurno {
