@@ -14,7 +14,9 @@ static CODIGO_BARRAS: LazyLock<Regex> =
 
 // Prefijos tipo "ART.", "COD ", "N°" (case-insensitive) más el espacio posterior
 static PREFIJOS_ELIMINAR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:ART\.?|COD\.?|CODIGO\.?|SKU\.?|NO\.?|N[°º]\.?)\s*")
+    Regex::new(
+        r"(?i)\b(?:ART|COD|CODIGO|SKU|NO)\.(?:\s*)|\b(?:ART|COD|CODIGO|SKU|NO)\s+|\bN[°º](?:\.\s*|\s+)",
+    )
         .expect("regex prefijos a eliminar")
 });
 
@@ -129,9 +131,8 @@ mod tests {
         assert_eq!(limpiar_producto("COD. FANTA 500ML"), "FANTA 500ML");
         assert_eq!(limpiar_producto("SKU 12345678 MANZANA"), "MANZANA");
         assert_eq!(limpiar_producto("art. GATORADE"), "GATORADE");
-        // Comportamiento verificado en Python: la alternation COD\.? gana
-        // sobre CODIGO\.?, por lo que solo se borra el prefijo "COD".
-        assert_eq!(limpiar_producto("CODIGO GATORADE"), "IGO GATORADE");
+        assert_eq!(limpiar_producto("CODIGO GATORADE"), "GATORADE");
+        assert_eq!(limpiar_producto("CODITOS 200g"), "CODITOS 200G");
         // N° elimina el prefijo pero deja el número pequeño (no es código de barras).
         assert_eq!(limpiar_producto("N° 12345 SABRITAS"), "12345 SABRITAS");
     }
