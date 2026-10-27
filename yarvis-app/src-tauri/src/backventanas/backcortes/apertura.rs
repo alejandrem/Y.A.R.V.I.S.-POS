@@ -26,11 +26,13 @@ async fn crear_corte_impl(
         _ => "Z",
     };
     let usuario_id = auth.require_admin()?.user_id;
+    let fecha_local = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let result = sqlx::query(
-        r#"INSERT INTO cortes_caja (monto_inicial, tipo_corte, turno, observaciones, usuario_id, estado)
-           VALUES (?, ?, ?, ?, ?, 'abierto')"#
+        r#"INSERT INTO cortes_caja (fecha_apertura, monto_inicial, tipo_corte, turno, observaciones, usuario_id, estado)
+           VALUES (?, ?, ?, ?, ?, ?, 'abierto')"#
     )
+    .bind(fecha_local)
     .bind(a_centavos(datos.monto_inicial))
     .bind(tipo)
     .bind(&datos.turno)

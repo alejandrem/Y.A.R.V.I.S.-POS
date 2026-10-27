@@ -123,6 +123,7 @@ pub async fn guardar_ticket_parseado_impl(
     metodo_pago: Option<String>,
 ) -> Result<String, String> {
     let metodo_pago = metodo_pago.unwrap_or_else(|| "efectivo".into());
+    let fecha_local_actual = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let fecha_iso = match (fecha, hora) {
         (Some(f), Some(h)) => {
             if !f.is_empty() && !h.is_empty() {
@@ -160,11 +161,12 @@ pub async fn guardar_ticket_parseado_impl(
             .await
             .map_err(|e| e.to_string())?
     } else {
-        sqlx::query("INSERT INTO ventas (total, subtotal, cajero, metodo_pago) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO ventas (total, subtotal, cajero, metodo_pago, fecha) VALUES (?, ?, ?, ?, ?)")
             .bind(a_centavos(total))
             .bind(a_centavos(total))
             .bind("IMPORTADOR")
             .bind(&metodo_pago)
+            .bind(fecha_local_actual)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?

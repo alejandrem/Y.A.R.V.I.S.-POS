@@ -68,8 +68,8 @@ pub async fn corte_z_cierre_impl(
     // en asistencias (último registro de actividad del día). El próximo
     // conteo parte de este cierre (ver `comun::ancla_turno`).
     let salida = sqlx::query(
-        "UPDATE asistencias SET ultimo_login = ?
-          WHERE empleado_id = ? AND fecha = date(?,'localtime')",
+        "UPDATE asistencias SET ultimo_login = ?, turno_activo = 0
+          WHERE empleado_id = ? AND (turno_activo = 1 OR fecha = date(?,'localtime'))",
     )
     .bind(&cierre)
     .bind(cajero_id)
@@ -79,8 +79,8 @@ pub async fn corte_z_cierre_impl(
     .map_err(|e| e.to_string())?;
     if salida.rows_affected() == 0 {
         sqlx::query(
-            "INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login)
-             VALUES (?, date(?,'localtime'), ?, ?)",
+            "INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login, turno_activo)
+             VALUES (?, date(?,'localtime'), ?, ?, 0)",
         )
         .bind(cajero_id)
         .bind(&cierre)

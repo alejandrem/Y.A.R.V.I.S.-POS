@@ -77,10 +77,12 @@ pub async fn completar_venta_impl(
     // producto fantasma), SQLite revierte TODO y no quedan datos a medias
     // (antes un fallo a mitad dejaba venta sin items o stock descuadrado).
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let fecha_local = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let result = sqlx::query(
-        "INSERT INTO ventas (total, subtotal, descuento, metodo_pago, cajero, cajero_id, cliente_id, monto_efectivo, monto_tarjeta, monto_transferencia) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO ventas (fecha, total, subtotal, descuento, metodo_pago, cajero, cajero_id, cliente_id, monto_efectivo, monto_tarjeta, monto_transferencia) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
+    .bind(fecha_local)
     .bind(total_cents)
     .bind(subtotal_cents)
     .bind(descuento_cents)
