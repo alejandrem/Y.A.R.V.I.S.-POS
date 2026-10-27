@@ -57,17 +57,7 @@ export const enRango = (inicio: string, fin: string, ahoraMins: number) => {
 };
 
 export const isInShift = (emp: EmpleadoProfile) => {
-  const ahora = new Date();
-  const ahoraMins = ahora.getHours() * 60 + ahora.getMinutes();
-  const hoy = hoyChipIdx();
-
-  // Bloques completos (jornadas partidas).
-  if (emp.horarios?.length) {
-    return emp.horarios.some((b) => b.dias.includes(hoy) && enRango(b.hora_inicio, b.hora_fin, ahoraMins));
-  }
-  // Fallback legacy: rango único en columnas planas.
-  if (!emp.horario_inicio || !emp.horario_fin || emp.horario_inicio === "00:00") return false;
-  return enRango(emp.horario_inicio, emp.horario_fin, ahoraMins);
+  return emp.en_turno === true;
 };
 
 export const estadoDot = (emp: EmpleadoProfile) => {

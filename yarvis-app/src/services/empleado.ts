@@ -23,5 +23,6 @@ export interface EmpleadoProfile {
   bono: number;
   registrado_en: string | null;
   ultimo_login: string | null;
+  en_turno?: boolean;
   horarios: HorarioBloque[];
 }

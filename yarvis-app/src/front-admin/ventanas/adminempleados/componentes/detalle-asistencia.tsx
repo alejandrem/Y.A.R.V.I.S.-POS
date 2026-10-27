@@ -58,7 +58,7 @@ export const DetalleAsistencia = ({ asistenciaDetalle, ahora, hora = null }: Det
                 )}
                 <div
                   className="absolute inset-y-0 bg-neutral-900 rounded-full transition-all duration-700 ease-out"
-                  style={{ left: `${barraDetalle.inicioPct}%`, width: `${Math.max(0, barraDetalle.trabajoPct)}%` }}
+                  style={{ left: `${barraDetalle.tTrabIniPct}%`, width: `${Math.max(0, barraDetalle.tTrabFinPct - barraDetalle.tTrabIniPct)}%` }}
                 />
                 {barraDetalle.enExtraPost && (
                   <div
@@ -104,7 +104,7 @@ export const DetalleAsistencia = ({ asistenciaDetalle, ahora, hora = null }: Det
                     : "Sin registro de entrada hoy"}
                 </span>
                 <span className={`text-[8px] font-black uppercase ${barraDetalle.enExtra ? "text-emerald-500" : "text-neutral-300"}`}>
-                  {barraDetalle.enExtra ? `Progreso: ${Math.round(barraDetalle.trabajoPct)}% + extra` : `Progreso: ${Math.round(barraDetalle.trabajoPct)}%`}
+                  {barraDetalle.enExtra ? `Progreso: ${Math.round(barraDetalle.tTrabFinPct)}% + extra` : `Progreso: ${Math.round(barraDetalle.tTrabFinPct)}%`}
                 </span>
               </div>
             </div>

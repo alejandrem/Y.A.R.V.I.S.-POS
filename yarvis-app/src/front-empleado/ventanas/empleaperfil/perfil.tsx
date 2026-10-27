@@ -5,7 +5,7 @@
 // ══════════════════════════════════════════════════════════════════
 import { useState, useEffect } from "react";
 import { invokeTauri, reportarError } from "../../../services/tauri";
-import { obtenerMiTurno, obtenerMisHorasExtra, obtenerHoraSistema, type EstadoHora } from "../../../services/turno";
+import { obtenerMiTurno, obtenerMisHorasExtra, obtenerHoraSistema, notificarEventoRelojSiNuevo, type EstadoHora } from "../../../services/turno";
 import {
   geometriaBarra,
   type MiTurno, type DiaExtra,
@@ -57,8 +57,19 @@ const Perfil = ({ activeTab, operatorName }: PerfilProps) => {
       obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar tu turno", e));
       obtenerMisHorasExtra().then(setExtras).catch((e) => reportarError("No se pudieron cargar tus horas extra", e));
       // Reloj: best-effort, si falla no rompe el perfil (offline-first).
-      obtenerHoraSistema().then(setHora).catch(() => setHora(null));
+      obtenerHoraSistema().then((estado) => {
+        setHora(estado);
+        notificarEventoRelojSiNuevo(estado);
+      }).catch(() => setHora(null));
     }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "perfil") return;
+    let vivo = true;
+    const actualizarTurno = () => obtenerMiTurno().then((t) => { if (vivo) setTurno(t); }).catch(() => {});
+    const timer = window.setInterval(actualizarTurno, 15000);
+    return () => { vivo = false; window.clearInterval(timer); };
   }, [activeTab]);
 
   const toggleExtra = (fecha: string) => {

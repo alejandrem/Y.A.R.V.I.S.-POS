@@ -16,18 +16,23 @@ use sqlx::SqlitePool;
 
 /// Registra (o refresca) la asistencia del login de un empleado.
 pub async fn registrar_asistencia(pool: &SqlitePool, empleado_id: i64) -> Result<(), String> {
-    // INSERT que solo crea renglón si es el primer login del día; si ya
-    // existe, actualiza ultimo_login y deja primer_login intacto.
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE asistencias SET turno_activo = 0 WHERE empleado_id = ?")
+        .bind(empleado_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
     sqlx::query(
-        r#"INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login)
-           VALUES (?, date('now','localtime'), datetime('now','localtime'), datetime('now','localtime'))
+        r#"INSERT INTO asistencias (empleado_id, fecha, primer_login, ultimo_login, turno_activo, sesion_inicio)
+           VALUES (?, date('now','localtime'), datetime('now','localtime'), datetime('now','localtime'), 1, datetime('now','localtime'))
            ON CONFLICT(empleado_id, fecha)
-           DO UPDATE SET ultimo_login = datetime('now','localtime')"#,
+           DO UPDATE SET ultimo_login = datetime('now','localtime'), turno_activo = 1, sesion_inicio = datetime('now','localtime')"#,
     )
     .bind(empleado_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -51,12 +56,8 @@ pub struct MiTurno {
     /// Fecha_cierre del último corte Z propio ("YYYY-MM-DD HH:MM:SS").
     /// La barra de extra congela ahí: el turno termina con el Z.
     pub ultimo_corte_z: Option<String>,
-}
-
-/// Índice de chip del día actual: Lunes=0 .. Domingo=6 (igual que el frontend).
-fn chip_idx_hoy() -> i32 {
-    // chrono: Mon=0..Sun=6 vía num_days_from_monday
-    chrono::Local::now().weekday().num_days_from_monday() as i32
+    pub fecha_sesion: String,
+    pub turno_activo: bool,
 }
 
 #[tauri::command]
@@ -82,8 +83,25 @@ pub async fn get_asistencia_empleado(
 
 /// Núcleo compartido, testeable sin runtime de Tauri.
 pub async fn mi_turno_impl(pool: &SqlitePool, empleado_id: i64) -> Result<MiTurno, String> {
+    let hoy_fecha = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let asistencia = sqlx::query_as::<_, (String, Option<String>, Option<String>, i64)>(
+        "SELECT fecha, substr(CASE WHEN turno_activo = 1 THEN COALESCE(sesion_inicio, primer_login) ELSE primer_login END, 12, 5), substr(ultimo_login, 12, 5), turno_activo
+         FROM asistencias
+         WHERE empleado_id = ? AND (fecha = date('now','localtime') OR turno_activo = 1)
+         ORDER BY turno_activo DESC, fecha DESC LIMIT 1",
+    )
+    .bind(empleado_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let fecha_sesion = asistencia.as_ref().map(|a| a.0.clone()).unwrap_or(hoy_fecha);
+    let turno_activo = asistencia.as_ref().is_some_and(|a| a.3 != 0);
+    let dia_referencia = chrono::NaiveDate::parse_from_str(&fecha_sesion, "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::Local::now().date_naive())
+        .weekday()
+        .num_days_from_monday() as i32;
 
-    // Bloques del empleado (todos); filtramos los que incluyen hoy.
+    // Horario del dÃ­a en que iniciÃ³ la sesiÃ³n, incluso si cruzÃ³ medianoche.
     let filas = sqlx::query(
         "SELECT dias, hora_inicio, hora_fin FROM empleado_horarios WHERE empleado_id = ? ORDER BY id ASC",
     )
@@ -92,31 +110,19 @@ pub async fn mi_turno_impl(pool: &SqlitePool, empleado_id: i64) -> Result<MiTurn
     .await
     .map_err(|e| e.to_string())?;
 
-    let hoy = chip_idx_hoy();
     let bloques_hoy: Vec<BloqueHoy> = filas
         .iter()
         .filter(|f| {
             f.get::<String, _>("dias")
                 .split(',')
                 .filter_map(|d| d.trim().parse::<i32>().ok())
-                .any(|d| d == hoy)
+                .any(|d| d == dia_referencia)
         })
         .map(|f| BloqueHoy {
             hora_inicio: f.get("hora_inicio"),
             hora_fin: f.get("hora_fin"),
         })
         .collect();
-
-    // Asistencia de hoy: substr(primer_login,12,5) → "HH:MM" desde
-    // "YYYY-MM-DD HH:MM:SS".
-    let asistencia = sqlx::query_as::<_, (Option<String>, Option<String>)>(
-        "SELECT substr(primer_login, 12, 5), substr(ultimo_login, 12, 5)
-         FROM asistencias WHERE empleado_id = ? AND fecha = date('now','localtime')",
-    )
-    .bind(empleado_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?;
 
     // salario_diario vive en centavos (INTEGER); se decodifica y convierte.
     let perfil = sqlx::query_as::<_, (i64, i32)>(
@@ -162,11 +168,13 @@ pub async fn mi_turno_impl(pool: &SqlitePool, empleado_id: i64) -> Result<MiTurn
     Ok(MiTurno {
         dia_laborable: !bloques_hoy.is_empty(),
         bloques_hoy,
-        primer_login: asistencia.as_ref().and_then(|a| a.0.clone()),
+        primer_login: asistencia.as_ref().and_then(|a| a.1.clone()),
         horas_por_dia: horas_dia,
         dias_semana: perfil.1,
-        ultimo_login: asistencia.and_then(|a| a.1),
+        ultimo_login: asistencia.and_then(|a| a.2),
         ultimo_corte_z: ultimo_z,
+        fecha_sesion,
+        turno_activo,
     })
 }
 

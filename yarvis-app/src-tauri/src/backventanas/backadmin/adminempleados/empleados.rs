@@ -27,6 +27,7 @@ pub struct EmpleadoProfile {
     pub bono: f64,
     pub registrado_en: Option<String>,
     pub ultimo_login: Option<String>,
+    pub en_turno: bool,
     /// Bloques de horario completos (soporta jornadas partidas).
     #[serde(default)]
     pub horarios: Vec<HorarioBloque>,
@@ -62,6 +63,35 @@ pub struct CorteEmpleado {
     pub estado: String,
 }
 
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct EventoRelojEmpleado {
+    pub id: i64,
+    pub tipo: String,
+    pub hora_sistema: String,
+    pub hora_referencia: Option<String>,
+    pub desfase_seg: Option<i64>,
+    pub mensaje: String,
+    pub detectado_en: String,
+    pub ultima_observacion: String,
+    pub resuelto_en: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_eventos_reloj_empleado(
+    state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
+    empleado_id: i64,
+) -> Result<Vec<EventoRelojEmpleado>, String> {
+    auth.require_admin()?;
+    sqlx::query_as::<_, EventoRelojEmpleado>(
+        "SELECT id, tipo, hora_sistema, hora_referencia, desfase_seg, mensaje, detectado_en, ultima_observacion, resuelto_en FROM eventos_reloj WHERE empleado_id = ? ORDER BY id DESC LIMIT 20",
+    )
+    .bind(empleado_id)
+    .fetch_all(&*state)
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Columna monetaria INTEGER en centavos → pesos para structs IPC.
 fn decode_cents(row: &sqlx::sqlite::SqliteRow, col: &str) -> f64 {
     a_pesos(row.try_get::<i64, _>(col).unwrap_or(0))
@@ -74,8 +104,9 @@ pub async fn get_empleados(
 ) -> Result<Vec<EmpleadoProfile>, String> {
     auth.require_admin()?;
     let rows = sqlx::query(
-        "SELECT id, nombre, estado, turno, horario_inicio, horario_fin, salario_semanal, salario_diario, dias_semana, meta_mensual, bono, registrado_en, ultimo_login
-         FROM usuarios WHERE rol = 'empleado' ORDER BY nombre ASC"
+        "SELECT u.id, u.nombre, u.estado, u.turno, u.horario_inicio, u.horario_fin, u.salario_semanal, u.salario_diario, u.dias_semana, u.meta_mensual, u.bono, u.registrado_en, u.ultimo_login,
+                COALESCE((SELECT a.turno_activo FROM asistencias a WHERE a.empleado_id = u.id ORDER BY a.fecha DESC, a.id DESC LIMIT 1), 0) AS en_turno
+         FROM usuarios u WHERE u.rol = 'empleado' ORDER BY u.nombre ASC"
     )
     .fetch_all(&*state)
     .await
@@ -122,6 +153,7 @@ pub async fn get_empleados(
                 bono: decode_cents(&r, "bono"),
                 registrado_en: r.try_get("registrado_en").ok(),
                 ultimo_login: r.try_get("ultimo_login").ok(),
+                en_turno: r.try_get::<i64, _>("en_turno").unwrap_or(0) != 0,
                 horarios: horarios_por_empleado.remove(&id).unwrap_or_default(),
             }
         })

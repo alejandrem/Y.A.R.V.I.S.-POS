@@ -3,10 +3,11 @@
 // con botones y composición de los componentes del detalle.
 import { useState, useEffect, useRef } from "react";
 import { invokeTauri, reportarError } from "../../../services/tauri";
+import { notificarAviso } from "../../../components/notificaciones";
 import { MorphIcon } from "morphicons/react";
 import type { EmpleadoProfile } from "../../../services/empleado";
 import type { MiTurno, DiaExtra } from "../../../components/turno-extra";
-import type { EstadoHora } from "../../../services/turno";
+import { obtenerEventosRelojEmpleado, type EventoRelojEmpleado, type EstadoHora } from "../../../services/turno";
 import ModalEmpleados from "./modalEmpleados";
 import ModalMetas from "./modalMetas";
 import {
@@ -27,6 +28,9 @@ import { DetalleAsistencia } from "./componentes/detalle-asistencia";
 import { DetalleVentas } from "./componentes/detalle-ventas";
 import { DetalleMetas } from "./componentes/detalle-metas";
 import { DetalleCortes } from "./componentes/detalle-cortes";
+import { DetalleReloj } from "./componentes/detalle-reloj";
+import { DetalleDevoluciones } from "./componentes/detalle-devoluciones";
+import { obtenerDevolucionesEmpleado, type DevolucionRegistrada } from "../../../services/devoluciones";
 import { HorasExtra } from "./componentes/horas-extra";
 import {
   formatMoney,
@@ -51,6 +55,8 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [ventasDetalle, setVentasDetalle] = useState<EmpleadoVentas | null>(null);
   const [cortes, setCortes] = useState<CorteEmpleado[]>([]);
+  const [eventosReloj, setEventosReloj] = useState<EventoRelojEmpleado[]>([]);
+  const [devolucionesEmpleado, setDevolucionesEmpleado] = useState<DevolucionRegistrada[]>([]);
   const [asistenciaDetalle, setAsistenciaDetalle] = useState<MiTurno | null>(null);
   const [extrasDetalle, setExtrasDetalle] = useState<DiaExtra[] | null>(null);
   const [horaSistema, setHoraSistema] = useState<EstadoHora | null>(null);
@@ -67,6 +73,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   const [showModalMetas, setShowModalMetas] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recargado, setRecargado] = useState(false);
+  const ultimoEventoRelojId = useRef<number | null>(null);
 
   useEffect(() => {
     if (activeTab === "empleados") loadData();
@@ -77,6 +84,19 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
         .catch(() => setHoraSistema(null));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Refresca el estado real de sesión (login/Z), independiente del horario programado.
+  useEffect(() => {
+    if (activeTab !== "empleados") return;
+    let vivo = true;
+    const refrescarEstados = () => {
+      invokeTauri<EmpleadoProfile[]>("get_empleados")
+        .then((filas) => { if (vivo) setEmpleados(filas); })
+        .catch(() => {});
+    };
+    const timer = window.setInterval(refrescarEstados, 15000);
+    return () => { vivo = false; window.clearInterval(timer); };
   }, [activeTab]);
 
   const loadData = async () => {
@@ -107,13 +127,16 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
   };
 
   const loadDetalle = async (id: number) => {
+    setDevolucionesEmpleado([]);
     try {
-      const [ventas, cortesData] = await Promise.all([
+      const [ventas, cortesData, devolucionesData] = await Promise.all([
         invokeTauri<EmpleadoVentas>("get_empleado_ventas", { empleadoId: id }),
         invokeTauri<CorteEmpleado[]>("get_cortes_empleado", { empleadoId: id }),
+        obtenerDevolucionesEmpleado(id),
       ]);
       setVentasDetalle(ventas);
       setCortes(cortesData);
+      setDevolucionesEmpleado(devolucionesData);
       setSelectedId(id);
     } catch (error) {
       reportarError("No se pudo cargar el detalle del empleado", error);
@@ -125,6 +148,7 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
     invokeTauri<DiaExtra[]>("get_horas_extra_empleado", { empleadoId: id })
       .then(setExtrasDetalle)
       .catch(() => setExtrasDetalle(null));
+    setEventosReloj([]);
   };
 
   const toggleExtraAdmin = (fecha: string) => {
@@ -137,10 +161,46 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
 
   const selectedEmp = empleados.find((e) => e.id === selectedId) || null;
 
+  // Mantiene viva la tarjeta mientras el administrador observa el detalle.
+  useEffect(() => {
+    if (selectedId === null) return;
+    let activo = true;
+    let primeraCarga = true;
+    const cargarEventos = () => {
+      invokeTauri<MiTurno>("get_asistencia_empleado", { empleadoId: selectedId })
+        .then((turno) => { if (activo) setAsistenciaDetalle(turno); })
+        .catch(() => { if (activo) setAsistenciaDetalle(null); });
+      obtenerEventosRelojEmpleado(selectedId)
+        .then((eventos) => {
+          if (!activo) return;
+          setEventosReloj(eventos);
+          const masNuevo = eventos[0];
+          if (primeraCarga) {
+            primeraCarga = false;
+            ultimoEventoRelojId.current = masNuevo?.id ?? null;
+            return;
+          }
+          if (masNuevo && !masNuevo.resuelto_en && ultimoEventoRelojId.current !== null && masNuevo.id > ultimoEventoRelojId.current) {
+            notificarAviso("Cambio del reloj detectado", masNuevo.mensaje);
+          }
+          ultimoEventoRelojId.current = masNuevo?.id ?? null;
+        })
+        .catch(() => { if (activo) setEventosReloj([]); });
+    };
+    cargarEventos();
+    const timer = window.setInterval(cargarEventos, 30000);
+    return () => {
+      activo = false;
+      window.clearInterval(timer);
+    };
+  }, [selectedId]);
+
   const cerrarDetalle = () => {
     setSelectedId(null);
     setVentasDetalle(null);
     setCortes([]);
+    setEventosReloj([]);
+    setDevolucionesEmpleado([]);
     setAsistenciaDetalle(null);
     setExtrasDetalle(null);
     setExpandidasAdmin(new Set());
@@ -242,6 +302,12 @@ const AdminEmpleados = ({ activeTab }: AdminEmpleadosProps) => {
 
             {/* CORTES DE CAJA */}
             <DetalleCortes cortes={cortes} />
+
+            {/* AVISOS DEL RELOJ DEL EQUIPO */}
+            <DetalleReloj eventos={eventosReloj} />
+
+            {/* DEVOLUCIONES REALIZADAS POR EL EMPLEADO */}
+            <DetalleDevoluciones devoluciones={devolucionesEmpleado} />
           </div>
 
           {/* HORAS EXTRAS INDEFINIDAS — historial completo del empleado */}
