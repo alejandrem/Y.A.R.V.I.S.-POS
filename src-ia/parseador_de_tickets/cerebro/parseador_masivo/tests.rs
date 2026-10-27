@@ -34,12 +34,15 @@ fn crear_bd(dir: &Path) -> String {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL,
             precio_venta INTEGER DEFAULT 0,
+            precio_costo INTEGER DEFAULT 0,
             stock REAL DEFAULT 0,
+            stock_minimo REAL DEFAULT 5,
+            categoria TEXT DEFAULT '',
             vendido REAL DEFAULT 0
          );
          CREATE TABLE ventas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            total INTEGER, subtotal INTEGER, iva INTEGER,
+            total INTEGER, subtotal INTEGER, iva INTEGER, descuento INTEGER DEFAULT 0,
             cajero TEXT, metodo_pago TEXT, estado TEXT, fecha TEXT,
             folio_ticket TEXT
          );
@@ -229,7 +232,7 @@ fn linea_duplicada_no_se_descuenta_dos_veces() {
 }
 
 #[test]
-fn stock_se_actualiza_con_cantidad_del_item() {
+fn importacion_historica_conserva_stock_y_suma_vendido() {
     let dir = tmp_workspace("stock");
     let db = crear_bd(&dir);
     sembrar_producto(&db, "TAZAS", 60.0, 100.0);
@@ -245,14 +248,14 @@ fn stock_se_actualiza_con_cantidad_del_item() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(stock, 98.0);
+    assert_eq!(stock, 100.0);
     assert_eq!(vendido, 2.0);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
-fn reimportar_la_misma_carpeta_no_duplica_ventas_ni_stock() {
+fn reimportar_la_misma_carpeta_no_duplica_ventas_ni_vendido() {
     let dir = tmp_workspace("idempotente");
     let db = crear_bd(&dir);
     sembrar_producto(&db, "TAZAS", 60.0, 100.0);
@@ -283,7 +286,7 @@ fn reimportar_la_misma_carpeta_no_duplica_ventas_ni_stock() {
     assert_eq!(stats2.exitosos, 1, "omitido completo se informa como ok");
     assert_eq!(stats2.errores, 0);
 
-    // La DB queda intacta: dos ventas, cuatro detalles, stock ×1.
+    // La DB conserva stock y solo suma vendido por los dos folios nuevos.
     assert_eq!(contar(&db, "ventas"), 2);
     assert_eq!(contar(&db, "detalle_ventas"), 4);
     let conn = Connection::open(&db).unwrap();
@@ -294,9 +297,8 @@ fn reimportar_la_misma_carpeta_no_duplica_ventas_ni_stock() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    // Cada venta descuenta 2 TAZAS: 2 ventas × 2 = 4 (la copia y la
-    // re-importación NO volvieron a descontar).
-    assert_eq!(stock, 96.0, "el stock se descontó de más");
+    // Las ventas históricas no tocan stock; reimportar tampoco duplica vendido.
+    assert_eq!(stock, 100.0, "la importación histórica cambió el stock");
     assert_eq!(vendido, 4.0);
 
     let _ = std::fs::remove_dir_all(&dir);
