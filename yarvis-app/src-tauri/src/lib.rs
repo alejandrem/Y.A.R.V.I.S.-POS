@@ -169,8 +169,10 @@ pub fn run() {
             // ── empleados admin (handlers.rs §empleados): dashboard ──
             backventanas::backadmin::adminempleados::empleados::get_empleados,
             backventanas::backadmin::adminempleados::empleados::get_empleado_ventas,
+            backventanas::backadmin::adminempleados::empleados::get_eventos_reloj_empleado,
             backventanas::backadmin::adminempleados::empleados::get_resumen_empleados,
             backventanas::backadmin::adminempleados::empleados::get_cortes_empleado,
+            backventanas::backempleado::emplea_new_venta::devoluciones::get_devoluciones_empleado,
             // ── empleados admin: modal empleado ──
             backventanas::backadmin::adminempleados::modalempleado::editar_empleado,
             backventanas::backadmin::adminempleados::modalempleado::set_estado_empleado,
@@ -184,6 +186,10 @@ pub fn run() {
             // ── operacion empleado (handlers.rs §operacion): nueva venta ──
             backventanas::backempleado::emplea_new_venta::new_venta::completar_venta,
             backventanas::backempleado::emplea_new_venta::new_venta::get_next_ticket_number,
+            backventanas::backempleado::emplea_new_venta::devoluciones::buscar_tickets_devolucion,
+            backventanas::backempleado::emplea_new_venta::devoluciones::get_ticket_devolucion,
+            backventanas::backempleado::emplea_new_venta::devoluciones::devolver_ticket_completo,
+            backventanas::backempleado::emplea_new_venta::devoluciones::get_mis_devoluciones,
             backventanas::backempleado::emplea_new_venta::new_venta::get_tienda_info,
             // ── operacion empleado: proveedores (operator-scoped) ──
             backventanas::backempleado::empleaproveedores::proveedores::guardar_proveedor,
