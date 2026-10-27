@@ -27,6 +27,10 @@ pub(super) fn calcular_subtotal(items: &[Item]) -> f64 {
         .sum()
 }
 
+fn calcular_descuento(items: &[Item]) -> f64 {
+    round2(items.iter().map(|item| item.descuento.unwrap_or(0.0)).sum())
+}
+
 /// Resuelve los totales que se guardan en la venta.
 ///
 /// REGLA DEL NEGOCIO: los precios de los productos en los tickets ya vienen
@@ -51,10 +55,14 @@ pub(super) fn calcular_subtotal(items: &[Item]) -> f64 {
 pub(super) fn resolver_totales_venta(items: &[Item], reales: &TotalesTicket) -> (f64, f64, f64) {
     let subtotal_calc = calcular_subtotal(items);
     // Los precios ya incluyen IVA: el total = subtotal, sin sumar 16% extra.
-    let total_calc = round2(subtotal_calc);
+    let total_calc = round2(subtotal_calc - calcular_descuento(items));
     let iva_calc = 0.0;
 
-    let subtotal = reales.subtotal.unwrap_or(subtotal_calc);
+    let subtotal = match reales.subtotal {
+        Some(real) if calcular_descuento(items) > 0.0 => real.max(subtotal_calc),
+        Some(real) => real,
+        None => subtotal_calc,
+    };
     let iva = reales.iva.unwrap_or(iva_calc);
     let total = reales.total.unwrap_or(total_calc);
 
