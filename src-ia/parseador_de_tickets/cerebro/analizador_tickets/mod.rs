@@ -15,6 +15,7 @@
 // ============================================================
 
 mod detector;
+mod descuentos;
 mod encabezado;
 mod esquema;
 mod fechas;
@@ -25,6 +26,7 @@ mod totales;
 mod unir;
 
 pub use detector::{detectar_mapeo, diagnosticar_muestra, DeteccionMapeo, DiagnosticoMuestra};
+pub use descuentos::descuento_separado;
 pub use unir::unir_lineas_multirenglon;
 pub use encabezado::extraer_cajero;
 pub use esquema::{resolver_indice, Item, MapeoColumnas};
