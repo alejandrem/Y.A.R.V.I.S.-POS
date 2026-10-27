@@ -13,6 +13,7 @@ use super::super::almacen::{
     cargar_estado, cargar_folios_existentes, cargar_productos_por_nombre,
     garantizar_columna_folio, insertar_venta,
 };
+use super::super::descuentos::parsear_items_con_descuentos;
 use super::super::archivos::{leer_archivo_tolerante, nombre_de_archivo, ordenar_archivos_cronologicamente};
 use super::super::items::{a_centavos, resolver_totales_venta};
 use super::super::resumen::{ArchivoResultado, ProductoNuevo, ResumenVenta};
@@ -20,7 +21,8 @@ use crate::cerebro::analizador_tickets::{
     comparar_cronologico, detectar_mapeo, extraer_totales, parsear_linea, segmentar,
     unir_lineas_multirenglon, Item, MapeoColumnas,
 };
-use crate::embeddings::Embedder;
+mod productos;
+use productos::asegurar_producto;
 
 pub fn procesar_archivos(
     archivos: &[String],
@@ -50,7 +52,7 @@ pub fn procesar_archivos(
     };
     // Columna folio_ticket: las DBs creadas antes de la migración no la tienen.
     garantizar_columna_folio(&conn);
-    let productos_por_nombre = cargar_productos_por_nombre(&conn);
+    let mut productos_por_nombre = cargar_productos_por_nombre(&conn);
     // Cache para fuzzy matching (evita fantasmas tipo "ACEITE" vs "ACEITE 123 1L")
     let inventario_fuzzy = crate::cerebro::vinculador_inventario::cargar_inventario_cache(&conn);
     // Idempotencia: claves YA importadas (folios de corridas anteriores o
@@ -184,10 +186,9 @@ pub fn procesar_archivos(
             let mut existentes = 0usize;
             let mut nuevos_seg: Vec<ProductoNuevo> = Vec::new();
 
-            for linea in &segmento.lineas {
-                let Some(item) = parsear_linea(linea, mapeo_usar, total_cols) else {
-                    continue;
-                };
+            let items_parseados =
+                parsear_items_con_descuentos(&segmento.lineas, mapeo_usar, total_cols);
+            for item in items_parseados {
 
                 // Clave estable en CENTAVOS enteros (mismo formato que
                 // `cargar_estado` en almacen.rs); el f64 `{:.2}` viejo podía
@@ -199,68 +200,25 @@ pub fn procesar_archivos(
                 }
                 seen.insert(dup_key.clone());
 
-                if productos_vistos.contains(&dup_key) {
-                    existentes += 1;
-                } else {
-                    // Antes se creaba fantasma con costo $0 sin validar. Ahora verificamos
-                    // si el ticket trae "ACEITE" truncado y ya existe "ACEITE 123 1L" en inventario:
-                    // si hay match fuzzy, NO creamos "ACEITE" suelto, lo contamos como existente
-                    // para no poblar fantasmas que luego quedan con stock -158.
-                    let es_truncado = crate::cerebro::parseador_masivo::almacen::resolver_producto_id(
-                        &item.producto,
-                        &productos_por_nombre,
-                        &inventario_fuzzy,
-                    )
-                    .is_some();
-
-                    // Solo crear si es producto realmente nuevo (no similar) y nombre tiene >=2 palabras
-                    // o es único. Un token suelto tipo "ACEITE" con inventario no vacío se deja sin crear
-                    // solo si hay algún producto algo similar (>0.3); si es "TAZAS" vs "ACEITE" (0.0) sí se crea.
-                    let crear = if es_truncado {
-                        existentes += 1;
-                        false
-                    } else if item.producto.split_whitespace().count() < 2
-                        && !inventario_fuzzy.is_empty()
-                    {
-                        let embedder = crate::embeddings::HashEmbedder;
-                        let q_emb_opt = embedder.texto_a_embedding(&item.producto);
-                        let mut max_score = 0.0;
-                        if let Some(q_emb) = q_emb_opt {
-                            for p in &inventario_fuzzy {
-                                if let Some(p_emb) = embedder.texto_a_embedding(&p.nombre) {
-                                    let s = crate::embeddings::cosine_similarity(&q_emb, &p_emb);
-                                    if s > max_score {
-                                        max_score = s;
-                                    }
-                                }
-                            }
-                        }
-                        if max_score > 0.30 {
-                            existentes += 1;
-                            false
-                        } else {
-                            true
-                        }
-                    } else {
-                        true
-                    };
-
-                    if crear {
-                        productos_vistos.insert(dup_key.clone());
-                        let _ = conn.execute(
-                            "INSERT INTO productos (nombre, precio_venta, precio_costo, stock, stock_minimo, vendido, categoria) VALUES (?1, ?2, ?3, 0, 5, ?4, '')",
-                            rusqlite::params![item.producto.clone(), a_centavos(item.precio_unitario), a_centavos(0.0), item.cantidad],
-                        );
-                        nuevos_seg.push(ProductoNuevo {
-                            nombre: item.producto.clone(),
-                            precio: item.precio_unitario,
-                        });
-                    } else {
-                        // No creamos, pero lo marcamos como visto para no reintentar
-                        productos_vistos.insert(dup_key.clone());
+                match asegurar_producto(
+                    &conn,
+                    &item,
+                    &dup_key,
+                    &mut productos_vistos,
+                    &mut productos_por_nombre,
+                    &inventario_fuzzy,
+                ) {
+                    Ok(Some(nuevo)) => nuevos_seg.push(nuevo),
+                    Ok(None) => existentes += 1,
+                    Err(e) => {
+                        error_db = Some(format!("error al crear producto histórico: {e}"));
+                        break;
                     }
                 }
                 items.push(item);
+            }
+            if error_db.is_some() {
+                break;
             }
 
             // Segmento sin productos reconocidos (solo encabezado) → no venta.
