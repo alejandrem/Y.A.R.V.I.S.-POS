@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { MorphIcon } from "morphicons/react";
 
-type TipoToast = "error" | "exito";
+type TipoToast = "error" | "exito" | "aviso";
 
 interface Toast {
   id: number;
@@ -61,6 +61,11 @@ export function notificarExito(titulo: string) {
   despachar("exito", titulo);
 }
 
+/** Muestra un toast ámbar para avisos que no impiden continuar. */
+export function notificarAviso(titulo: string, detalle?: unknown) {
+  despachar("aviso", titulo, detalle);
+}
+
 export function Toaster() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -83,25 +88,26 @@ export function Toaster() {
     <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2 pointer-events-none">
       {toasts.map((toast) => {
         const esError = toast.tipo === "error";
+        const esAviso = toast.tipo === "aviso";
         return (
           <div
             key={toast.id}
             className={`pointer-events-auto w-80 rounded-2xl border bg-white shadow-xl shadow-neutral-200/60 overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300 ${
               esError ? "border-red-200" : "border-emerald-200"
-            }`}
+            } ${esAviso ? "border-amber-200" : ""}`}
           >
             <div className="flex items-start gap-3 p-4">
               <div
                 className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-white ${
-                  esError ? "bg-red-500" : "bg-emerald-500"
+                  esError ? "bg-red-500" : esAviso ? "bg-amber-500" : "bg-emerald-500"
                 }`}
               >
-                <MorphIcon icon={esError ? "M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" : "M20 6 9 17l-5-5"} size={14} strokeWidth={2.5} />
+                <MorphIcon icon={esError || esAviso ? "M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" : "M20 6 9 17l-5-5"} size={14} strokeWidth={2.5} />
               </div>
               <div className="flex-1 min-w-0">
                 <p
                   className={`text-[10px] font-black uppercase tracking-widest leading-snug break-words ${
-                    esError ? "text-red-600" : "text-emerald-600"
+                    esError ? "text-red-600" : esAviso ? "text-amber-700" : "text-emerald-600"
                   }`}
                 >
                   {toast.titulo}
@@ -120,7 +126,7 @@ export function Toaster() {
                 <MorphIcon icon="M18 6 6 18M6 6l12 12" size={14} strokeWidth={2.5} />
               </button>
             </div>
-            <div className={`h-1 w-full ${esError ? "bg-red-500" : "bg-emerald-500"}`} />
+            <div className={`h-1 w-full ${esError ? "bg-red-500" : esAviso ? "bg-amber-500" : "bg-emerald-500"}`} />
           </div>
         );
       })}
