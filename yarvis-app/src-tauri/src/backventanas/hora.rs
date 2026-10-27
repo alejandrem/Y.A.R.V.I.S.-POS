@@ -1,101 +1,111 @@
 // ============================================================
-// hora.rs — Verificación del reloj del sistema (turnos y cortes).
-//
-// Problema: todo el POS confía en `chrono::Local::now()` y en
-// `datetime('now','localtime')` de SQLite. Si el reloj de Windows
-// está mal, los logins, horas extra, ventas y cortes Z salen mal.
-//
-// Este módulo NO corrige la hora (un POS offline-first no debe
-// tocar el reloj ajeno). Solo la VERIFICA y avisa en facilito:
-//   · Detecta retroceso: hora actual < último evento en DB
-//     (ventas / cortes / asistencias). Indica reloj atrasado o
-//     restauración con fecha vieja.
-//   · Intenta hora de red (best-effort, timeout 4s) vía el header
-//     `Date` de https://www.google.com/generate_204. Si no hay
-//     internet, reporta `sin_red` y NO bloquea la caja.
-//   · Si hay red y el desfase supera 5 min, reporta `desfasado`.
-//
-// Sin red, sin bloqueo, sin dependencias nuevas (reqwest ya existe).
+// Reloj operativo basado exclusivamente en la hora local de Windows.
+// Nunca consulta internet ni bloquea ventas o cortes.
 // ============================================================
-use chrono::{DateTime, Utc};
+use crate::backventanas::auth::{AuthState, Role};
+use chrono::{DateTime, Local};
 use sqlx::SqlitePool;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
-/// 5 minutos de tolerancia: por debajo es deriva normal de reloj
-/// barato; por encima ya mueve turnos y cortes.
-pub const UMBRAL_DESFASE_SEG: i64 = 300;
+/// Saltos mayores a dos minutos entre lecturas monotónicas y del reloj local.
+const UMBRAL_SALTO_RELOJ_SEG: i64 = 120;
+
+static ULTIMA_LECTURA_RELOJ: OnceLock<Mutex<Option<(Instant, i64)>>> = OnceLock::new();
 
 #[derive(serde::Serialize, Clone)]
 pub struct EstadoHora {
     /// "YYYY-MM-DD HH:MM:SS" del sistema local.
     pub hora_sistema: String,
     pub zona: String,
-    pub red_disponible: bool,
-    pub hora_red: Option<String>,
-    /// red − sistema, en segundos (negativo = sistema adelantado).
-    pub desfase_seg: Option<i64>,
-    /// "ok" | "desfasado" | "reloj_atrasado" | "sin_red"
+    /// "ok" | "reloj_atrasado" | "cambio_brusco"
     pub estado: String,
     /// Explicación en facilito para el dueño/empleado.
     pub mensaje: String,
     /// Último evento conocido en DB (ventas/cortes/asistencias).
     pub ultimo_evento: Option<String>,
+    /// ID del aviso persistente asociado al empleado conectado, si existe.
+    pub evento_reloj_id: Option<i64>,
+    /// True únicamente cuando esta consulta acaba de crear un aviso.
+    pub evento_reloj_nuevo: bool,
 }
 
-/// Lógica pura, testeable sin DB ni red.
-pub fn evaluar_estado(
-    desfase_seg: Option<i64>,
-    red_ok: bool,
-    ultimo_evento: Option<&str>,
+/// Detecta un salto del reloj del sistema comparando tiempo de pared con
+/// tiempo monotónico. Tolera pequeñas correcciones y pausas de la app.
+fn detectar_salto_reloj(ahora: &DateTime<Local>) -> Option<i64> {
+    let lecturas = ULTIMA_LECTURA_RELOJ.get_or_init(|| Mutex::new(None));
+    let monotono = Instant::now();
+    let pared = ahora.timestamp();
+    let mut guard = lecturas.lock().ok()?;
+    let salto = guard.as_ref().and_then(|(mono_anterior, pared_anterior)| {
+        let transcurrido = monotono.duration_since(*mono_anterior).as_secs() as i64;
+        let cambio_pared = pared - *pared_anterior;
+        let diferencia = cambio_pared - transcurrido;
+        (diferencia.abs() >= UMBRAL_SALTO_RELOJ_SEG).then_some(diferencia)
+    });
+    *guard = Some((monotono, pared));
+    salto
+}
+
+async fn registrar_o_actualizar_evento(
+    pool: &SqlitePool,
+    empleado_id: i64,
+    tipo: &str,
     hora_sistema: &str,
-) -> (String, String) {
-    // 1. Retroceso: el sistema está ANTES del último evento guardado.
-    // Compara como texto porque todo es "YYYY-MM-DD HH:MM:SS" (orden
-    // lexicográfico = cronológico). 5 min de colchón anti-falsos.
+    mensaje: &str,
+) -> Result<(i64, bool), String> {
+    let abierto = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM eventos_reloj WHERE empleado_id = ? AND resuelto_en IS NULL ORDER BY id DESC LIMIT 1",
+    )
+    .bind(empleado_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Some(id) = abierto {
+        sqlx::query(
+            "UPDATE eventos_reloj SET tipo = ?, hora_sistema = ?, hora_referencia = NULL, desfase_seg = NULL, mensaje = ?, ultima_observacion = datetime('now','localtime') WHERE id = ?",
+        )
+        .bind(tipo)
+        .bind(hora_sistema)
+        .bind(mensaje)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        return Ok((id, false));
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO eventos_reloj (empleado_id, tipo, hora_sistema, mensaje, hora_referencia, desfase_seg) VALUES (?, ?, ?, ?, NULL, NULL)",
+    )
+    .bind(empleado_id)
+    .bind(tipo)
+    .bind(hora_sistema)
+    .bind(mensaje)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok((result.last_insert_rowid(), true))
+}
+
+/// Compara únicamente fechas locales con fechas locales guardadas.
+pub fn evaluar_estado(ultimo_evento: Option<&str>, hora_sistema: &str) -> (String, String) {
     if let Some(ult) = ultimo_evento {
         if hora_sistema < ult {
             return (
                 "reloj_atrasado".to_string(),
                 format!(
-                    "Tu reloj está atrás del último movimiento guardado ({}). \
-                     Revisa la hora de Windows: los turnos y cortes saldrán mal \
-                     hasta que la corrijas. Activa hora automática.",
+                    "La hora local está antes del último movimiento guardado ({}). \
+                     Revisa la fecha, hora y zona horaria de Windows. Las ventas y cortes continúan disponibles.",
                     ult
                 ),
             );
         }
     }
-    // 2. Con red: ¿desfase grande?
-    if red_ok {
-        if let Some(d) = desfase_seg {
-            if d.abs() > UMBRAL_DESFASE_SEG {
-                let mins = d.abs() / 60;
-                let lado = if d > 0 {
-                    "atrasado"
-                } else {
-                    "adelantado"
-                };
-                return (
-                    "desfasado".to_string(),
-                    format!(
-                        "Tu reloj va {} unos {} min contra la hora de internet. \
-                         Activa hora automática en Windows para que los turnos \
-                         cuadren.",
-                        lado, mins
-                    ),
-                );
-            }
-            return (
-                "ok".to_string(),
-                "Hora correcta: coincide con internet.".to_string(),
-            );
-        }
-    }
-    // 3. Sin red y sin retroceso: no se puede comprobar.
     (
-        "sin_red".to_string(),
-        "Sin internet no pude comparar tu hora. Si ves turnos raros, \
-         revisa que Windows tenga hora automática activada."
-            .to_string(),
+        "ok".to_string(),
+        "Se está usando la hora local de Windows para ventas, turnos y cortes.".to_string(),
     )
 }
 
@@ -105,7 +115,7 @@ pub fn evaluar_estado(
 pub async fn ultimo_evento_impl(pool: &SqlitePool) -> Option<String> {
     let mut candidatos: Vec<String> = Vec::new();
     for q in [
-        "SELECT MAX(fecha) FROM ventas",
+        "SELECT MAX(fecha) FROM ventas WHERE cajero_id IS NOT NULL",
         "SELECT MAX(COALESCE(fecha_cierre, fecha_apertura)) FROM cortes_caja",
         "SELECT MAX(COALESCE(ultimo_login, primer_login)) FROM asistencias",
     ] {
@@ -124,100 +134,80 @@ pub async fn ultimo_evento_impl(pool: &SqlitePool) -> Option<String> {
     candidatos.into_iter().max()
 }
 
-/// Hora de red vía header `Date` (RFC2822, siempre GMT). Endpoint
-/// ligero 204 sin cuerpo. Timeout corto para no frenar la caja.
-async fn hora_red_impl() -> Option<DateTime<Utc>> {
-    let cliente = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(4))
-        .no_proxy()
-        .build()
-        .ok()?;
-    let resp = cliente
-        .get("https://www.google.com/generate_204")
-        .send()
-        .await
-        .ok()?;
-    let fecha_txt = resp.headers().get("date")?.to_str().ok()?;
-    DateTime::parse_from_rfc2822(fecha_txt)
-        .ok()
-        .map(|d| d.with_timezone(&Utc))
-}
-
-/// Comando Tauri: verifica el reloj. Nunca falla por falta de red
-/// (reporta `sin_red`); solo falla si ni la hora local se puede leer.
+/// Comando Tauri: verifica coherencia con el historial local, sin red.
 #[tauri::command]
 pub async fn verificar_hora_sistema(
     state: tauri::State<'_, SqlitePool>,
+    auth: tauri::State<'_, AuthState>,
 ) -> Result<EstadoHora, String> {
+    let sesion = auth.require_authenticated()?;
     let ahora_local = chrono::Local::now();
     let hora_sistema = ahora_local.format("%Y-%m-%d %H:%M:%S").to_string();
     let zona = ahora_local.format("%:z").to_string();
+    let salto = detectar_salto_reloj(&ahora_local);
 
     let ultimo = ultimo_evento_impl(&state).await;
 
-    let (red_ok, hora_red_txt, desfase) = match hora_red_impl().await {
-        Some(red) => {
-            let d = red.timestamp() - ahora_local.with_timezone(&Utc).timestamp();
-            (
-                true,
-                Some(red.format("%Y-%m-%d %H:%M:%S").to_string()),
-                Some(d),
-            )
-        }
-        None => (false, None, None),
-    };
+    let (mut estado, mut mensaje) = evaluar_estado(ultimo.as_deref(), &hora_sistema);
+    if let Some(segundos) = salto {
+        let direccion = if segundos < 0 { "retrocedió" } else { "avanzó" };
+        estado = "cambio_brusco".to_string();
+        mensaje = format!(
+                "La hora local de Windows {direccion} bruscamente (aprox. {} min). Revisa la fecha, hora y zona horaria. Las ventas y los cortes siguen disponibles.",
+            segundos.abs() / 60
+        );
+    }
 
-    let (estado, mensaje) = evaluar_estado(desfase, red_ok, ultimo.as_deref(), &hora_sistema);
+    let (evento_reloj_id, evento_reloj_nuevo) = if sesion.role == Role::Employee {
+        if matches!(estado.as_str(), "reloj_atrasado" | "cambio_brusco") {
+            let (id, nuevo) = registrar_o_actualizar_evento(
+                &state,
+                sesion.user_id,
+                &estado,
+                &hora_sistema,
+                &mensaje,
+            )
+            .await?;
+            (Some(id), nuevo)
+        } else {
+            if estado == "ok" {
+                sqlx::query("UPDATE eventos_reloj SET resuelto_en = datetime('now','localtime') WHERE empleado_id = ? AND resuelto_en IS NULL")
+                    .bind(sesion.user_id)
+                    .execute(&*state)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            (None, false)
+        }
+    } else {
+        (None, false)
+    };
 
     Ok(EstadoHora {
         hora_sistema,
         zona,
-        red_disponible: red_ok,
-        hora_red: hora_red_txt,
-        desfase_seg: desfase,
         estado,
         mensaje,
         ultimo_evento: ultimo,
+        evento_reloj_id,
+        evento_reloj_nuevo,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{evaluar_estado, UMBRAL_DESFASE_SEG};
+    use super::evaluar_estado;
 
     #[test]
-    fn desfase_pequeno_es_ok() {
-        let (e, _) = evaluar_estado(Some(60), true, None, "2026-10-12 09:00:00");
-        assert_eq!(e, "ok");
-        let (e2, _) = evaluar_estado(Some(-UMBRAL_DESFASE_SEG), true, None, "2026-10-12 09:00:00");
-        assert_eq!(e2, "ok");
+    fn compara_hora_local_con_ultimo_movimiento_local() {
+        let (estado, _) = evaluar_estado(Some("2026-10-26 23:18:36"), "2026-10-26 23:19:42");
+        assert_eq!(estado, "ok");
     }
 
     #[test]
-    fn desfase_grande_avisa_lado() {
-        let (e, m) = evaluar_estado(Some(600), true, None, "2026-10-12 09:00:00");
-        assert_eq!(e, "desfasado");
-        assert!(m.contains("atrasado"));
-        let (e2, m2) = evaluar_estado(Some(-900), true, None, "2026-10-12 09:00:00");
-        assert_eq!(e2, "desfasado");
-        assert!(m2.contains("adelantado"));
-    }
-
-    #[test]
-    fn reloj_atrasado_gana_a_red() {
-        // Sistema antes del último ticket: aunque la red diga ok, manda el retroceso.
-        let (e, _) = evaluar_estado(
-            Some(10),
-            true,
-            Some("2026-10-12 10:00:00"),
-            "2026-10-12 08:00:00",
-        );
-        assert_eq!(e, "reloj_atrasado");
-    }
-
-    #[test]
-    fn sin_red_no_bloquea() {
-        let (e, _) = evaluar_estado(None, false, None, "2026-10-12 09:00:00");
-        assert_eq!(e, "sin_red");
+    fn advierte_si_la_hora_local_va_atras_del_historial_local() {
+        let (estado, mensaje) = evaluar_estado(Some("2026-10-26 23:18:36"), "2026-10-26 22:00:00");
+        assert_eq!(estado, "reloj_atrasado");
+        assert!(mensaje.contains("hora local"));
     }
 }
