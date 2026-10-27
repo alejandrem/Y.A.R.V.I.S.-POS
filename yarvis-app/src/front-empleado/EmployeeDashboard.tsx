@@ -12,7 +12,7 @@ import {
 import { invokeTauri, reportarError } from "../services/tauri";
 import { notificarExito } from "../components/notificaciones";
 import { abrirCajonPredeterminado } from "../services/impresora";
-import { obtenerMiTurno } from "../services/turno";
+import { obtenerHoraSistema, obtenerMiTurno, notificarEventoRelojSiNuevo } from "../services/turno";
 import { nuevaVentaNav } from "./ventanas/emplea_new_venta/nueva_venta";
 import { inventarioNav } from "./ventanas/empleainventario/inventario";
 import { ticketsNav } from "./ventanas/empleaticket/ticket";
@@ -29,6 +29,7 @@ import NuevaVenta from "./ventanas/emplea_new_venta/nueva_venta";
 import ModalCorte from "./ventanas/empleacortes/modal-corte";
 import ModalReimprimir from "./ventanas/empleaticket/componentes/modal-reimprimir";
 import ModalAtajos from "./atajos/modal-atajos";
+import ModalDevolucion from "./ventanas/empleaticket/componentes/modal-devolucion";
 import { useAtajosEmpleados } from "./atajos/useAtajos";
 import { solicitarAccion } from "./atajos/atajos";
 import { CartProvider } from "./ventanas/emplea_new_venta/CartProvider";
@@ -111,10 +112,12 @@ const EmployeeDashboard = ({
   const [showModalCorte, setShowModalCorte] = useState(false);
   const [showModalReimprimir, setShowModalReimprimir] = useState(false);
   const [showModalAtajos, setShowModalAtajos] = useState(false);
+  const [showModalDevolucion, setShowModalDevolucion] = useState(false);
   const abrirCorte = useCallback(() => setShowModalCorte(true), []);
   const abrirReimprimir = useCallback(() => setShowModalReimprimir(true), []);
   const abrirAyuda = useCallback(() => setShowModalAtajos(true), []);
-  const shellOcupado = showModalCorte || showModalReimprimir || showModalAtajos;
+  const shellOcupado = showModalCorte || showModalReimprimir || showModalAtajos || showModalDevolucion;
+  const abrirDevolucion = useCallback(() => setShowModalDevolucion(true), []);
   // F5/F4: cambian a la pestaña destino y dejan la acción pendiente; la
   // pestaña la consume al montar (o al momento si ya estaba montada).
   // Con el corte abierto no se hace nada (no encimar modales).
@@ -142,7 +145,7 @@ const EmployeeDashboard = ({
       .then((msg) => notificarExito(msg))
       .catch((e) => reportarError("No se pudo abrir el cajón", e));
   }, [shellOcupado]);
-  useAtajosEmpleados({ onCorte: abrirCorte, onCobrar: irACobrar, onPagar: irAPagar, onReimprimir: abrirReimprimir, onAyuda: abrirAyuda, onBuscar: irABuscar, onCajon: abrirCajonF6, deshabilitado: shellOcupado });
+  useAtajosEmpleados({ onCorte: abrirCorte, onCobrar: irACobrar, onPagar: irAPagar, onReimprimir: abrirReimprimir, onAyuda: abrirAyuda, onBuscar: irABuscar, onCajon: abrirCajonF6, onDevolucion: abrirDevolucion, deshabilitado: shellOcupado });
 
   // El menú F8 ejecuta y se cierra solo.
   const ejecutarAtajoMenu = useCallback((a: AccionAtajoMenu) => {
@@ -153,12 +156,45 @@ const EmployeeDashboard = ({
     else if (a === "reimprimir") abrirReimprimir();
     else if (a === "buscar") irABuscar();
     else if (a === "cajon") abrirCajonF6();
-  }, [abrirCorte, irACobrar, irAPagar, abrirReimprimir, irABuscar, abrirCajonF6]);
+    else if (a === "devolucion") abrirDevolucion();
+  }, [abrirCorte, irACobrar, irAPagar, abrirReimprimir, irABuscar, abrirCajonF6, abrirDevolucion]);
 
   useEffect(() => {
-    obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo cargar la información de tu turno", e));
+    let vivo = true;
+    const cargarTurno = () => obtenerMiTurno().then((resultado) => { if (vivo) setTurno(resultado); }).catch(() => {});
+    cargarTurno();
     const t = window.setInterval(() => setAhora(new Date()), 30000);
-    return () => window.clearInterval(t);
+    const refresco = window.setInterval(cargarTurno, 15000);
+    return () => { vivo = false; window.clearInterval(t); window.clearInterval(refresco); };
+  }, []);
+
+  const cerrarModalCorte = useCallback(() => {
+    setShowModalCorte(false);
+    obtenerMiTurno().then(setTurno).catch((e) => reportarError("No se pudo actualizar el estado del turno", e));
+  }, []);
+
+  // Vigila el reloj mientras hay una sesión de empleado, incluso fuera del perfil.
+  // El backend registra el aviso sin impedir ventas ni cortes.
+  useEffect(() => {
+    let activo = true;
+    let consultando = false;
+    const revisarReloj = () => {
+      if (consultando) return;
+      consultando = true;
+      obtenerHoraSistema()
+        .then((hora) => {
+          if (!activo) return;
+          notificarEventoRelojSiNuevo(hora);
+        })
+        .catch(() => {})
+        .finally(() => { consultando = false; });
+    };
+    revisarReloj();
+    const timer = window.setInterval(revisarReloj, 60000);
+    return () => {
+      activo = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   // Solo la pestaña activa está en el DOM (sin árboles ocultos). Lo que debe
@@ -296,7 +332,7 @@ const EmployeeDashboard = ({
                   {/* Trabajo normal (negro) */}
                   <div
                     className="absolute inset-y-0 bg-neutral-950 rounded-full transition-all duration-700 ease-out"
-                    style={{ left: `${barra.inicioPct}%`, width: `${Math.max(0, barra.trabajoPct)}%` }}
+                    style={{ left: `${barra.tTrabIniPct}%`, width: `${Math.max(0, barra.tTrabFinPct - barra.tTrabIniPct)}%` }}
                   />
                   {/* Extra post-turno (verde) */}
                   {barra.enExtraPost && (
@@ -363,7 +399,7 @@ const EmployeeDashboard = ({
       </div>
 
       {showModalCorte && (
-        <ModalCorte onClose={() => setShowModalCorte(false)} cajero={operatorName || "GENERAL"} />
+        <ModalCorte onClose={cerrarModalCorte} cajero={operatorName || "GENERAL"} />
       )}
 
       {showModalReimprimir && (
@@ -372,6 +408,10 @@ const EmployeeDashboard = ({
 
       {showModalAtajos && (
         <ModalAtajos onClose={() => setShowModalAtajos(false)} onAccion={ejecutarAtajoMenu} />
+      )}
+
+      {showModalDevolucion && (
+        <ModalDevolucion onClose={() => setShowModalDevolucion(false)} />
       )}
     </main>
   );

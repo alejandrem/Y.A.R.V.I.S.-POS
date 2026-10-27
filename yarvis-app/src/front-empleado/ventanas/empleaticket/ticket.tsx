@@ -11,6 +11,7 @@ import KpisMisTickets from "./componentes/kpis-mis-tickets";
 import GraficaDiaSueldo from "./componentes/grafica-dia-sueldo";
 import ListaMisTickets from "./componentes/lista-mis-tickets";
 import PanelCortesProx from "./componentes/panel-mis-cortes";
+import PanelMisDevoluciones from "./componentes/panel-mis-devoluciones";
 import ModalDetalleTicket from "./componentes/modal-detalle-ticket";
 import type { MiTicket } from "../../../services/misventas";
 
@@ -56,6 +57,7 @@ const Tickets = ({ activeTab, operatorName = "" }: TicketsProps) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ListaMisTickets onVer={setSeleccionado} />
         <PanelCortesProx />
+        <PanelMisDevoluciones />
       </div>
 
       {seleccionado && (
