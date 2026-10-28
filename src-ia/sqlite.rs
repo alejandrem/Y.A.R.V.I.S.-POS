@@ -11,9 +11,8 @@
 // Lo que NO pasa por aquí (a propósito):
 // - tools del chat: abren READ_ONLY (en WAL los lectores no bloquean).
 // - tests/examples: DBs en memoria o desechables.
-// - foreign_keys: se deja APAGADO como antes (cambio mínimo; los
-//   escritores rusqlite siempre corrieron así, encenderlo ahora
-//   podría rechazar escrituras históricas que hoy pasan).
+// - foreign_keys: ACTIVO. Mejora la integridad; si algún dato histórico
+//   es huérfano, las escrituras que lo toquen fallarán y se reportarán.
 // ============================================================
 
 use std::path::Path;
@@ -28,6 +27,7 @@ pub fn abrir_db<P: AsRef<Path>>(ruta: P) -> Result<rusqlite::Connection, rusqlit
     let conn = rusqlite::Connection::open(ruta)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
     Ok(conn)
 }
 
